@@ -1,7 +1,7 @@
 /**
  * Layout: node boxes, port placement, and link routes for one level.
  * Layout data lives outside UHD (design D3, D6); a level can ship a hand
- * layout (./quadcopter.ts) and the user's drags override it.
+ * layout (from the bundle's display hints) and the user's drags override it.
  */
 import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";

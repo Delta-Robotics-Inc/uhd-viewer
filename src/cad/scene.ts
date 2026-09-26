@@ -10,7 +10,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { GeometryFrame, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { Mat4 } from "@uhd/system/geometry.js";
-import { param, traitParam, uhdUrl } from "./model";
+import { param, traitParam } from "./model";
+import type { Appearance } from "../source/source";
 
 export const COLORS = {
   focus: 0xff5c00,
@@ -24,17 +25,18 @@ export const COLORS = {
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<GLTF | null>>();
 
-export function loadGlb(filePath: string): Promise<GLTF | null> {
-  if (!cache.has(filePath)) {
+/** Load a GLB by URL (artifact URLs come from the viewer source's resolver). */
+export function loadGlb(url: string): Promise<GLTF | null> {
+  if (!cache.has(url)) {
     cache.set(
-      filePath,
-      loader.loadAsync(uhdUrl(filePath)).catch((e) => {
-        console.warn(`[cad] ${filePath}: ${e}`);
+      url,
+      loader.loadAsync(url).catch((e) => {
+        console.warn(`[cad] ${url}: ${e}`);
         return null;
       }),
     );
   }
-  return cache.get(filePath)!;
+  return cache.get(url)!;
 }
 
 /** glTF (m, Y-up) back to CAD coordinates (mm, Z-up). */
@@ -54,29 +56,39 @@ export function toMatrix4(m: Mat4): THREE.Matrix4 {
 // Materials by what the module is
 // ---------------------------------------------------------------------------
 
-export function materialFor(def: ModuleDef, bodyPart: string): THREE.MeshStandardMaterial {
-  const id = def.id;
-  const std = (color: number, o: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
-    new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1, ...o });
-  // carbon plates
-  if (id.includes("frame") || id.includes("top-plate")) return std(0x232326, { roughness: 0.32, metalness: 0.25 });
-  if (id.includes("standoff")) return std(0x9aa0a8, { metalness: 0.8, roughness: 0.35 });
-  if (id.includes("nylon-spacer") || id.includes("ettinger")) return std(0x1c1c1c, { roughness: 0.7 });
-  if (id.includes("motor-screw")) return std(0x2b2b2b, { metalness: 0.7, roughness: 0.35 });
-  if (id.includes("meps")) {
-    if (bodyPart.startsWith("lead")) return std(0x1b1b1b, { roughness: 0.8 });
-    if (bodyPart === "shaft_body") return std(0xd6d3d1, { metalness: 0.9, roughness: 0.25 });
-    if (bodyPart === "base") return std(0x57534e, { metalness: 0.6, roughness: 0.4 });
-    return std(0x9ca3af, { metalness: 0.75, roughness: 0.3 });
-  }
-  if (id.includes("hqprop")) return std(0xff5c00, { transparent: true, opacity: 0.45, roughness: 0.4, side: THREE.DoubleSide, depthWrite: false });
-  if (id.includes("am32")) return bodyPart === "components" ? std(0x3f3f46) : std(0x1e3a5f);
-  if (id.includes("f405")) return bodyPart === "components" ? std(0x3f3f46) : std(0x14532d);
-  if (id.includes("o4")) return std(0x3a3a3c, { metalness: 0.4 });
-  if (id.includes("cnhl")) return std(0x2d2f36, { roughness: 0.6 });
+/**
+ * Surface for a module's body (or one named sub-body of its CAD), from, in
+ * order: display hints for the definition (and part), the part's declared
+ * material (UHD MaterialSpec), then neutral defaults by kind. Nothing here
+ * knows a particular project.
+ */
+export function materialFor(def: ModuleDef, bodyPart: string, appearance?: Appearance): THREE.MeshStandardMaterial {
+  const hint = { ...(appearance ?? {}), ...(appearance?.parts?.[bodyPart] ?? {}) };
+  const base = fallbackAppearance(def, bodyPart);
+  const a = { ...base, ...hint };
+  const transparent = a.opacity !== undefined && a.opacity < 1;
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color(a.color ?? "#8b8b8b"),
+    roughness: a.roughness ?? 0.55,
+    metalness: a.metalness ?? 0.1,
+    ...(transparent ? { transparent: true, opacity: a.opacity, side: THREE.DoubleSide, depthWrite: false } : {}),
+  });
+}
 
-  if (id.includes("iso-")) return std(0xc0c4cc, { metalness: 0.85, roughness: 0.3 });
-  return std(0x8b8b8b);
+/** Declared material first (UHD `domains[mechanical].material`), then what the part is. */
+function fallbackAppearance(def: ModuleDef, bodyPart: string): Omit<Appearance, "parts"> {
+  const mech = (def.domains ?? []).find((d) => d.domain === "mechanical") as { material?: { name?: string } } | undefined;
+  const text = `${mech?.material?.name ?? ""} ${def.name} ${(def.tags ?? []).join(" ")} ${(def.categories ?? []).join(" ")}`.toLowerCase();
+  if (/carbon/.test(text)) return { color: "#232326", roughness: 0.32, metalness: 0.25 };
+  if (/alumin/.test(text)) return { color: "#9aa0a8", metalness: 0.8, roughness: 0.35 };
+  if (/nylon|pa6|plastic|pla\b|abs\b/.test(text)) return { color: "#1c1c1c", roughness: 0.7 };
+  if (/stainless|steel|screw|bolt|nut|fastener/.test(text)) return { color: "#c0c4cc", metalness: 0.85, roughness: 0.3 };
+  if (bodyPart === "components") return { color: "#3f3f46" };
+  if (/propeller|\bprop\b/.test(text)) return { color: "#e7e5e4", opacity: 0.6 };
+  if (/battery|lipo/.test(text)) return { color: "#2d2f36", roughness: 0.6 };
+  if (/esc|controller|driver|board|module|sensor|receiver|pcb/.test(text) && bodyPart !== "") return { color: "#1f3b2c" };
+  if (/motor/.test(text)) return { color: "#9ca3af", metalness: 0.75, roughness: 0.3 };
+  return { color: "#8b8b8b" };
 }
 
 export const focusMaterial = (color: number) =>

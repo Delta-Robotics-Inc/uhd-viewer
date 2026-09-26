@@ -9,7 +9,7 @@ import * as THREE from "three";
 import type { GeometryFrame, ModuleDef } from "@uhd/types/index.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
 import type { GeometryManifest, MateEdge } from "@uhd/system/geometry.js";
-import { BATTERY_PAD } from "@uhd-library/systems/quadcopter-5in/frame.js";
+import type { LoadedSource } from "../source/source";
 import {
   DIRECTIONS,
   buildCadModel,
@@ -31,17 +31,20 @@ const params = new URLSearchParams(window.location.search);
 /** Explode distance (mm per mate level) at "exploded". */
 const EXPLODE_MM = 26;
 
-/** Battery: strapped, so no link can place it; the frame's pad is a placement hint. */
-const HINTS = [
-  {
-    path: ["battery"],
-    matrix: [0, -1, 0, BATTERY_PAD.origin[0], 1, 0, 0, BATTERY_PAD.origin[1], 0, 0, 1, BATTERY_PAD.origin[2], 0, 0, 0, 1],
-    note: "placed by the top plate's battery-pad hint: the pack is strapped, it has no mechanical interface",
-  },
-];
-
-/** Friendly callout names for the quadcopter's instances. */
-const ARM_NAMES: Record<string, string> = { fl: "front-left", fr: "front-right", rl: "rear-left", rr: "rear-right" };
+/** Instance display names: ChildModuleRef names by path ("arm_fl" → "Front-left arm", "arm_fl/motor" → "Motor"). */
+function instanceNames(system: ModuleDef, lookup: ModuleLookup): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (d: ModuleDef, prefix: string) => {
+    for (const c of d.children ?? []) {
+      const path = prefix ? `${prefix}/${c.id}` : c.id;
+      const def = lookup(c.moduleDefId);
+      out.set(path, c.name ?? def?.name ?? c.id);
+      if (def) walk(def, path);
+    }
+  };
+  walk(system, "");
+  return out;
+}
 
 export interface CadSelection {
   body?: string;
@@ -69,7 +72,15 @@ interface HardwareRec {
   offset: THREE.Vector3;
 }
 
-export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleLookup }) {
+export function CadView({ system, lookup, source }: { system: ModuleDef; lookup: ModuleLookup; source: LoadedSource }) {
+  const display = source.display.spatial ?? {};
+  const resolve = source.resolveArtifact;
+  const appearanceOf = (defId: string) => display.appearance?.[defId];
+  const hints = useMemo(
+    () => Object.entries(display.placements ?? {}).map(([key, h]) => ({ path: key.split("/"), matrix: h.matrix, note: h.note ?? "placed by a display hint" })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [source],
+  );
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   const labelsRef = useRef<LabelLayer | null>(null);
@@ -111,10 +122,14 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
     return [...out.values()];
   }, [system, lookup]);
   useEffect(() => {
-    loadManifests(allDefs).then(setManifests);
+    loadManifests(allDefs, resolve).then(setManifests);
   }, [allDefs]);
 
-  const model: CadModel | null = useMemo(() => (manifests ? buildCadModel(system, lookup, manifests, HINTS) : null), [system, lookup, manifests]);
+  const model: CadModel | null = useMemo(
+    () => (manifests ? buildCadModel(system, lookup, manifests, hints, display.root ? display.root.split("/") : undefined) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [system, lookup, manifests, hints],
+  );
 
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
@@ -153,7 +168,9 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       const rec: BodyRec = { body, obj, base, centre: new THREE.Vector3(), top: new THREE.Vector3(), offset: new THREE.Vector3() };
       bodies.current.set(body.key, rec);
       if (!body.glb?.filePath) continue;
-      loadGlb(body.glb.filePath).then((gltf) => {
+      const url = resolve(body.def.id, body.glb.filePath);
+      if (!url) continue;
+      loadGlb(url).then((gltf) => {
         if (cancelled || !gltf) return;
         const scene = gltf.scene.clone(true);
         const featureNames = new Set(Object.keys(model.manifests.get(`${body.def.id}:${body.bodyArtifact}`)?.features ?? {}));
@@ -168,7 +185,7 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
           part.traverse((o) => {
             const mesh = o as THREE.Mesh;
             if (!mesh.isMesh) return;
-            mesh.material = vendor ? (mesh.material as THREE.Material).clone() : materialFor(body.def, part.name);
+            mesh.material = vendor ? (mesh.material as THREE.Material).clone() : materialFor(body.def, part.name, appearanceOf(body.def.id));
             mesh.userData.bodyKey = body.key;
           });
         }
@@ -183,40 +200,6 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
         bump();
       });
     }
-    // battery strap (a module with no mechanical interface): drawn around the hinted battery
-    const strapDef = model.assembly.instances.find((i) => i.path.join("/") === "strap")?.def;
-    const batt = model.bodies.find((b) => b.key === "battery");
-    if (strapDef && batt) {
-      const g = new THREE.Group();
-      g.matrixAutoUpdate = false;
-      g.matrix.copy(toMatrix4(batt.matrix));
-      const mat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.85 });
-      const band = (w: number, d: number, hgt: number, x: number, y: number, z: number) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, hgt), mat);
-        m.position.set(x, y, z);
-        m.userData.bodyKey = "strap";
-        g.add(m);
-      };
-      // pack coordinates: 39.5 (x) × 75 (y) × 35 (z); strap 20 mm wide across the pack, under the 2 mm plate
-      band(41.5, 20, 1, 0, 0, 35.5);
-      band(1, 20, 38, 20.75, 0, 16.5);
-      band(1, 20, 38, -20.75, 0, 16.5);
-      band(41.5, 20, 1, 0, 0, -2.5);
-      const logo = new THREE.Mesh(new THREE.BoxGeometry(12, 20.2, 1.4), new THREE.MeshStandardMaterial({ color: 0xff5c00, roughness: 0.5 }));
-      logo.position.set(6, 0, 35.6);
-      g.add(logo);
-      g.userData.key = "strap";
-      h.root.add(g);
-      const rec: BodyRec = {
-        body: { key: "strap", path: ["strap"], def: strapDef, matrix: batt.matrix, hint: "wrapped around the battery and the top plate" },
-        obj: g,
-        base: g.matrix.clone(),
-        centre: new THREE.Vector3(0, 0, 16),
-        top: new THREE.Vector3(0, 0, 36),
-        offset: new THREE.Vector3(),
-      };
-      bodies.current.set("strap", rec);
-    }
     for (const hw of model.assembly.hardware) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
@@ -227,14 +210,15 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       const zCol = new THREE.Vector3().setFromMatrixColumn(base, 2).normalize().multiplyScalar(hw.direction);
       hardware.current.push({ obj, base, harness: hw.harness, structure: hw.structure, mounted: hw.mounted, normal: zCol, atMm: hw.atMm, direction: hw.direction, offset: new THREE.Vector3() });
       const file = hw.def.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
-      if (!file) continue;
-      loadGlb(file).then((gltf) => {
+      const url = file && resolve(hw.def.id, file);
+      if (!url) continue;
+      loadGlb(url).then((gltf) => {
         if (cancelled || !gltf) return;
         const s = gltf.scene.clone(true);
         s.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (mesh.isMesh) {
-            mesh.material = materialFor(hw.def, "");
+            mesh.material = materialFor(hw.def, "", appearanceOf(hw.def.id));
             mesh.userData.bodyKey = hw.harness;
           }
           if (o.name === "thread" || o.name === "bore") o.visible = false;
@@ -266,21 +250,13 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
           const parentEnd = keyOf(mate.b) === b.key ? mate.a : mate.b;
           const parent = bodies.current.get(keyOf(parentEnd));
           const n = new THREE.Vector3(...parentEnd.frame.normal).transformDirection(parent?.base ?? rec.base);
-          // props travel further so they clear the motors
-          const k = b.key.endsWith("/prop") ? 1.6 : 1;
+          // parts on a shaft (props, pulleys) travel further so they clear what drives them
+          const onShaft = [mate.a.iface, mate.b.iface].some((i) => i.protocols?.some((p) => p.type === "shaft"));
+          const k = onShaft ? 1.6 : 1;
           rec.offset.copy(parent?.offset ?? new THREE.Vector3()).addScaledVector(n, E * k);
         }
         rec.obj.matrix.copy(new THREE.Matrix4().makeTranslation(rec.offset).multiply(rec.base));
         rec.obj.matrixWorldNeedsUpdate = true;
-      }
-      const strap = bodies.current.get("strap");
-      const battRec = bodies.current.get("battery");
-      if (strap && battRec) {
-        battRec.offset.set(0, 0, E * 2.2);
-        battRec.obj.matrix.copy(new THREE.Matrix4().makeTranslation(battRec.offset).multiply(battRec.base));
-        strap.offset.set(0, 0, E * 1.2);
-        strap.obj.matrix.copy(new THREE.Matrix4().makeTranslation(strap.offset).multiply(strap.base));
-        strap.obj.matrixWorldNeedsUpdate = battRec.obj.matrixWorldNeedsUpdate = true;
       }
       for (const hw of hardware.current) {
         const S = bodies.current.get(hw.structure)?.offset ?? new THREE.Vector3();
@@ -342,18 +318,22 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       return rec ? new THREE.Vector3(...p).applyMatrix4(rec.base) : new THREE.Vector3(...p);
     };
     const R = 0.75; // conductor radius (≈ 18 AWG with insulation)
-    const plate = 5;
-    const floor = (x: number, y: number) => {
-      // bottom plate: body, arms (to each motor) and motor pads
-      const inBody = x > -65 && x < 62 && Math.abs(y) < 28;
-      let onArm = false;
-      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-        const mx = sx * 79.55;
-        const my = sy * 79.55;
-        const t = Math.max(0, Math.min(1, (x * mx + y * my) / (mx * mx + my * my)));
-        if (Math.hypot(x - mx * t, y - my * t) < 7 || Math.hypot(x - mx, y - my) < 12) onArm = true;
-      }
-      return inBody || onArm ? plate + R * 2.2 : -50;
+    // Surfaces a wire can rest on: the world bounds of each mesh of the structure modules
+    // (their definitions say "structure"). A wire only rests on surfaces below where it starts.
+    const surfaces: THREE.Box3[] = [];
+    for (const rec of bodies.current.values()) {
+      if (!(rec.body.def.categories ?? []).includes("structure")) continue;
+      rec.obj.updateMatrixWorld(true);
+      rec.obj.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.visible) return;
+        surfaces.push(new THREE.Box3().setFromObject(mesh));
+      });
+    }
+    const floorBelow = (zCap: number) => (x: number, y: number) => {
+      let top = -Infinity;
+      for (const b of surfaces) if (x >= b.min.x && x <= b.max.x && y >= b.min.y && y <= b.max.y && b.max.z <= zCap && b.max.z > top) top = b.max.z;
+      return top === -Infinity ? -1e6 : top + R * 2.2;
     };
     const colors = [0xd9363e, 0xe5b62a, 0x2f7fd6];
     for (const r of model.assembly.routes) {
@@ -366,10 +346,15 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       const out = new THREE.Vector3(endC.x - padC.x, endC.y - padC.y, 0).normalize();
       const side = new THREE.Vector3(-out.y, out.x, 0);
       const starts = [0, 1, 2].map((k) => padC.clone().addScaledVector(side, (k - 1) * 3.2).setZ(padC.z + 0.3));
-      const armDir = new THREE.Vector3(endC.x, endC.y, 0).normalize();
-      const armLen = Math.hypot(endC.x, endC.y);
-      const tie = (f: number) => armDir.clone().multiplyScalar(armLen * f).setZ(plate + R * 2.2);
-      const pins = [padC.clone().setZ(padC.z + 0.8), padC.clone().addScaledVector(out, 9).setZ(padC.z + 1.5), tie(0.5), tie(0.78), endC.clone()];
+      // tie points: along the run from the pads to the lead ends, resting on whatever structure is under them
+      const floor = floorBelow(Math.max(padC.z, endC.z) + 1);
+      const tieAt = (f: number) => {
+        const p = padC.clone().lerp(endC, f);
+        const z = floor(p.x, p.y);
+        return z > -1e5 ? p.setZ(z) : undefined;
+      };
+      const ties = [0.5, 0.78].map(tieAt).filter((p): p is THREE.Vector3 => !!p);
+      const pins = [padC.clone().setZ(padC.z + 0.8), padC.clone().addScaledVector(out, 9).setZ(padC.z + 1.5), ...ties, endC.clone()];
       const centre = rope(pins, { slack: 0.05, floor, segment: 2 });
       const lines = strands(centre, starts, ends, R * 1.25, 24, 8);
       lines.forEach((pts, k) => {
@@ -380,11 +365,11 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
         g.add(tube);
       });
       // zip ties at the tie points
-      for (const f of [0.5, 0.78]) {
+      for (const p of ties) {
         const tieMesh = new THREE.Mesh(new THREE.TorusGeometry(R * 2.9, 0.55, 8, 24), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
-        const p = tie(f);
-        tieMesh.position.copy(p).setZ(plate + R * 1.8);
-        tieMesh.lookAt(p.clone().add(armDir).setZ(plate + R * 1.8));
+        const z = p.z - R * 0.4;
+        tieMesh.position.copy(p).setZ(z);
+        tieMesh.lookAt(p.clone().add(out).setZ(z));
         tieMesh.scale.set(1, 0.72, 1);
         g.add(tieMesh);
       }
@@ -407,23 +392,25 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       if (!rec) return null;
       return (where === "top" ? rec.top : rec.centre).clone().applyMatrix4(rec.obj.matrix);
     };
-    const name = (key: string) => model.defs.get(key.split("#")[0])?.name ?? key;
+    const hintsL = display.labels ?? {};
+    const names = instanceNames(system, lookup);
+    const nameOf = (path: string) => names.get(path) ?? path;
+    // a name shared by several instances (four "Motor"s) is qualified by the parent's name
+    const sameName = (path: string) => [...names.entries()].filter(([p, n]) => n === nameOf(path) && p !== path && model.bodies.some((b) => b.key === p)).length > 0;
+    const rootKey = model.bodies.find((b) => !b.via && !b.hint)?.key;
     if (labelKinds.has("module")) {
-      const add = (key: string, title: string, sub?: string, where: "top" | "centre" = "top") =>
-        bodies.current.has(key) && items.push({ id: `m:${key}`, kind: "module", title, sub, anchor: bodyAnchor(key, where), onClick: () => setSel({ body: key }) });
-      add("frame", "Frame", "bottom plate · 5 mm, 225 mm wheelbase", "centre");
-      add("top_plate", "Top plate", "2 mm, on 30 mm standoffs");
-      add("stack/fc", "Flight controller", name("stack/fc"));
-      add("stack/esc", "4-in-1 ESC", name("stack/esc"), "centre");
-      for (const c of ["fl", "fr", "rl", "rr"]) add(`arm_${c}/motor`, `Motor · ${ARM_NAMES[c]}`, "MEPS NEON 2207 V2 1950KV");
-      add("arm_fl/prop", "Propeller", "HQProp Ethix S5 · 5.1 in", "centre");
-      add("battery", "Battery", "CNHL 6S 1100 mAh · strapped");
-      add("video", "O4 air unit", "DJI O4 transmission module", "centre");
-      add("video#cad_camera_step", "O4 camera", "side-plate mount", "centre");
-      add("gnss", "GNSS + compass", "Matek M9N-5883 (vendor CAD)");
+      for (const b of model.bodies) {
+        const h = hintsL.modules?.[b.key];
+        if (h?.hide) continue;
+        const path = b.key.split("#")[0];
+        const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+        let title = h?.title ?? nameOf(path);
+        if (!h?.title && b.key.includes("#")) title = `${title} · ${b.glb?.name?.replace(/ \(GLB\)$/, "") ?? b.key.split("#")[1]}`;
+        else if (!h?.title && parent && sameName(path)) title = `${title} · ${nameOf(parent)}`;
+        const sub = h?.sub ?? (b.def.name !== title ? b.def.name : undefined) ?? (b.hint ? "placed by a display hint" : undefined);
+        items.push({ id: `m:${b.key}`, kind: "module", title, sub, anchor: bodyAnchor(b.key, b.key === rootKey ? "centre" : "top"), onClick: () => setSel({ body: b.key }) });
+      }
     }
-    if (labelKinds.has("harness") && bodies.current.has("strap"))
-      items.push({ id: "h:strap", kind: "harness", title: "Battery strap", sub: "20 × 250 mm Kevlar · through the top plate", anchor: () => bodies.current.get("strap")!.top.clone().applyMatrix4(bodies.current.get("strap")!.obj.matrix), onClick: () => setSel({ body: "battery" }) });
     if (labelKinds.has("harness")) {
       const hwAnchor = (harness: string) => () => {
         const list = hardware.current.filter((h) => h.harness === harness);
@@ -432,40 +419,41 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
         list.forEach((h) => p.add(new THREE.Vector3().setFromMatrixPosition(h.obj.matrix)));
         return p.divideScalar(list.length);
       };
-      const hw = (harness: string, title: string) => {
-        const list = model.assembly.hardware.filter((h) => h.harness === harness);
-        if (!list.length) return;
+      for (const harness of [...new Set(model.assembly.hardware.map((h) => h.harness))]) {
+        const h = hintsL.harnesses?.[harness];
+        if (h?.hide) continue;
+        const list = model.assembly.hardware.filter((x) => x.harness === harness);
         // short names from the harness's own child refs ("M2 x 12 screw", "5 mm spacer")
         const hdef = model.assembly.instances.find((i) => i.path.join("/") === harness)?.def;
         const counts = new Map<string, number>();
-        for (const h of list) {
-          const n = hdef?.children?.find((c) => c.id === h.child)?.name ?? h.def.name;
+        for (const x of list) {
+          const n = hdef?.children?.find((c) => c.id === x.child)?.name ?? x.def.name;
           counts.set(n, (counts.get(n) ?? 0) + 1);
         }
-        const sub = [...counts].map(([n, c]) => `${c}× ${n.replace(/ x /g, "×")}`).join(" · ");
-        items.push({ id: `h:${harness}`, kind: "harness", title, sub, anchor: hwAnchor(harness), onClick: () => setSel({ mate: list[0].linkId }) });
-      };
-      hw("stack_hardware", "Stack hardware");
-      hw("frame_hardware", "Frame hardware");
-      hw("arm_fr_hardware", "Motor hardware (×4 motors)");
-      hw("gps_hardware", "GPS hardware");
-      hw("vtx_hardware", "Air unit hardware");
-      hw("camera_hardware", "Camera hardware");
-      const phase = model.assembly.routes.find((r) => r.linkId === "m4_phases") ?? model.assembly.routes[0];
-      if (phase)
+        const sub = h?.sub ?? [...counts].map(([n, c]) => `${c}× ${n.replace(/ x /g, "×")}`).join(" · ");
+        items.push({ id: `h:${harness}`, kind: "harness", title: h?.title ?? nameOf(harness), sub, anchor: hwAnchor(harness), onClick: () => setSel({ mate: list[0].linkId }) });
+      }
+      for (const r of model.assembly.routes) {
+        const h = hintsL.routes?.[r.linkId];
+        if (h?.hide) continue;
+        const link = system.links?.find((l) => l.id === r.linkId);
         items.push({
-          id: "h:phases",
+          id: `r:${r.linkId}`,
           kind: "harness",
-          title: "Motor phase leads (×4)",
-          sub: "3 × 150 mm leads, tied to the arm",
-          anchor: () => (wiresGroup.current.visible ? (wiresGroup.current.userData[phase.linkId] as THREE.Vector3 | undefined)?.clone() ?? null : null),
-          onClick: () => setSel({ mate: phase.linkId }),
+          title: h?.title ?? link?.name ?? r.linkId,
+          sub: h?.sub ?? `${r.b.frames.length} conductor(s): ${r.a.path.join("/")} → ${r.b.path.join("/")}`,
+          anchor: () => (wiresGroup.current.visible ? (wiresGroup.current.userData[r.linkId] as THREE.Vector3 | undefined)?.clone() ?? null : null),
+          onClick: () => setSel({ mate: r.linkId }),
         });
+      }
     }
     if (labelKinds.has("interface")) {
+      // one label per kind of joint: repeated instances (four motor mounts) share it
+      const seen = new Set<string>();
       for (const m of model.assembly.mates) {
-        if (m.linkId.includes("prop_on_shaft") && !m.linkId.startsWith("arm_fl")) continue;
-        if (/arm_(fr|rl|rr)_mount/.test(m.linkId)) continue;
+        const kindKey = `${m.a.def.id}:${m.a.iface.id}|${m.b.def.id}:${m.b.iface.id}`;
+        if (seen.has(kindKey)) continue;
+        seen.add(kindKey);
         const s = m.b;
         const key = s.path.join("/") + (s.frame.artifact ? `#${s.frame.artifact}` : "");
         items.push({
@@ -568,7 +556,9 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
             if (!art?.filePath) continue;
             const holder = new THREE.Group();
             addInBody(targetKey, holder);
-            loadGlb(art.filePath).then((gltf) => {
+            const artUrl = resolve(body.def.id, art.filePath);
+            if (!artUrl) continue;
+            loadGlb(artUrl).then((gltf) => {
               if (!gltf) return;
               const s = gltf.scene.clone(true);
               s.traverse((o) => {

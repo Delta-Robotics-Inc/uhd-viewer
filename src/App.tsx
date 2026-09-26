@@ -2,22 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import { checkSystem } from "@uhd/system/checks.js";
-import { SCENARIOS } from "@uhd-library/systems/quadcopter-5in/scenarios.js";
 import { buildView, withOverrides } from "./model/from-uhd";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
 import { computeLayout, type LevelLayout } from "./layout/layout";
-import { QUADCOPTER_TOP } from "./layout/quadcopter";
+import { bundleUrlFromLocation, loadBundle, type LoadedSource } from "./source/source";
 import { Canvas, type Selection } from "./canvas/Canvas";
 import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
 import { CadView } from "./cad/CadView";
 
-/** Hand layouts per level, keyed by drill path. */
-const HAND_LAYOUTS: Record<string, LevelLayout> = { "": QUADCOPTER_TOP };
-
-/** Children drawn expanded in place by default (design D8). */
-const DEFAULT_EXPANDED = ["arm_fl", "arm_fr", "arm_rl", "arm_rr"];
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
 type Overrides = Record<string, ChildLink[]>;
@@ -41,14 +35,29 @@ function save(key: string, value: unknown) {
 const params = new URLSearchParams(window.location.search);
 const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
 
+/** Loads the UHD bundle (the viewer's only input), then shows it. */
 export default function App() {
+  const [source, setSource] = useState<LoadedSource | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    loadBundle(bundleUrlFromLocation()).then(setSource, (e: Error) => setError(e.message));
+  }, []);
+  if (error) return <div className="load-state error">{error}</div>;
+  if (!source) return <div className="load-state">Loading UHD bundle…</div>;
+  return <Viewer source={source} />;
+}
+
+function Viewer({ source }: { source: LoadedSource }) {
+  const SCENARIOS = source.scenarios;
+  const HAND_LAYOUTS: Record<string, LevelLayout> = source.display.diagram?.layouts ?? {};
+  const DEFAULT_EXPANDED = source.display.diagram?.expanded ?? [];
   const [scenarioId, setScenarioId] = useState(params.get("scenario") ?? "nominal");
   const [drill, setDrill] = useState<string[]>(list("drill") ?? []);
   const [mode, setMode] = useState<Classification>((params.get("mode") as Classification) ?? "domain");
   const [conductors, setConductors] = useState(params.get("detail") === "conductors");
   const [showGrounds, setShowGrounds] = useState(params.get("grounds") === "1");
   const [expanded, setExpanded] = useState<Set<string>>(new Set([...DEFAULT_EXPANDED, ...(list("expand") ?? [])]));
-  const [openLinks, setOpenLinks] = useState<Set<string>>(new Set(list("open") ?? ["gnss_i2c"]));
+  const [openLinks, setOpenLinks] = useState<Set<string>>(new Set(list("open") ?? source.display.diagram?.openLinks ?? []));
   const [selection, setSelection] = useState<Selection>(
     params.get("select") ? { kind: params.get("select")!.startsWith("link:") ? "link" : "node", id: params.get("select")!.replace(/^(link|node):/, "") } : null,
   );
@@ -150,7 +159,7 @@ export default function App() {
         <div className="workspace">
           <ActivityBar panel={panel} onPanel={setPanel} errors={errors} />
           {view === "3d" ? (
-            <CadView key={scenario.id} system={system} lookup={scenario.lookup} />
+            <CadView key={scenario.id} system={system} lookup={scenario.lookup} source={source} />
           ) : (
           <>
           <main className="canvas">

@@ -123,3 +123,21 @@ Screenshots: `docs/screenshots/cad/`.
 `window.__cad.set(...)` in presentation mode (`?view=3d&present=1`). Needs
 the dev server, Google Chrome and an ffmpeg binary (`FFMPEG=...`; e.g. the one
 bundled by the `imageio-ffmpeg` Python package). The mp4 is not committed.
+
+## Input: a UHD bundle (PB-800)
+
+The viewer loads one UHD bundle (`uhd.bundle/v0`, defined in `@deltarobotics/uhd`)
+and nothing else: a root, its definitions, scenarios, per-definition artifact
+bases, producer diagnostics and display hints (layout, labels, placement
+hints, appearance, keyed by instance path). It never imports a project.
+
+- `?bundle=<url>` picks the bundle. The development default is the ProtoBoard
+  quadcopter project's build output (`protoboard build` writes
+  `.protoboard/build/uhd-bundle.json`); override it with `UHD_BUNDLE=<path>`.
+- Absolute artifact bases are served through Vite's `/@fs` route in
+  development; URL bases are used as they are.
+- Without display hints, the diagram lays itself out and 3D labels are derived
+  from instance names, harness children and mates; the assembly is placed from
+  the top-level module with the most interface frames.
+
+Boundary: `protoboard-cli/docs/specs/uhd-boundary.md`.

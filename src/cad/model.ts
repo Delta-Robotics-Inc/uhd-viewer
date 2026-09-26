@@ -23,9 +23,8 @@ import {
 } from "@uhd/system/geometry.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
 
-declare const __UHD_FS__: string;
-/** URL of a repo-relative UHD file, served by Vite from the sibling checkout. */
-export const uhdUrl = (filePath: string) => `${__UHD_FS__}/${filePath}`;
+/** Artifact URL for a definition's (relative) file path: supplied by the viewer's source. */
+export type ArtifactResolver = (definitionId: string, filePath: string) => string | undefined;
 
 export type Direction = "feature" | "artifact" | "procedural";
 export const DIRECTIONS: { id: Direction; label: string; hint: string }[] = [
@@ -85,7 +84,7 @@ function sourceOf(def: ModuleDef, glb?: ArtifactDef): string | undefined {
 }
 
 /** Fetch every manifest JSON the modules declare (artifacts with format json generated from a body). */
-export async function loadManifests(defs: ModuleDef[]): Promise<Map<string, GeometryManifest>> {
+export async function loadManifests(defs: ModuleDef[], resolve: ArtifactResolver): Promise<Map<string, GeometryManifest>> {
   const out = new Map<string, GeometryManifest>();
   await Promise.all(
     defs.flatMap((def) =>
@@ -93,7 +92,9 @@ export async function loadManifests(defs: ModuleDef[]): Promise<Map<string, Geom
         .filter((a) => a.format === "json" && a.provenance?.generatedFrom && a.filePath)
         .map(async (a) => {
           try {
-            const res = await fetch(uhdUrl(a.filePath!));
+            const url = resolve(def.id, a.filePath!);
+            if (!url) return;
+            const res = await fetch(url);
             if (res.ok) out.set(`${def.id}:${a.provenance!.generatedFrom}`, (await res.json()) as GeometryManifest);
           } catch {
             /* missing manifest: bindings report "unchecked" */
@@ -109,9 +110,10 @@ export function buildCadModel(
   lookup: ModuleLookup,
   manifests: Map<string, GeometryManifest>,
   hints: { path: string[]; matrix: Mat4; note: string }[] = [],
+  rootPath?: string[],
 ): CadModel {
   const fixed = Object.fromEntries(hints.map((h) => [bodyKey(h.path), h.matrix]));
-  const assembly = assemble(system, lookup, { root: ["frame"], fixed });
+  const assembly = assemble(system, lookup, { root: rootPath ?? defaultRoot(system, lookup), fixed });
   const defs = new Map(assembly.instances.map((i) => [bodyKey(i.path), i.def]));
   const bodies: CadBody[] = assembly.placements.map((p: Placement) => {
     const def = defs.get(bodyKey(p.path))!;
@@ -173,4 +175,20 @@ export function param(iface: InterfaceDef, id: string): number | undefined {
 }
 export function traitParam<T>(iface: InterfaceDef, type: string, key: string): T | undefined {
   return iface.traits?.find((t) => t.type === type)?.params?.[key] as T | undefined;
+}
+
+/**
+ * The instance the assembly is placed from when the display hints don't say:
+ * the top-level module with the most interface frames (the structure the
+ * others mount to).
+ */
+export function defaultRoot(system: ModuleDef, lookup: (id: string) => ModuleDef | undefined): string[] {
+  let best: { id: string; frames: number } | undefined;
+  for (const c of system.children ?? []) {
+    const def = lookup(c.moduleDefId);
+    if (!def || def.kind === "harness") continue;
+    const frames = def.interfaces.filter((i) => i.geometry?.frame).length;
+    if (frames && (!best || frames > best.frames)) best = { id: c.id, frames };
+  }
+  return best ? [best.id] : [];
 }
