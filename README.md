@@ -8,13 +8,15 @@ Tracking: PB-770 (Track B) under PB-763 in the ProtoBoard Stack Linear project.
 
 ![Quadcopter, domain classification](docs/screenshots/01-quadcopter-domain.png)
 
+![Fault scenario: DJI O4 on raw 6S](docs/screenshots/05-fault-o4-on-6s.png)
+
 ## Run
 
 The viewer imports UHD source and library parts from a sibling checkout
 (`../uhd`) until UHD ships a JSON form (PB-778).
 
 ```bash
-# ../uhd on branch mark/pb-782-quadcopter-system (or later)
+# ../uhd on branch mark/pb-793-child-link-integrity (or later)
 npm install
 npm run dev          # http://localhost:5178
 npm run build        # type-check + production bundle
@@ -30,6 +32,10 @@ To open a particular view, pass URL parameters:
 | `drill` | `stack` | Opens a child module as the canvas. |
 | `expand` | `stack` | Expands a child in place (the arms are expanded by default). |
 | `grounds` | `1` | Draws ground links as wires rather than symbols. |
+| `scenario` | `o4-on-vbat`, `frame-20mm-stack`, `gps-on-rx-uart`, `two-compasses`, `legacy-m10q` | Loads a fault or variant scenario. |
+| `panel` | `checks` | Opens the system checks panel. |
+| `select` | `node:gnss`, `link:m1_phases` | Selects a module or link. |
+| `pair` | `gnss_uart` | Opens the pair view for a link. |
 
 ## What the MVP covers
 
@@ -53,9 +59,15 @@ To open a particular view, pass URL parameters:
   - The hand layout lives in `src/layout/quadcopter.ts`; drill-in levels use an automatic layout.
   - Dragged positions are saved per level in local storage, and the toolbar can reset them.
 
-Not yet built: the pair view (board 08), editing child links from the canvas,
-harness nodes (board 04; UHD harness roles exist now), the `serve` entrypoint,
-and artifact links.
+- **Harness nodes (D2, board 04):** a link carried by a harness module is drawn through the harness pill: the XT60 lead, the DJI 3-in-1 cable, and the M3 stack hardware bus.
+- **System checks:** the Checks panel lists `checkSystem` diagnostics: supply budgets, propulsion current, I2C addresses, interface reuse, harness connectors. Clicking one selects its link or module; in DRC mode errors turn links red and warnings yellow.
+- **Scenarios:** the header switches between the nominal build and the fault scenarios defined in UHD. A banner explains the fault.
+- **Evidence:** a selected part shows its audit result, performance facts, assumptions, source conflicts, open data gaps and sources, all from the part's committed `sources.json` and `verification.json`.
+- **Pair view (board 08):** every stored link between two modules, left to right, with crossovers drawn as crossings and each side's unlinked interfaces listed.
+- **Remapping child links (D4):** *REMAP* on a link swaps child slots (for example motor phases). The override is stored as `childLinks`, re-validated by UHD (a slot used twice is rejected), locked on the canvas, and kept in local storage.
+
+Not yet built: dragging conductors on the canvas to remap, the `serve`
+entrypoint, and the 3D/CAD view.
 
 ## Design
 

@@ -62,6 +62,7 @@ const PORT_PITCH = 22;
 
 function defaultSize(node: ViewNode, visiblePorts: number): { w: number; h: number } {
   if (node.sheetPort) return { w: 150, h: 30 };
+  if (node.kind === "harness") return { w: 150, h: Math.max(30, 14 + (visiblePorts / 2) * 16) };
   if (node.shape === "circle") return /prop/i.test(node.label) ? { w: 60, h: 60 } : { w: 78, h: 78 };
   const perSide = Math.ceil(visiblePorts / 2);
   return { w: CARD_W, h: Math.max(84, 40 + perSide * PORT_PITCH) };
@@ -235,7 +236,7 @@ export function computeLayout(
   }
   for (const [nodeId, count] of sideCount) {
     const node = vm.nodes.find((n) => n.id === nodeId)!;
-    if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded) continue;
+    if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness") continue;
     boxes[nodeId].h = Math.max(boxes[nodeId].h, 44 + count * PORT_PITCH);
   }
 
@@ -275,9 +276,10 @@ export function computeLayout(
         p.x = cx + Math.cos(angle) * r;
         p.y = cy + Math.sin(angle) * r;
       } else if (side === "left" || side === "right") {
-        const inset = node.expanded ? 34 : 28;
+        const harness = node.kind === "harness";
+        const inset = node.expanded ? 34 : harness ? 4 : 28;
         p.x = side === "left" ? box.x : box.x + box.w;
-        p.y = box.y + inset + (box.h - inset - 12) * f;
+        p.y = box.y + inset + (box.h - inset - (harness ? 4 : 12)) * f;
       } else {
         p.x = box.x + 16 + (box.w - 32) * f;
         p.y = side === "top" ? box.y : box.y + box.h;
@@ -371,14 +373,18 @@ function placeLabels(
 ): Record<string, Pt> {
   const placed: Box[] = [];
   const out: Record<string, Pt> = {};
-  const cards = vm.nodes.filter((n) => !n.expanded).map((n) => boxes[n.id]);
+  const cards = [
+    ...vm.nodes.filter((n) => !n.expanded).map((n) => boxes[n.id]),
+    // title bars of expanded groups and modules
+    ...vm.nodes.filter((n) => n.expanded).map((n) => ({ ...boxes[n.id], h: 26 })),
+  ];
   const overlaps = (a: Box, b: Box, pad = 3) =>
     a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
 
   const ordered = [...vm.links].sort((a, b) => b.children.length - a.children.length);
   for (const link of ordered) {
     const pts = routes[link.id];
-    if (!pts || link.passThrough) continue;
+    if (!pts || link.passThrough || link.segment === "b") continue;
     if (pathLength(pts) < 70) continue;
     const size = labelSize(link);
     const fixed = hand?.links?.[link.id]?.labelT;

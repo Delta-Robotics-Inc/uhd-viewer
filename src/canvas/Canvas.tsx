@@ -35,7 +35,7 @@ export interface CanvasProps {
 export function Canvas(props: CanvasProps) {
   const { vm, layout, mode, selection } = props;
 
-  const selectedLink = selection?.kind === "link" ? vm.links.find((l) => l.id === selection.id) : undefined;
+  const selectedLinks = selection?.kind === "link" ? vm.links.filter((l) => l.linkId === selection.id) : [];
 
   const nodes = useMemo<Node<NodeData>[]>(() => {
     // parents before children, as React Flow requires
@@ -45,12 +45,12 @@ export function Canvas(props: CanvasProps) {
       const parentBox = node.parent ? layout.boxes[node.parent] : undefined;
       const ports = Object.values(layout.ports).filter((p) => p.node === node.id);
       const selectedPorts = new Set<string>();
-      if (selectedLink) {
-        for (const end of [selectedLink.source, selectedLink.target]) if (end.node === node.id) selectedPorts.add(end.port);
+      for (const l of selectedLinks) {
+        for (const end of [l.source, l.target]) if (end.node === node.id) selectedPorts.add(end.port);
       }
       return {
         id: node.id,
-        type: node.sheetPort ? "sheet" : node.expanded ? "container" : "module",
+        type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
         data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts },
@@ -59,7 +59,7 @@ export function Canvas(props: CanvasProps) {
         zIndex: node.expanded ? 0 : 2,
       };
     });
-  }, [vm, layout, mode, props.showGrounds, selection, selectedLink]);
+  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks]);
 
   const edges = useMemo<Edge<LinkData>[]>(() => {
     return vm.links
@@ -73,14 +73,14 @@ export function Canvas(props: CanvasProps) {
           target: link.target.node,
           sourceHandle: `p:${link.source.port}`,
           targetHandle: `p:${link.target.port}`,
-          selected: selection?.kind === "link" && selection.id === link.id,
+          selected: selection?.kind === "link" && selection.id === link.linkId,
           zIndex: link.passThrough ? 1 : 3,
           data: {
             link,
             points: layout.routes[link.id],
             color,
             faded: isFaded(link, mode),
-            open: props.openLinks.has(link.id),
+            open: props.openLinks.has(link.linkId),
             conductors: props.conductors,
             label: layout.labels[link.id],
             onToggle: props.onToggleLink,
@@ -110,7 +110,7 @@ export function Canvas(props: CanvasProps) {
       connectionMode={ConnectionMode.Loose}
       onNodesChange={onNodesChange}
       onNodeClick={(_, n) => props.onSelect({ kind: "node", id: n.id })}
-      onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: e.id })}
+      onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
       onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
       onPaneClick={() => props.onSelect(null)}
       nodesConnectable={false}

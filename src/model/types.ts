@@ -6,7 +6,7 @@
 
 export type LinkState = "configured" | "partial" | "incompatible" | "unconfigured";
 export type NodeKind = "module" | "group" | "harness";
-export type Shape = "rect" | "circle";
+export type Shape = "rect" | "circle" | "pill";
 
 /** A child interface revealed when a link is opened (a slot and the leaf bound to it). */
 export interface ViewChildPort {
@@ -83,8 +83,17 @@ export interface ViewLink {
   passThrough?: boolean;
   /** Ground return: drawn as ground symbols at both ports instead of a wire. */
   ground?: boolean;
-  /** Harness carrying the link, if any. */
+  /** Harness node carrying the link, if any. */
   harness?: string;
+  /**
+   * A link carried by a harness is drawn as two segments through the harness
+   * node: "a" (source → harness, carries the label) and "b" (harness → target).
+   */
+  segment?: "a" | "b";
+  /** Stored link id (shared by both segments). */
+  linkId: string;
+  /** Child links are a stored override (remapped by the user). */
+  manual?: boolean;
   diagnostics: string[];
 }
 

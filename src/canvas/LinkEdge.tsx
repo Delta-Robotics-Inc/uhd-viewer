@@ -71,6 +71,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
             className={`link-label nodrag nopan${selected ? " selected" : ""}`}
             style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, borderColor: color, color, opacity: faded ? 0.25 : 1 }}
           >
+            {link.manual && <Icon name="lock" size={9} />}
             <span>{link.name.toUpperCase()}</span>
             {expandable && !open && <span className="link-count">×{n}</span>}
             {expandable && (
@@ -80,7 +81,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
                 title={open ? "Close link" : "Open link"}
                 onClick={(e) => {
                   e.stopPropagation();
-                  data.onToggle(link.id);
+                  data.onToggle(link.linkId);
                 }}
               >
                 <Icon name={open ? "chevrons-down-up" : "chevrons-up-down"} size={10} />
