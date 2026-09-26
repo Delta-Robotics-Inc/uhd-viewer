@@ -7,9 +7,9 @@ import type { LinkState } from "./types";
 export type Classification = "domain" | "drc" | "signal";
 
 export const CLASSIFICATIONS: { id: Classification; label: string }[] = [
-  { id: "domain", label: "DOMAIN" },
-  { id: "drc", label: "DRC HEALTH" },
-  { id: "signal", label: "ELECTRICAL · SIGNAL" },
+  { id: "domain", label: "Domain" },
+  { id: "drc", label: "DRC health" },
+  { id: "signal", label: "Signal" },
 ];
 
 const DOMAIN_COLORS: Record<string, string> = {

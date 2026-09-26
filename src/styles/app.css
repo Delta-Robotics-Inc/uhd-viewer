@@ -1079,16 +1079,6 @@ button:disabled {
 .cad-canvas canvas {
   display: block;
 }
-.cad-toolbar {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  z-index: 2;
-  flex-wrap: wrap;
-}
 .cad-slider {
   display: flex;
   align-items: center;
@@ -1315,4 +1305,469 @@ button:disabled {
   font: inherit;
   cursor: pointer;
   text-decoration: underline dotted;
+}
+
+
+/* ===========================================================================
+ * ProtoBoard chrome: floating cards over a full-bleed canvas, 1px separators,
+ * Kode Mono UI text, ProtoMono headers, orange active states.
+ * (Values from ProtoBoard next-alpha: CanvasShell toolbar, AppHeader,
+ * ActivityBar, RightSidebar, dropdown-menu.)
+ * ========================================================================= */
+body {
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  background: var(--pb-background);
+}
+.app {
+  position: relative;
+}
+.workspace {
+  position: absolute;
+  inset: 0;
+}
+.workspace > .canvas,
+.workspace > .cad-view {
+  position: absolute;
+  inset: 0;
+}
+.card {
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+}
+.sep {
+  width: 1px;
+  height: 24px;
+  background: var(--pb-border);
+  flex-shrink: 0;
+}
+.sep-h {
+  height: 1px;
+  width: 100%;
+  background: var(--pb-border);
+}
+
+/* header: floating top bar */
+.header {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  height: 40px;
+  z-index: 50;
+  gap: 4px;
+  padding: 0 4px;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+}
+.brand {
+  height: 32px;
+  padding: 0 8px;
+  gap: 6px;
+}
+.brand-mark {
+  font-size: 15px;
+  color: var(--pb-primary);
+}
+.brand-name {
+  font-size: 13px;
+  color: var(--pb-foreground);
+}
+.crumb {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+}
+.crumb:hover {
+  background: var(--pb-muted);
+}
+.header-controls {
+  gap: 4px;
+}
+
+/* toggle groups (ProtoBoard ToggleGroup: gap-1, h-8, active = primary) */
+.segmented {
+  gap: 2px;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.segmented button,
+.chip-toggle {
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--pb-foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.segmented button:hover,
+.chip-toggle:hover {
+  background: var(--pb-accent);
+  border-color: var(--pb-border);
+}
+.segmented button.on,
+.chip-toggle.on {
+  background: var(--pb-primary);
+  border-color: var(--pb-primary);
+  color: var(--pb-primary-foreground);
+}
+.chip-toggle:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.scenario {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pb-muted-foreground);
+}
+.scenario:hover {
+  background: var(--pb-muted);
+}
+.scenario select {
+  font: 12px var(--font-ui);
+  color: var(--pb-foreground);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* activity rail: floating, left */
+.activity-bar {
+  position: absolute;
+  top: 48px;
+  left: 4px;
+  width: 40px;
+  z-index: 40;
+  padding: 4px;
+  gap: 4px;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+}
+.activity {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--pb-foreground);
+}
+.activity:not(:disabled):hover {
+  background: var(--pb-accent);
+  border-color: var(--pb-border);
+}
+.activity.on {
+  color: var(--pb-primary-foreground);
+  background: var(--pb-primary);
+}
+.activity:disabled {
+  opacity: 0.35;
+}
+
+/* inspector: floating right card */
+.inspector {
+  position: absolute;
+  top: 48px;
+  right: 4px;
+  bottom: 4px;
+  width: 340px;
+  z-index: 40;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+  overflow: hidden;
+}
+.cad-inspector {
+  width: 360px;
+}
+.inspector-header {
+  padding: 10px 12px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--pb-border);
+}
+.inspector-body {
+  padding: 4px 12px 16px;
+}
+.section-title {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pb-muted-foreground);
+  padding: 14px 0 6px;
+}
+.mini {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  letter-spacing: 0;
+  border-radius: 6px;
+  border: 1px solid var(--pb-border);
+  color: var(--pb-foreground);
+}
+.mini:hover {
+  background: var(--pb-accent);
+}
+
+/* bottom toolbar: floating, centred (CanvasShell: h-10, px-1, gap-1, shadow-lg) */
+.toolbar,
+.cad-toolbar {
+  position: absolute;
+  top: auto;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-lg);
+  z-index: 30;
+  flex-wrap: nowrap;
+}
+.toolbar button {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--pb-foreground);
+}
+.toolbar button:hover {
+  background: var(--pb-accent);
+  border-color: var(--pb-border);
+}
+.legend {
+  left: 52px;
+  right: auto;
+  bottom: 8px;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+}
+.scenario-banner {
+  top: 52px;
+}
+
+/* ---------------------------------------------------------------- 3D chrome */
+.cad-view.present .cad-canvas {
+  inset: 0;
+}
+.chip-toggle.icon {
+  padding: 0;
+  width: 32px;
+  justify-content: center;
+}
+.chip-toggle.caret {
+  padding: 0 4px;
+  min-width: 22px;
+  margin-left: -4px;
+}
+.cad-menu-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* dropdown (ProtoBoard dropdown-menu: popover bg, border, rounded-md, p-1, shadow-md) */
+.cad-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--pb-popover);
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  box-shadow: var(--pb-shadow-md);
+  z-index: 60;
+}
+.cad-menu-label {
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pb-muted-foreground);
+}
+.cad-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--pb-foreground);
+  text-align: left;
+}
+.cad-menu-item:hover {
+  background: #404040;
+}
+.cad-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--pb-border);
+  display: grid;
+  place-items: center;
+}
+.cad-check.on {
+  background: var(--pb-primary);
+  border-color: var(--pb-primary);
+  color: var(--pb-primary-foreground);
+}
+.cad-kind-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cad-notes {
+  left: 52px;
+  bottom: 56px;
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: var(--pb-radius);
+  box-shadow: var(--pb-shadow-md);
+  font-size: 12px;
+}
+
+/* callout labels */
+.cad-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+.cad-leaders {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.cad-leaders path {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+.cad-leaders circle {
+  stroke: var(--pb-background);
+  stroke-width: 1.5;
+}
+.cad-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 9px 6px 10px;
+  background: color-mix(in oklab, var(--pb-card) 92%, transparent);
+  border: 1px solid var(--pb-border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  box-shadow: var(--pb-shadow-md);
+  pointer-events: auto;
+  cursor: pointer;
+  white-space: nowrap;
+  will-change: transform;
+}
+.cad-label-title {
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--pb-foreground);
+}
+.cad-label-sub {
+  font-size: 11px;
+  color: var(--pb-muted-foreground);
+}
+.cad-label.kind-module {
+  border-left-color: #d6d3d1;
+}
+.cad-label.kind-harness {
+  border-left-color: var(--pb-primary);
+}
+.cad-label.kind-interface {
+  border-left-color: #22d3ee;
+}
+.cad-leaders path.kind-module {
+  stroke: #d6d3d1cc;
+}
+.cad-leaders path.kind-harness {
+  stroke: color-mix(in oklab, var(--pb-primary) 85%, transparent);
+}
+.cad-leaders path.kind-interface {
+  stroke: #22d3eecc;
+}
+.cad-leaders circle.kind-module,
+.cad-kind-dot.kind-module {
+  fill: #d6d3d1;
+  background: #d6d3d1;
+}
+.cad-leaders circle.kind-harness,
+.cad-kind-dot.kind-harness {
+  fill: var(--pb-primary);
+  background: var(--pb-primary);
+}
+.cad-leaders circle.kind-interface,
+.cad-kind-dot.kind-interface {
+  fill: #22d3ee;
+  background: #22d3ee;
+}
+
+/* presentation mode (video capture): canvas only, with a caption */
+.app:has(.cad-view.present) .header,
+.app:has(.cad-view.present) .activity-bar {
+  display: none;
+}
+.cad-caption {
+  position: absolute;
+  left: 40px;
+  bottom: 36px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.cad-caption-brand {
+  font-family: var(--font-label);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--pb-muted-foreground);
+}
+.cad-caption-brand span {
+  color: var(--pb-primary);
+}
+.cad-caption-title {
+  font-family: var(--font-label);
+  font-size: 28px;
+  color: var(--pb-foreground);
+}
+.cad-caption-sub {
+  font-size: 15px;
+  color: var(--pb-muted-foreground);
 }

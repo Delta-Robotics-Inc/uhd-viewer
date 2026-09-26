@@ -103,7 +103,8 @@ geometry is resolved per binding direction:
 
 Click a module to see each interface's frame and binding status; selecting an
 interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
-EXPLODE separates modules along the normal of the mate that placed them;
+ASSEMBLED / EXPLODED animates every module along the normal of the mate that placed it (hardware comes apart along its fastener stack);
+LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which);
 FRAMES shows every interface frame; WIRES draws electrical links that have
 geometry on both ends (motor phases); HARDWARE places the stack harness's
 fasteners and checks the screw stack-up; FOCUS looks along the selected
@@ -114,3 +115,11 @@ URL: `view=3d&body=arm_fl/motor&iface=base_mount&dir=feature&explode=14&focus=1`
 is generated locally by `library/cad/py/gnss_vendor.py` in the UHD repo.
 
 Screenshots: `docs/screenshots/cad/`.
+
+### Video
+
+`node scripts/capture-cad-video.mjs docs/video/quadcopter-3d.mp4` records the
+3D view (rotation, assembled ⇄ exploded, labels on/off) through
+`window.__cad.set(...)` in presentation mode (`?view=3d&present=1`). Needs
+the dev server, Google Chrome and an ffmpeg binary (`FFMPEG=...`; e.g. the one
+bundled by the `imageio-ffmpeg` Python package). The mp4 is not committed.

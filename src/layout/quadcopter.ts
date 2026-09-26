@@ -3,7 +3,9 @@ import type { LevelLayout } from "./layout";
 /**
  * Hand layout for the quadcopter's top level: arms at the four corners,
  * GNSS / stack / video down the centre, battery and receiver either side,
- * and the frame along the bottom collecting every mechanical mount.
+ * and the frame along the bottom collecting every mechanical mount. The
+ * top plate sits beside the GNSS it carries; fastener harnesses sit on the
+ * joints they hold (under each arm, and along the frame).
  */
 const ARM = { w: 270, h: 132 };
 
@@ -29,7 +31,16 @@ export const QUADCOPTER_TOP: LevelLayout = {
     strap: { x: 50, y: 520, w: 150, h: 76 },
     xt60_lead: { x: 452, y: 488, w: 104, h: 40 },
     dji_cable: { x: 700, y: 640, w: 150, h: 36 },
-    stack_hardware: { x: 520, y: 790, w: 150, h: 36 },
+    stack_hardware: { x: 470, y: 840, w: 150, h: 36 },
+    top_plate: { x: 880, y: 196, w: 170, h: 84 },
+    gps_hardware: { x: 880, y: 70, w: 150, h: 36 },
+    frame_hardware: { x: 1010, y: 840, w: 150, h: 36 },
+    vtx_hardware: { x: 830, y: 840, w: 150, h: 36 },
+    camera_hardware: { x: 650, y: 840, w: 150, h: 36 },
+    arm_fl_hardware: { x: 90, y: 200, w: 150, h: 36 },
+    arm_fr_hardware: { x: 1160, y: 200, w: 150, h: 36 },
+    arm_rl_hardware: { x: 90, y: 800, w: 150, h: 36 },
+    arm_rr_hardware: { x: 1160, y: 800, w: 150, h: 36 },
     receiver: { x: 960, y: 450, w: 200, h: 100 },
     video: { x: 700, y: 700, w: 240, h: 120 },
     frame: { x: 40, y: 900, w: 1320, h: 86 },
@@ -50,12 +61,14 @@ export const QUADCOPTER_TOP: LevelLayout = {
     "gnss|mount": "right",
     "bulk_cap|pos": "right",
     "bulk_cap|neg": "right",
-    "frame|gps_mount": "right",
+    "frame|standoff_mount": "top",
+    "top_plate|standoff_mount": "bottom",
+    "top_plate|gps_mount": "left",
   },
   links: {
     arm_fl_mount: { waypoints: [[18, 196], [18, 943]] },
     arm_fr_mount: { waypoints: [[1382, 196], [1382, 943]] },
     bulk_cap_pos: { waypoints: [[452, 368]] },
-    gps_mount: { waypoints: [[1020, 90], [1020, 20], [1400, 20], [1400, 960]] },
+
   },
 };

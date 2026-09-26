@@ -53,6 +53,7 @@ export function Header(props: {
         <span className="brand-mark">UHD</span>
         <span className="brand-name">VIEWER</span>
       </div>
+      <span className="sep" />
       <nav className="breadcrumb">
         {props.vm.path.map((p, i) => (
           <span key={p.id || "root"} className="crumb-wrap">
@@ -66,12 +67,13 @@ export function Header(props: {
       <div className="header-controls">
         <Segmented
           options={[
-            { id: "diagram", label: "DIAGRAM" },
+            { id: "diagram", label: "Diagram" },
             { id: "3d", label: "3D" },
           ]}
           value={props.view}
           onChange={props.onView}
         />
+        <span className="sep" />
         <label className="scenario">
           <Icon name="flask-conical" size={12} />
           <select value={props.scenario} onChange={(e) => props.onScenario(e.target.value)}>
@@ -82,17 +84,19 @@ export function Header(props: {
             ))}
           </select>
         </label>
+        <span className="sep" />
         <Segmented options={CLASSIFICATIONS} value={props.mode} onChange={props.onMode} />
+        <span className="sep" />
         <Segmented
           options={[
-            { id: "bundled", label: "BUNDLED" },
-            { id: "conductors", label: "CONDUCTORS" },
+            { id: "bundled", label: "Bundled" },
+            { id: "conductors", label: "Conductors" },
           ]}
           value={props.conductors ? "conductors" : "bundled"}
           onChange={(v) => props.onConductors(v === "conductors")}
         />
         <button className={`chip-toggle${props.showGrounds ? " on" : ""}`} onClick={() => props.onGrounds(!props.showGrounds)}>
-          GND WIRES
+          GND wires
         </button>
       </div>
     </header>

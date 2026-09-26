@@ -1,6 +1,8 @@
 /**
  * 3D view (PB-775): the quadcopter assembled from UHD links, with interface
- * geometry resolved through three binding directions.
+ * geometry resolved through three binding directions, mounting hardware
+ * placed from the harnesses' fastener stacks, wire harnesses simulated as
+ * ropes, and callout labels.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -13,37 +15,33 @@ import {
   buildCadModel,
   interfaceRows,
   loadManifests,
-  param,
   type BindingStatus,
   type CadBody,
   type CadModel,
   type Direction,
   type InterfaceRow,
 } from "./model";
-import {
-  COLORS,
-  cadWrapper,
-  createScene,
-  focusMaterial,
-  frameGizmo,
-  loadGlb,
-  materialFor,
-  proceduralGeometry,
-  toMatrix4,
-  type SceneHandle,
-} from "./scene";
+import { COLORS, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
+import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
+import { rope, strands } from "./wires";
+import { Icon } from "../canvas/Icon";
 
 const params = new URLSearchParams(window.location.search);
+
+/** Explode distance (mm per mate level) at "exploded". */
+const EXPLODE_MM = 26;
 
 /** Battery: strapped, so no link can place it; the frame's pad is a placement hint. */
 const HINTS = [
   {
     path: ["battery"],
-    // rotate the pack's long side (its Y) onto the frame's X, sit it on the top plate
-    matrix: [0, -1, 0, BATTERY_PAD.origin[0] + 0, 1, 0, 0, BATTERY_PAD.origin[1], 0, 0, 1, BATTERY_PAD.origin[2], 0, 0, 0, 1],
-    note: "placed by the frame's battery-pad hint: the pack is strapped, it has no mechanical interface",
+    matrix: [0, -1, 0, BATTERY_PAD.origin[0], 1, 0, 0, BATTERY_PAD.origin[1], 0, 0, 1, BATTERY_PAD.origin[2], 0, 0, 0, 1],
+    note: "placed by the top plate's battery-pad hint: the pack is strapped, it has no mechanical interface",
   },
 ];
+
+/** Friendly callout names for the quadcopter's instances. */
+const ARM_NAMES: Record<string, string> = { fl: "front-left", fr: "front-right", rl: "rear-left", rr: "rear-right" };
 
 export interface CadSelection {
   body?: string;
@@ -51,25 +49,53 @@ export interface CadSelection {
   mate?: string;
 }
 
+interface BodyRec {
+  body: CadBody;
+  obj: THREE.Group;
+  base: THREE.Matrix4;
+  centre: THREE.Vector3; // local bbox centre (CAD coords)
+  top: THREE.Vector3; // local bbox top centre
+  offset: THREE.Vector3;
+}
+interface HardwareRec {
+  obj: THREE.Group;
+  base: THREE.Matrix4;
+  harness: string;
+  structure: string;
+  mounted: string;
+  normal: THREE.Vector3;
+  atMm: number;
+  direction: 1 | -1;
+  offset: THREE.Vector3;
+}
+
 export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleLookup }) {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
-  const bodyObjects = useRef(new Map<string, THREE.Group>());
+  const labelsRef = useRef<LabelLayer | null>(null);
+  const bodies = useRef(new Map<string, BodyRec>());
+  const hardware = useRef<HardwareRec[]>([]);
+  const wiresGroup = useRef(new THREE.Group());
+  const explode = useRef({ value: Number(params.get("explode") ?? 0) > 0 ? 1 : 0, target: Number(params.get("explode") ?? 0) > 0 ? 1 : 0 });
   const [manifests, setManifests] = useState<Map<string, GeometryManifest> | null>(null);
   const [loaded, setLoaded] = useState(0);
   const [direction, setDirection] = useState<Direction>((params.get("dir") as Direction) ?? "feature");
-  const [explode, setExplode] = useState(Number(params.get("explode") ?? 0));
+  const [exploded, setExploded] = useState(explode.current.target === 1);
+  const [showLabels, setShowLabels] = useState(params.get("labels") !== "0");
+  const [labelKinds, setLabelKinds] = useState<Set<LabelKind>>(new Set((params.get("labelkinds") ?? "module,harness").split(",") as LabelKind[]));
+  const [labelMenu, setLabelMenu] = useState(false);
   const [showFrames, setShowFrames] = useState(params.get("frames") === "1");
   const [showWires, setShowWires] = useState(params.get("wires") !== "0");
   const [showHardware, setShowHardware] = useState(params.get("hardware") !== "0");
+  const present = params.get("present") === "1";
   const [sel, setSel] = useState<CadSelection>({
     body: params.get("body") ?? undefined,
     iface: params.get("iface") ?? undefined,
     mate: params.get("mate") ?? undefined,
   });
   const [notes, setNotes] = useState<string[]>([]);
+  const [caption, setCaption] = useState<[string, string] | null>(null);
 
-  // manifests (feature signatures) for every module in the system
   const allDefs = useMemo(() => {
     const out = new Map<string, ModuleDef>();
     const walk = (d: ModuleDef) => {
@@ -88,38 +114,44 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
     loadManifests(allDefs).then(setManifests);
   }, [allDefs]);
 
-  const model: CadModel | null = useMemo(
-    () => (manifests ? buildCadModel(system, lookup, manifests, HINTS) : null),
-    [system, lookup, manifests],
-  );
+  const model: CadModel | null = useMemo(() => (manifests ? buildCadModel(system, lookup, manifests, HINTS) : null), [system, lookup, manifests]);
 
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
     if (!host.current) return;
     const h = createScene(host.current);
     handle.current = h;
-    (window as unknown as { __cad: SceneHandle }).__cad = h;
+    h.scene.add(wiresGroup.current);
+    labelsRef.current = new LabelLayer(host.current);
     return () => {
+      labelsRef.current?.dispose();
       h.dispose();
       handle.current = null;
     };
   }, []);
 
-  // ---- bodies --------------------------------------------------------------
+  // ---- bodies and hardware ---------------------------------------------------
   useEffect(() => {
     const h = handle.current;
     if (!h || !model) return;
     h.root.clear();
-    bodyObjects.current.clear();
+    bodies.current.clear();
+    hardware.current = [];
     let cancelled = false;
     let count = 0;
+    const bump = () => {
+      count++;
+      if (!cancelled) setLoaded(count);
+    };
     for (const body of model.bodies) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
       obj.userData.key = body.key;
-      obj.matrix.copy(toMatrix4(body.matrix));
+      const base = toMatrix4(body.matrix);
+      obj.matrix.copy(base);
       h.root.add(obj);
-      bodyObjects.current.set(body.key, obj);
+      const rec: BodyRec = { body, obj, base, centre: new THREE.Vector3(), top: new THREE.Vector3(), offset: new THREE.Vector3() };
+      bodies.current.set(body.key, rec);
       if (!body.glb?.filePath) continue;
       loadGlb(body.glb.filePath).then((gltf) => {
         if (cancelled || !gltf) return;
@@ -134,28 +166,80 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
             continue;
           }
           part.traverse((o) => {
-            if ((o as THREE.Mesh).isMesh) {
-              const mesh = o as THREE.Mesh;
-              if (!vendor) mesh.material = materialFor(body.def, part.name);
-              else mesh.material = (mesh.material as THREE.Material).clone();
-              mesh.userData.bodyKey = body.key;
-            }
+            const mesh = o as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            mesh.material = vendor ? (mesh.material as THREE.Material).clone() : materialFor(body.def, part.name);
+            mesh.userData.bodyKey = body.key;
           });
         }
         const w = cadWrapper(scene);
         w.name = "cad";
+        // local bounds for label anchors (before parenting, so world = CAD coordinates)
+        w.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(w);
         obj.add(w);
-        if (body.hint) {
-          w.traverse((o) => {
-            const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-            if (m) {
-              m.transparent = true;
-              m.opacity = 0.35;
-            }
-          });
-        }
-        count++;
-        setLoaded(count);
+        rec.centre.copy(box.getCenter(new THREE.Vector3()));
+        rec.top.set(rec.centre.x, rec.centre.y, box.max.z);
+        bump();
+      });
+    }
+    // battery strap (a module with no mechanical interface): drawn around the hinted battery
+    const strapDef = model.assembly.instances.find((i) => i.path.join("/") === "strap")?.def;
+    const batt = model.bodies.find((b) => b.key === "battery");
+    if (strapDef && batt) {
+      const g = new THREE.Group();
+      g.matrixAutoUpdate = false;
+      g.matrix.copy(toMatrix4(batt.matrix));
+      const mat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.85 });
+      const band = (w: number, d: number, hgt: number, x: number, y: number, z: number) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, hgt), mat);
+        m.position.set(x, y, z);
+        m.userData.bodyKey = "strap";
+        g.add(m);
+      };
+      // pack coordinates: 39.5 (x) × 75 (y) × 35 (z); strap 20 mm wide across the pack, under the 2 mm plate
+      band(41.5, 20, 1, 0, 0, 35.5);
+      band(1, 20, 38, 20.75, 0, 16.5);
+      band(1, 20, 38, -20.75, 0, 16.5);
+      band(41.5, 20, 1, 0, 0, -2.5);
+      const logo = new THREE.Mesh(new THREE.BoxGeometry(12, 20.2, 1.4), new THREE.MeshStandardMaterial({ color: 0xff5c00, roughness: 0.5 }));
+      logo.position.set(6, 0, 35.6);
+      g.add(logo);
+      g.userData.key = "strap";
+      h.root.add(g);
+      const rec: BodyRec = {
+        body: { key: "strap", path: ["strap"], def: strapDef, matrix: batt.matrix, hint: "wrapped around the battery and the top plate" },
+        obj: g,
+        base: g.matrix.clone(),
+        centre: new THREE.Vector3(0, 0, 16),
+        top: new THREE.Vector3(0, 0, 36),
+        offset: new THREE.Vector3(),
+      };
+      bodies.current.set("strap", rec);
+    }
+    for (const hw of model.assembly.hardware) {
+      const obj = new THREE.Group();
+      obj.matrixAutoUpdate = false;
+      const base = toMatrix4(hw.matrix);
+      obj.matrix.copy(base);
+      obj.userData.harness = hw.harness;
+      h.root.add(obj);
+      const zCol = new THREE.Vector3().setFromMatrixColumn(base, 2).normalize().multiplyScalar(hw.direction);
+      hardware.current.push({ obj, base, harness: hw.harness, structure: hw.structure, mounted: hw.mounted, normal: zCol, atMm: hw.atMm, direction: hw.direction, offset: new THREE.Vector3() });
+      const file = hw.def.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
+      if (!file) continue;
+      loadGlb(file).then((gltf) => {
+        if (cancelled || !gltf) return;
+        const s = gltf.scene.clone(true);
+        s.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.isMesh) {
+            mesh.material = materialFor(hw.def, "");
+            mesh.userData.bodyKey = hw.harness;
+          }
+          if (o.name === "thread" || o.name === "bore") o.visible = false;
+        });
+        obj.add(cadWrapper(s));
       });
     }
     return () => {
@@ -163,56 +247,267 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
     };
   }, [model]);
 
-  // ---- explode: move each body along the normal of the mate that placed it --
+  // ---- explode: animate each body along the mate that placed it --------------
   useEffect(() => {
-    if (!model) return;
-    const offsets = new Map<string, THREE.Vector3>();
-    for (const b of model.bodies) {
-      const obj = bodyObjects.current.get(b.key);
-      if (!obj) continue;
-      let off = new THREE.Vector3();
-      const mate = model.assembly.mates.find((m) => m.linkId === b.via);
-      if (mate && explode) {
-        const [parent, frame] =
-          mate.b.path.join("/") + (mate.b.frame.artifact ? `#${mate.b.frame.artifact}` : "") === b.key ? [mate.a, mate.a.frame] : [mate.b, mate.b.frame];
-        const parentKey = parent.path.join("/") + (frame.artifact ? `#${frame.artifact}` : "");
-        const parentBody = model.bodies.find((x) => x.key === parentKey);
-        const n = new THREE.Vector3(...frame.normal).transformDirection(toMatrix4(parentBody?.matrix ?? b.matrix));
-        off = (offsets.get(parentKey) ?? new THREE.Vector3()).clone().add(n.multiplyScalar(explode));
-      }
-      offsets.set(b.key, off);
-      obj.matrix.copy(new THREE.Matrix4().makeTranslation(off).multiply(toMatrix4(b.matrix)));
-      obj.matrixWorldNeedsUpdate = true;
-    }
-  }, [model, explode, loaded]);
+    explode.current.target = exploded ? 1 : 0;
+  }, [exploded]);
 
-  // ---- overlays: selection, interface geometry, frames, wires, hardware ----
+  const applyExplode = useMemo(() => {
+    return (e: number) => {
+      if (!model) return;
+      const E = e * EXPLODE_MM;
+      for (const b of model.bodies) {
+        const rec = bodies.current.get(b.key);
+        if (!rec) continue;
+        rec.offset.set(0, 0, 0);
+        const mate = model.assembly.mates.find((m) => m.linkId === b.via);
+        if (mate && E) {
+          const keyOf = (end: MateEdge["a"]) => end.path.join("/") + (end.frame.artifact ? `#${end.frame.artifact}` : "");
+          const parentEnd = keyOf(mate.b) === b.key ? mate.a : mate.b;
+          const parent = bodies.current.get(keyOf(parentEnd));
+          const n = new THREE.Vector3(...parentEnd.frame.normal).transformDirection(parent?.base ?? rec.base);
+          // props travel further so they clear the motors
+          const k = b.key.endsWith("/prop") ? 1.6 : 1;
+          rec.offset.copy(parent?.offset ?? new THREE.Vector3()).addScaledVector(n, E * k);
+        }
+        rec.obj.matrix.copy(new THREE.Matrix4().makeTranslation(rec.offset).multiply(rec.base));
+        rec.obj.matrixWorldNeedsUpdate = true;
+      }
+      const strap = bodies.current.get("strap");
+      const battRec = bodies.current.get("battery");
+      if (strap && battRec) {
+        battRec.offset.set(0, 0, E * 2.2);
+        battRec.obj.matrix.copy(new THREE.Matrix4().makeTranslation(battRec.offset).multiply(battRec.base));
+        strap.offset.set(0, 0, E * 1.2);
+        strap.obj.matrix.copy(new THREE.Matrix4().makeTranslation(strap.offset).multiply(strap.base));
+        strap.obj.matrixWorldNeedsUpdate = battRec.obj.matrixWorldNeedsUpdate = true;
+      }
+      for (const hw of hardware.current) {
+        const S = bodies.current.get(hw.structure)?.offset ?? new THREE.Vector3();
+        const M = bodies.current.get(hw.mounted)?.offset ?? new THREE.Vector3();
+        const off = new THREE.Vector3();
+        if (hw.atMm < 0 && hw.direction === 1) off.copy(S).addScaledVector(hw.normal, -E * 0.9); // screws from behind: pulled out behind
+        else if (hw.direction === -1 && hw.atMm > 0) off.copy(M).addScaledVector(hw.normal, -E * 0.9); // from the far side: pulled out beyond
+        else if (hw.direction === -1) off.copy(S).addScaledVector(hw.normal, E * 0.9); // nuts behind the structure
+        else off.copy(S).lerp(M, 0.5); // spacers, standoffs: between
+        hw.offset.copy(off);
+        hw.obj.matrix.copy(new THREE.Matrix4().makeTranslation(off).multiply(hw.base));
+        hw.obj.matrixWorldNeedsUpdate = true;
+      }
+      wiresGroup.current.visible = showWiresRef.current && e < 0.02;
+      for (const m of wireMaterials.current) {
+        m.opacity = Math.max(0, 1 - e * 30);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model]);
+  const showWiresRef = useRef(showWires);
+  showWiresRef.current = showWires;
+  const wireMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
+
+  // per-frame: tween explode, lay out labels
+  useEffect(() => {
+    const h = handle.current;
+    if (!h) return;
+    const f = (dt: number) => {
+      const ex = explode.current;
+      if (ex.value !== ex.target) {
+        const step = dt / 1.4; // 1.4 s full travel
+        ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
+        const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
+        applyExplode(eased);
+      }
+      const size = h.renderer.getSize(new THREE.Vector2());
+      labelsRef.current?.update(h.camera, size.x, size.y, dt);
+    };
+    h.onFrame.add(f);
+    return () => {
+      h.onFrame.delete(f);
+    };
+  }, [applyExplode]);
+  useEffect(() => {
+    const ex = explode.current;
+    const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
+    applyExplode(eased);
+  }, [applyExplode, loaded, showWires]);
+
+  // ---- wire harnesses: ropes from ESC pads, tied along the arm, to the motor leads
+  useEffect(() => {
+    const g = wiresGroup.current;
+    g.clear();
+    wireMaterials.current = [];
+    if (!model || !showWires) return;
+    const at = (key: string, p: [number, number, number]) => {
+      const rec = bodies.current.get(key);
+      return rec ? new THREE.Vector3(...p).applyMatrix4(rec.base) : new THREE.Vector3(...p);
+    };
+    const R = 0.75; // conductor radius (≈ 18 AWG with insulation)
+    const plate = 5;
+    const floor = (x: number, y: number) => {
+      // bottom plate: body, arms (to each motor) and motor pads
+      const inBody = x > -65 && x < 62 && Math.abs(y) < 28;
+      let onArm = false;
+      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const mx = sx * 79.55;
+        const my = sy * 79.55;
+        const t = Math.max(0, Math.min(1, (x * mx + y * my) / (mx * mx + my * my)));
+        if (Math.hypot(x - mx * t, y - my * t) < 7 || Math.hypot(x - mx, y - my) < 12) onArm = true;
+      }
+      return inBody || onArm ? plate + R * 2.2 : -50;
+    };
+    const colors = [0xd9363e, 0xe5b62a, 0x2f7fd6];
+    for (const r of model.assembly.routes) {
+      const aKey = r.a.path.join("/");
+      const bKey = r.b.path.join("/");
+      const pad = r.a.frames[0].frame;
+      const padC = at(aKey, pad.origin as [number, number, number]);
+      const ends = r.b.frames.map((f) => at(bKey, f.frame.origin as [number, number, number]));
+      const endC = ends.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(ends.length);
+      const out = new THREE.Vector3(endC.x - padC.x, endC.y - padC.y, 0).normalize();
+      const side = new THREE.Vector3(-out.y, out.x, 0);
+      const starts = [0, 1, 2].map((k) => padC.clone().addScaledVector(side, (k - 1) * 3.2).setZ(padC.z + 0.3));
+      const armDir = new THREE.Vector3(endC.x, endC.y, 0).normalize();
+      const armLen = Math.hypot(endC.x, endC.y);
+      const tie = (f: number) => armDir.clone().multiplyScalar(armLen * f).setZ(plate + R * 2.2);
+      const pins = [padC.clone().setZ(padC.z + 0.8), padC.clone().addScaledVector(out, 9).setZ(padC.z + 1.5), tie(0.5), tie(0.78), endC.clone()];
+      const centre = rope(pins, { slack: 0.05, floor, segment: 2 });
+      const lines = strands(centre, starts, ends, R * 1.25, 24, 8);
+      lines.forEach((pts, k) => {
+        const mat = new THREE.MeshStandardMaterial({ color: colors[k % 3], roughness: 0.55, metalness: 0.05, transparent: true });
+        wireMaterials.current.push(mat);
+        const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, R, 10), mat);
+        tube.userData.link = r.linkId;
+        g.add(tube);
+      });
+      // zip ties at the tie points
+      for (const f of [0.5, 0.78]) {
+        const tieMesh = new THREE.Mesh(new THREE.TorusGeometry(R * 2.9, 0.55, 8, 24), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
+        const p = tie(f);
+        tieMesh.position.copy(p).setZ(plate + R * 1.8);
+        tieMesh.lookAt(p.clone().add(armDir).setZ(plate + R * 1.8));
+        tieMesh.scale.set(1, 0.72, 1);
+        g.add(tieMesh);
+      }
+      g.userData[r.linkId] = centre[Math.floor(centre.length * 0.62)];
+    }
+    applyExplode(explode.current.value);
+  }, [model, showWires, loaded, applyExplode]);
+
+  useEffect(() => {
+    for (const hw of hardware.current) hw.obj.visible = showHardware;
+  }, [showHardware, loaded]);
+
+  // ---- labels ------------------------------------------------------------------
+  useEffect(() => {
+    const layer = labelsRef.current;
+    if (!layer || !model) return;
+    const items: LabelItem[] = [];
+    const bodyAnchor = (key: string, where: "top" | "centre" = "top") => () => {
+      const rec = bodies.current.get(key);
+      if (!rec) return null;
+      return (where === "top" ? rec.top : rec.centre).clone().applyMatrix4(rec.obj.matrix);
+    };
+    const name = (key: string) => model.defs.get(key.split("#")[0])?.name ?? key;
+    if (labelKinds.has("module")) {
+      const add = (key: string, title: string, sub?: string, where: "top" | "centre" = "top") =>
+        bodies.current.has(key) && items.push({ id: `m:${key}`, kind: "module", title, sub, anchor: bodyAnchor(key, where), onClick: () => setSel({ body: key }) });
+      add("frame", "Frame", "bottom plate · 5 mm, 225 mm wheelbase", "centre");
+      add("top_plate", "Top plate", "2 mm, on 30 mm standoffs");
+      add("stack/fc", "Flight controller", name("stack/fc"));
+      add("stack/esc", "4-in-1 ESC", name("stack/esc"), "centre");
+      for (const c of ["fl", "fr", "rl", "rr"]) add(`arm_${c}/motor`, `Motor · ${ARM_NAMES[c]}`, "MEPS NEON 2207 V2 1950KV");
+      add("arm_fl/prop", "Propeller", "HQProp Ethix S5 · 5.1 in", "centre");
+      add("battery", "Battery", "CNHL 6S 1100 mAh · strapped");
+      add("video", "O4 air unit", "DJI O4 transmission module", "centre");
+      add("video#cad_camera_step", "O4 camera", "side-plate mount", "centre");
+      add("gnss", "GNSS + compass", "Matek M9N-5883 (vendor CAD)");
+    }
+    if (labelKinds.has("harness") && bodies.current.has("strap"))
+      items.push({ id: "h:strap", kind: "harness", title: "Battery strap", sub: "20 × 250 mm Kevlar · through the top plate", anchor: () => bodies.current.get("strap")!.top.clone().applyMatrix4(bodies.current.get("strap")!.obj.matrix), onClick: () => setSel({ body: "battery" }) });
+    if (labelKinds.has("harness")) {
+      const hwAnchor = (harness: string) => () => {
+        const list = hardware.current.filter((h) => h.harness === harness);
+        if (!list.length || !showHardware) return null;
+        const p = new THREE.Vector3();
+        list.forEach((h) => p.add(new THREE.Vector3().setFromMatrixPosition(h.obj.matrix)));
+        return p.divideScalar(list.length);
+      };
+      const hw = (harness: string, title: string) => {
+        const list = model.assembly.hardware.filter((h) => h.harness === harness);
+        if (!list.length) return;
+        // short names from the harness's own child refs ("M2 x 12 screw", "5 mm spacer")
+        const hdef = model.assembly.instances.find((i) => i.path.join("/") === harness)?.def;
+        const counts = new Map<string, number>();
+        for (const h of list) {
+          const n = hdef?.children?.find((c) => c.id === h.child)?.name ?? h.def.name;
+          counts.set(n, (counts.get(n) ?? 0) + 1);
+        }
+        const sub = [...counts].map(([n, c]) => `${c}× ${n.replace(/ x /g, "×")}`).join(" · ");
+        items.push({ id: `h:${harness}`, kind: "harness", title, sub, anchor: hwAnchor(harness), onClick: () => setSel({ mate: list[0].linkId }) });
+      };
+      hw("stack_hardware", "Stack hardware");
+      hw("frame_hardware", "Frame hardware");
+      hw("arm_fr_hardware", "Motor hardware (×4 motors)");
+      hw("gps_hardware", "GPS hardware");
+      hw("vtx_hardware", "Air unit hardware");
+      hw("camera_hardware", "Camera hardware");
+      const phase = model.assembly.routes.find((r) => r.linkId === "m4_phases") ?? model.assembly.routes[0];
+      if (phase)
+        items.push({
+          id: "h:phases",
+          kind: "harness",
+          title: "Motor phase leads (×4)",
+          sub: "3 × 150 mm leads, tied to the arm",
+          anchor: () => (wiresGroup.current.visible ? (wiresGroup.current.userData[phase.linkId] as THREE.Vector3 | undefined)?.clone() ?? null : null),
+          onClick: () => setSel({ mate: phase.linkId }),
+        });
+    }
+    if (labelKinds.has("interface")) {
+      for (const m of model.assembly.mates) {
+        if (m.linkId.includes("prop_on_shaft") && !m.linkId.startsWith("arm_fl")) continue;
+        if (/arm_(fr|rl|rr)_mount/.test(m.linkId)) continue;
+        const s = m.b;
+        const key = s.path.join("/") + (s.frame.artifact ? `#${s.frame.artifact}` : "");
+        items.push({
+          id: `i:${m.linkId}`,
+          kind: "interface",
+          title: `${m.a.iface.id} ↔ ${m.b.iface.id}`,
+          sub: m.linkId.replace(/_/g, " "),
+          anchor: () => {
+            const rec = bodies.current.get(key);
+            return rec ? new THREE.Vector3(...s.frame.origin).applyMatrix4(rec.obj.matrix) : null;
+          },
+          onClick: () => setSel({ mate: m.linkId }),
+        });
+      }
+    }
+    layer.setItems(items);
+    layer.target = showLabels ? 1 : 0;
+    layer.margins = { top: present ? 60 : 60, bottom: 64, left: 56, right: present ? 16 : 380 };
+  }, [model, labelKinds, showLabels, loaded, showHardware, showWires, present]);
+
+  // ---- selection overlays: interface geometry per direction, frames ----------
   useEffect(() => {
     const h = handle.current;
     if (!h || !model) return;
-    h.overlay.clear();
     const restore: (() => void)[] = [];
     const newNotes: string[] = [];
+    const objOf = (key: string) => bodies.current.get(key)?.obj;
 
-    // module highlight
-    for (const [key, obj] of bodyObjects.current) {
-      obj.traverse((o) => {
+    for (const [key, rec] of bodies.current) {
+      rec.obj.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? 0x2a1200 : 0x000000);
       });
     }
-
     const addInBody = (key: string, obj: THREE.Object3D) => {
-      const body = bodyObjects.current.get(key);
+      const body = objOf(key);
       if (!body) return;
-      obj.userData.overlay = true;
       body.add(obj);
       restore.push(() => body.remove(obj));
     };
 
-    /** Draw an interface's geometry for the current direction, in its body's coordinates. */
     const drawInterface = (body: CadBody, row: InterfaceRow, color: number) => {
-      const bodyObj = bodyObjects.current.get(body.key);
       for (const src of row.sources.length ? row.sources : [row.iface.id]) {
         const iface = body.def.interfaces.find((i) => i.id === src)!;
         const frame = iface.geometry?.frame;
@@ -230,7 +525,7 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
               continue;
             }
             const artifactKey = r.ref.artifact === body.bodyArtifact ? body.key : `${body.path.join("/")}#${r.ref.artifact}`;
-            const obj = bodyObjects.current.get(artifactKey) ?? bodyObj;
+            const obj = objOf(artifactKey) ?? objOf(body.key);
             const nodes: THREE.Object3D[] = [];
             const featureName = r.ref.name;
             obj?.traverse((o) => {
@@ -274,10 +569,7 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
             const holder = new THREE.Group();
             addInBody(targetKey, holder);
             loadGlb(art.filePath).then((gltf) => {
-              if (!gltf) {
-                newNotes.push(`${src}: ${art.filePath} not found`);
-                return;
-              }
+              if (!gltf) return;
               const s = gltf.scene.clone(true);
               s.traverse((o) => {
                 if ((o as THREE.Mesh).isMesh) {
@@ -298,8 +590,6 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
 
     const bodyFor = (key?: string) => model.bodies.find((b) => b.key === key);
     const rowFor = (def: ModuleDef, id: string) => interfaceRows(def, model.manifests).find((r) => r.iface.id === id);
-
-    // selected interface, and its mated counterpart
     const selBody = bodyFor(sel.body);
     const mateOf = (m: MateEdge, key: string, ifaceId: string) =>
       (m.a.path.join("/") === key.split("#")[0] && m.a.iface.id === ifaceId) || (m.b.path.join("/") === key.split("#")[0] && m.b.iface.id === ifaceId);
@@ -317,136 +607,39 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
         const row = b && rowFor(b.def, end.iface.id);
         if (b && row) drawInterface(b, row, sel.iface ? COLORS.counterpart : COLORS.focus);
       }
+      // the mate's hardware glows too
+      if (mate.harnessPath) {
+        const hk = mate.harnessPath.join("/");
+        for (const hw of hardware.current.filter((x) => x.harness === hk)) {
+          const mats = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+          hw.obj.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (mesh.isMesh) {
+              mats.set(mesh, mesh.material);
+              mesh.material = focusMaterial(COLORS.focus);
+            }
+          });
+          restore.push(() => {
+            for (const [mesh, m] of mats) mesh.material = m;
+          });
+        }
+      }
     }
-
-    // all frames
     if (showFrames) {
       for (const b of model.bodies) {
         for (const i of b.def.interfaces) {
           const f = i.geometry?.frame;
           if (!f) continue;
           const targetKey = f.artifact ? `${b.path.join("/")}#${f.artifact}` : b.key;
-          if (f.artifact && targetKey !== b.key && !bodyObjects.current.has(targetKey)) continue;
+          if (f.artifact && targetKey !== b.key && !bodies.current.has(targetKey)) continue;
           if (!f.artifact && b.key.includes("#")) continue;
           addInBody(targetKey, frameGizmo(f, 9));
         }
       }
     }
-
-    // world position of a frame on a body (explode included)
-    const world = (key: string, p: [number, number, number]) => {
-      const obj = bodyObjects.current.get(key);
-      return obj ? new THREE.Vector3(...p).applyMatrix4(obj.matrix) : new THREE.Vector3(...p);
-    };
-    const worldDir = (key: string, d: [number, number, number]) => {
-      const obj = bodyObjects.current.get(key);
-      return obj ? new THREE.Vector3(...d).transformDirection(obj.matrix) : new THREE.Vector3(...d);
-    };
-
-    // wires: electrical links with geometry on both ends
-    if (showWires) {
-      for (const r of model.assembly.routes) {
-        const aKey = r.a.path.join("/");
-        const bKey = r.b.path.join("/");
-        const highlighted = sel.mate === r.linkId || sel.body === aKey || sel.body === bKey;
-        r.b.frames.forEach((bf, k) => {
-          const af = r.a.frames[Math.min(k, r.a.frames.length - 1)].frame;
-          const spread: [number, number, number] =
-            r.a.frames.length === 1 ? [af.origin[0], af.origin[1] - Math.sign(af.origin[1]) * (k - 1) * 3.2, af.origin[2]] : af.origin;
-          const p0 = world(aKey, spread);
-          const p3 = world(bKey, bf.frame.origin);
-          const n0 = worldDir(aKey, af.normal);
-          const n3 = worldDir(bKey, bf.frame.normal);
-          const p1 = p0.clone().add(n0.multiplyScalar(6));
-          const p2 = p3.clone().add(n3.multiplyScalar(10));
-          const mid = p1.clone().lerp(p2, 0.5).add(new THREE.Vector3(0, 0, -3));
-          const curve = new THREE.CatmullRomCurve3([p0, p1, mid, p2, p3]);
-          const tube = new THREE.Mesh(
-            new THREE.TubeGeometry(curve, 48, highlighted ? 0.9 : 0.7, 8),
-            new THREE.MeshStandardMaterial({ color: COLORS.phase[k % 3], roughness: 0.6, emissive: highlighted ? COLORS.phase[k % 3] : 0, emissiveIntensity: 0.35 }),
-          );
-          tube.userData.link = r.linkId;
-          h.overlay.add(tube);
-        });
-      }
-    }
-
-    // stack hardware: the harness's fasteners at the frame's stack pattern
-    if (showHardware) {
-      const frameBody = bodyFor("frame");
-      const stack = frameBody?.def.interfaces.find((i) => i.id === "stack_mount");
-      const esc = bodyFor("stack/esc");
-      const fc = bodyFor("stack/fc");
-      const screw = lookup("iso-4762-m3x30-socket-head-cap-screw");
-      const spacer = lookup("ettinger-005-83-060-m3-nylon-spacer-6mm");
-      const nut = lookup("iso-10511-m3-nyloc-nut");
-      if (stack?.geometry?.frame && esc && fc && screw && spacer && nut) {
-        const s = (param(stack, "hole_spacing") ?? 30.5) / 2;
-        const zPlateTop = stack.geometry.frame.origin[2];
-        // stack-up from the assembled (not exploded) placements
-        const zEsc = esc.matrix[11];
-        const zFc = fc.matrix[11];
-        const pcb = 1.6;
-        const glbOf = (d: ModuleDef) => d.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
-        const place = (d: ModuleDef, x: number, y: number, z: number, color?: number) => {
-          const file = glbOf(d);
-          if (!file) return;
-          loadGlb(file).then((gltf) => {
-            if (!gltf) return;
-            const obj = gltf.scene.clone(true);
-            obj.traverse((o) => {
-              if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = color ? focusMaterial(color) : materialFor(d, "");
-              if (o.name === "thread" || o.name === "bore") o.visible = false;
-            });
-            const w = cadWrapper(obj);
-            w.position.set(x, y, z);
-            h.overlay.add(w);
-          });
-        };
-        const hl = sel.body === "stack_hardware" ? COLORS.focus : undefined;
-        for (const [x, y] of [
-          [-s, -s],
-          [-s, s],
-          [s, -s],
-          [s, s],
-        ]) {
-          place(screw, x, y, 0, hl);
-          place(spacer, x, y, zPlateTop, hl);
-          place(spacer, x, y, zEsc + pcb, hl);
-          place(nut, x, y, zFc + pcb, hl);
-        }
-        const screwLen = param(screw.interfaces[0], "length") ?? 30;
-        const needed = zFc + pcb + 4;
-        newNotes.push(
-          needed <= screwLen
-            ? `stack hardware: M3×${screwLen} reaches the nut (stack-up ${needed.toFixed(1)} mm, ${(screwLen - needed).toFixed(1)} mm proud)`
-            : `stack hardware: M3×${screwLen} is ${(needed - screwLen).toFixed(1)} mm short of the nut`,
-        );
-      }
-    }
-
     setNotes([...new Set(newNotes)]);
     return () => restore.forEach((f) => f());
-  }, [model, sel, direction, showFrames, showWires, showHardware, explode, loaded, lookup]);
-
-  // ---- focus: look at the selected module's interface from the side its normal faces
-  const focus = () => {
-    const h = handle.current;
-    const obj = sel.body ? bodyObjects.current.get(sel.body) : undefined;
-    const body = model?.bodies.find((b) => b.key === sel.body);
-    if (!h || !obj || !body) return;
-    const f = body.def.interfaces.find((i) => i.id === sel.iface)?.geometry?.frame;
-    const target = f ? new THREE.Vector3(...f.origin).applyMatrix4(obj.matrix) : new THREE.Box3().setFromObject(obj).getCenter(new THREE.Vector3());
-    const n = f ? new THREE.Vector3(...f.normal).transformDirection(obj.matrix) : new THREE.Vector3(0.6, -0.8, 0.6);
-    // oblique: mostly along the normal, tilted sideways so the part stays readable
-    const dir = n.clone().multiplyScalar(0.75).add(new THREE.Vector3(0.55, -0.75, 0).normalize().multiplyScalar(0.66)).normalize();
-    h.controls.target.copy(target);
-    h.camera.position.copy(target.clone().add(dir.multiplyScalar(160)));
-  };
-  useEffect(() => {
-    if (params.get("focus") === "1" && loaded >= (model?.bodies.filter((b) => b.glb).length ?? 1)) focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, model]);
+  }, [model, sel, direction, showFrames, loaded]);
 
   // ---- picking ---------------------------------------------------------------
   useEffect(() => {
@@ -460,10 +653,14 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       const r = el.getBoundingClientRect();
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
-      const hit = ray.intersectObjects([h.root, h.overlay], true).find((x) => x.object.visible && (x.object.userData.bodyKey || x.object.userData.link));
+      const hit = ray.intersectObjects([h.root, wiresGroup.current], true).find((x) => x.object.visible && (x.object.userData.bodyKey || x.object.userData.link));
       if (!hit) setSel({});
       else if (hit.object.userData.link) setSel({ mate: hit.object.userData.link });
-      else setSel({ body: hit.object.userData.bodyKey });
+      else {
+        const k = hit.object.userData.bodyKey as string;
+        const hwMate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
+        setSel(hwMate ? { mate: hwMate } : { body: k });
+      }
     };
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerup", onUp);
@@ -471,41 +668,145 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
     };
-  }, []);
+  }, [model]);
+
+  // ---- camera helpers and the capture API ---------------------------------------
+  const orbit = (azimuthDeg: number, elevationDeg: number, distance: number, target = new THREE.Vector3(0, 0, 18)) => {
+    const h = handle.current;
+    if (!h) return;
+    const az = (azimuthDeg * Math.PI) / 180;
+    const el = (elevationDeg * Math.PI) / 180;
+    h.controls.target.copy(target);
+    h.camera.position.set(target.x + distance * Math.cos(el) * Math.cos(az), target.y + distance * Math.cos(el) * Math.sin(az), target.z + distance * Math.sin(el));
+    h.camera.lookAt(target);
+  };
+  const focus = () => {
+    const h = handle.current;
+    const rec = sel.body ? bodies.current.get(sel.body) : undefined;
+    if (!h || !rec) return;
+    const f = rec.body.def.interfaces.find((i) => i.id === sel.iface)?.geometry?.frame;
+    const target = f ? new THREE.Vector3(...f.origin).applyMatrix4(rec.obj.matrix) : rec.centre.clone().applyMatrix4(rec.obj.matrix);
+    const n = f ? new THREE.Vector3(...f.normal).transformDirection(rec.obj.matrix) : new THREE.Vector3(0.6, -0.8, 0.6);
+    const dir = n.clone().multiplyScalar(0.75).add(new THREE.Vector3(0.55, -0.75, 0).normalize().multiplyScalar(0.66)).normalize();
+    h.controls.target.copy(target);
+    h.camera.position.copy(target.clone().add(dir.multiplyScalar(160)));
+  };
+  useEffect(() => {
+    const h = handle.current;
+    if (!h) return;
+    if (!params.get("focus")) orbit(Number(params.get("az") ?? -58), Number(params.get("el") ?? 28), Number(params.get("dist") ?? 520));
+    // Deterministic control for video capture: scripts/capture-cad-video.mjs
+    (window as unknown as Record<string, unknown>).__cad = {
+      ready: () => loaded,
+      set: (s: { azimuth?: number; elevation?: number; distance?: number; explode?: number; labels?: boolean; caption?: [string, string] }) => {
+        h.manual.on = true;
+        if (s.caption) setCaption(s.caption);
+        if (s.explode !== undefined) {
+          explode.current.value = explode.current.target = s.explode;
+          const e = s.explode;
+          applyExplode(e < 0.5 ? 4 * e ** 3 : 1 - (-2 * e + 2) ** 3 / 2);
+        }
+        if (s.labels !== undefined && labelsRef.current) labelsRef.current.target = s.labels ? 1 : 0;
+        if (s.azimuth !== undefined) orbit(s.azimuth, s.elevation ?? 28, s.distance ?? 520);
+        h.renderOnce();
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyExplode, loaded]);
+  useEffect(() => {
+    if (params.get("focus") === "1" && loaded >= (model?.bodies.filter((b) => b.glb).length ?? 1)) focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, model]);
+
+  const toggleKind = (k: LabelKind) =>
+    setLabelKinds((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
 
   return (
-    <div className="cad-view">
+    <div className={`cad-view${present ? " present" : ""}`}>
       <div className="cad-canvas" ref={host}>
-        <div className="cad-toolbar">
-          <div className="segmented">
-            {DIRECTIONS.map((d) => (
-              <button key={d.id} title={d.hint} className={d.id === direction ? "on" : ""} onClick={() => setDirection(d.id)}>
-                {d.label}
+        {!present && (
+          <div className="cad-toolbar">
+            <div className="segmented">
+              <button className={!exploded ? "on" : ""} onClick={() => setExploded(false)} title="Every module where its links put it">
+                <Icon name="box" size={16} /> Assembled
               </button>
-            ))}
+              <button className={exploded ? "on" : ""} onClick={() => setExploded(true)} title="Separate each module along the mate that placed it">
+                <Icon name="layers" size={16} /> Exploded
+              </button>
+            </div>
+            <span className="sep" />
+            <div className="cad-menu-wrap">
+              <button className={`chip-toggle${showLabels ? " on" : ""}`} onClick={() => setShowLabels(!showLabels)} title="Callout labels">
+                <Icon name="tag" size={16} /> Labels
+              </button>
+              <button className="chip-toggle caret" onClick={() => setLabelMenu(!labelMenu)} title="Label types">
+                <Icon name="chevron-up" size={14} />
+              </button>
+              {labelMenu && (
+                <div className="cad-menu">
+                  <div className="cad-menu-label">Show labels for</div>
+                  {(
+                    [
+                      ["module", "Modules"],
+                      ["harness", "Harnesses & hardware"],
+                      ["interface", "Interfaces (mates)"],
+                    ] as [LabelKind, string][]
+                  ).map(([k, label]) => (
+                    <button key={k} className="cad-menu-item" onClick={() => toggleKind(k)}>
+                      <span className={`cad-check${labelKinds.has(k) ? " on" : ""}`}>{labelKinds.has(k) && <Icon name="check" size={12} />}</span>
+                      <span className={`cad-kind-dot kind-${k}`} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className={`chip-toggle${showHardware ? " on" : ""}`} onClick={() => setShowHardware(!showHardware)} title="Mounting hardware from the harnesses' fastener stacks">
+              <Icon name="wrench" size={16} /> Hardware
+            </button>
+            <button className={`chip-toggle${showWires ? " on" : ""}`} onClick={() => setShowWires(!showWires)} title="Wire harnesses">
+              <Icon name="cable" size={16} /> Wires
+            </button>
+            <button className={`chip-toggle${showFrames ? " on" : ""}`} onClick={() => setShowFrames(!showFrames)} title="Every interface frame">
+              <Icon name="move-3d" size={16} /> Frames
+            </button>
+            <span className="sep" />
+            <div className="segmented">
+              {DIRECTIONS.map((d) => (
+                <button key={d.id} title={d.hint} className={d.id === direction ? "on" : ""} onClick={() => setDirection(d.id)}>
+                  {d.label.split(" ")[0]}
+                </button>
+              ))}
+            </div>
+            <span className="sep" />
+            <button className="chip-toggle icon" onClick={() => handle.current?.frameAll()} title="Fit">
+              <Icon name="maximize" size={16} />
+            </button>
+            <button className="chip-toggle icon" disabled={!sel.body} onClick={focus} title="Look along the selected interface's normal">
+              <Icon name="crosshair" size={16} />
+            </button>
           </div>
-          <label className="cad-slider" title="Separate each module along the normal of the mate that placed it">
-            EXPLODE
-            <input type="range" min={0} max={40} value={explode} onChange={(e) => setExplode(Number(e.target.value))} />
-          </label>
-          <button className={`chip-toggle${showFrames ? " on" : ""}`} onClick={() => setShowFrames(!showFrames)}>
-            FRAMES
-          </button>
-          <button className={`chip-toggle${showWires ? " on" : ""}`} onClick={() => setShowWires(!showWires)}>
-            WIRES
-          </button>
-          <button className={`chip-toggle${showHardware ? " on" : ""}`} onClick={() => setShowHardware(!showHardware)}>
-            HARDWARE
-          </button>
-          <button className="chip-toggle" onClick={() => handle.current?.frameAll()}>
-            FIT
-          </button>
-          <button className="chip-toggle" disabled={!sel.body} onClick={focus} title="Look at the selected interface along its normal">
-            FOCUS
-          </button>
-        </div>
+        )}
         {!model && <div className="cad-loading">Loading manifests…</div>}
-        {notes.length > 0 && (
+        {present && (
+          <div className="cad-caption">
+            <div className="cad-caption-brand">
+              <span>UHD</span> VIEWER · 5-INCH 6S QUADCOPTER
+            </div>
+            {caption && (
+              <>
+                <div className="cad-caption-title">{caption[0]}</div>
+                {caption[1] && <div className="cad-caption-sub">{caption[1]}</div>}
+              </>
+            )}
+          </div>
+        )}
+        {!present && notes.length > 0 && (
           <div className="cad-notes">
             {notes.map((n, i) => (
               <div key={i}>{n}</div>
@@ -513,7 +814,7 @@ export function CadView({ system, lookup }: { system: ModuleDef; lookup: ModuleL
           </div>
         )}
       </div>
-      {model && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} />}
+      {model && !present && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} />}
     </div>
   );
 }

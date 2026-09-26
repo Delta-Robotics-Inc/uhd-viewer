@@ -58,7 +58,11 @@ export function materialFor(def: ModuleDef, bodyPart: string): THREE.MeshStandar
   const id = def.id;
   const std = (color: number, o: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
     new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1, ...o });
-  if (id.includes("frame")) return std(0x2a2a2c, { roughness: 0.35, metalness: 0.2 });
+  // carbon plates
+  if (id.includes("frame") || id.includes("top-plate")) return std(0x232326, { roughness: 0.32, metalness: 0.25 });
+  if (id.includes("standoff")) return std(0x9aa0a8, { metalness: 0.8, roughness: 0.35 });
+  if (id.includes("nylon-spacer") || id.includes("ettinger")) return std(0x1c1c1c, { roughness: 0.7 });
+  if (id.includes("motor-screw")) return std(0x2b2b2b, { metalness: 0.7, roughness: 0.35 });
   if (id.includes("meps")) {
     if (bodyPart.startsWith("lead")) return std(0x1b1b1b, { roughness: 0.8 });
     if (bodyPart === "shaft_body") return std(0xd6d3d1, { metalness: 0.9, roughness: 0.25 });
@@ -69,8 +73,8 @@ export function materialFor(def: ModuleDef, bodyPart: string): THREE.MeshStandar
   if (id.includes("am32")) return bodyPart === "components" ? std(0x3f3f46) : std(0x1e3a5f);
   if (id.includes("f405")) return bodyPart === "components" ? std(0x3f3f46) : std(0x14532d);
   if (id.includes("o4")) return std(0x3a3a3c, { metalness: 0.4 });
-  if (id.includes("cnhl")) return std(0x44403c, { transparent: true, opacity: 0.6 });
-  if (id.includes("spacer")) return std(0xe7e5e4, { roughness: 0.7 });
+  if (id.includes("cnhl")) return std(0x2d2f36, { roughness: 0.6 });
+
   if (id.includes("iso-")) return std(0xc0c4cc, { metalness: 0.85, roughness: 0.3 });
   return std(0x8b8b8b);
 }
@@ -206,17 +210,24 @@ export interface SceneHandle {
   overlay: THREE.Group;
   dispose: () => void;
   frameAll: (box?: THREE.Box3) => void;
+  /** Called every frame before rendering, with the frame time in seconds. */
+  onFrame: Set<(dt: number) => void>;
+  /** When set, the render loop is driven externally (video capture). */
+  manual: { on: boolean };
+  renderOnce: () => void;
 }
 
 export function createScene(container: HTMLElement): SceneHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1c1c1c);
+  scene.background = new THREE.Color(0x1a1a1a);
   const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 1, 5000);
   camera.up.set(0, 0, 1);
   camera.position.set(260, -330, 250);
@@ -242,9 +253,19 @@ export function createScene(container: HTMLElement): SceneHandle {
   scene.add(root, overlay);
 
   let raf = 0;
-  const tick = () => {
+  const onFrame = new Set<(dt: number) => void>();
+  const manual = { on: false };
+  let last = performance.now();
+  const renderOnce = (dt = 1 / 60) => {
     controls.update();
+    for (const f of onFrame) f(dt);
     renderer.render(scene, camera);
+  };
+  const tick = () => {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (!manual.on) renderOnce(dt);
     raf = requestAnimationFrame(tick);
   };
   tick();
@@ -273,6 +294,9 @@ export function createScene(container: HTMLElement): SceneHandle {
     root,
     overlay,
     frameAll,
+    onFrame,
+    manual,
+    renderOnce: () => renderOnce(1 / 30),
     dispose: () => {
       cancelAnimationFrame(raf);
       ro.disconnect();

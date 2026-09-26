@@ -1,18 +1,22 @@
-/* Design tokens — mirror the variables in uhd-viewer-design.pen. */
+/* Design tokens — mirror the variables in uhd-viewer-design.pen, with the
+ * chrome surfaces taken from ProtoBoard's dark theme (next-alpha index.css). */
 @font-face {
   font-family: "Kode Mono";
   src: url("/fonts/KodeMono-Regular.woff2") format("woff2");
   font-weight: 400;
+  size-adjust: 90%;
 }
 @font-face {
   font-family: "Kode Mono";
   src: url("/fonts/KodeMono-Medium.ttf") format("truetype");
   font-weight: 500;
+  size-adjust: 90%;
 }
 @font-face {
   font-family: "Kode Mono";
   src: url("/fonts/KodeMono-SemiBold.ttf") format("truetype");
   font-weight: 600;
+  size-adjust: 90%;
 }
 @font-face {
   font-family: "ProtoMono";
@@ -23,17 +27,36 @@
   --font-ui: "Kode Mono", ui-monospace, monospace;
   --font-label: "ProtoMono", "Kode Mono", ui-monospace, monospace;
 
-  --canvas-bg: #1c1c1c;
+  /* ProtoBoard chrome (dark) */
+  --pb-background: oklch(0.2178 0 0);
+  --pb-card: oklch(0.251 0 0);
+  --pb-popover: oklch(0.2435 0 0);
+  --pb-border: oklch(0.329 0 0);
+  --pb-foreground: oklch(0.8853 0 0);
+  --pb-muted: oklch(0.285 0 0);
+  --pb-muted-foreground: oklch(0.68 0 0);
+  --pb-accent: oklch(0.3715 0 0);
+  --pb-primary: oklch(0.6837 0.212 40.5923);
+  --pb-primary-foreground: oklch(0.922 0 0);
+  --pb-primary-tint: oklch(0.6837 0.212 40.5923 / 0.15);
+  --pb-stone-600: #57534e;
+  --pb-stone-700: #44403c;
+  --pb-radius: 8px;
+  --pb-shadow: 0px 2px 0px 0px hsl(0 0% 20% / 0.15), 0px 1px 2px -1px hsl(0 0% 20% / 0.15);
+  --pb-shadow-md: 0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 2px 4px -1px hsl(0 0% 0% / 0.35);
+  --pb-shadow-lg: 0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 4px 6px -1px hsl(0 0% 0% / 0.35);
+
+  --canvas-bg: oklch(0.2178 0 0);
   --canvas-dot: #2e2e2e;
-  --panel-bg: #161616;
-  --panel-border: #2a2a2a;
+  --panel-bg: var(--pb-card);
+  --panel-border: var(--pb-border);
   --card-fill: #2f2f2f;
   --card-stroke: #44403c;
   --card-fill-sel: #1f1f1f;
-  --text-primary: #e7e5e4;
-  --text-muted: #a8a29e;
+  --text-primary: var(--pb-foreground);
+  --text-muted: var(--pb-muted-foreground);
   --text-faint: #6b6560;
-  --brand: #ff5c00;
+  --brand: var(--pb-primary);
 
   --dom-electrical: #f5a524;
   --dom-mechanical: #94a3b8;
