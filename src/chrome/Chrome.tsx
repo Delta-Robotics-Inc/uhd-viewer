@@ -44,6 +44,8 @@ export function Header(props: {
   onConductors: (c: boolean) => void;
   showGrounds: boolean;
   onGrounds: (g: boolean) => void;
+  view: "diagram" | "3d";
+  onView: (v: "diagram" | "3d") => void;
 }) {
   return (
     <header className="header">
@@ -62,6 +64,14 @@ export function Header(props: {
         ))}
       </nav>
       <div className="header-controls">
+        <Segmented
+          options={[
+            { id: "diagram", label: "DIAGRAM" },
+            { id: "3d", label: "3D" },
+          ]}
+          value={props.view}
+          onChange={props.onView}
+        />
         <label className="scenario">
           <Icon name="flask-conical" size={12} />
           <select value={props.scenario} onChange={(e) => props.onScenario(e.target.value)}>

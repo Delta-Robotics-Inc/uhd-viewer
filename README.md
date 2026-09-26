@@ -87,3 +87,30 @@ entrypoint, and the 3D/CAD view.
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
 | `src/chrome/Chrome.tsx` | Header, activity bar, inspector, toolbar, and legend. |
+
+## 3D view (PB-775)
+
+`?view=3d` (or DIAGRAM | 3D in the header) shows the system assembled from its
+UHD links: every mechanical link with frames on both ends is a mate
+(`assemble` in UHD), CAD bodies are the modules' GLB artifacts, and interface
+geometry is resolved per binding direction:
+
+- **D1 FEATURE** — named sub-shape in the body artifact (build123d STEP/GLB
+  names, vendor component names; KCL tags are listed as unchecked until the
+  KCL is exported)
+- **D2 ARTIFACT** — the interface's own `interfaces/<id>.glb`
+- **D3 PROCEDURAL** — drawn from the interface's parameters at its frame
+
+Click a module to see each interface's frame and binding status; selecting an
+interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
+EXPLODE separates modules along the normal of the mate that placed them;
+FRAMES shows every interface frame; WIRES draws electrical links that have
+geometry on both ends (motor phases); HARDWARE places the stack harness's
+fasteners and checks the screw stack-up; FOCUS looks along the selected
+interface's normal.
+
+URL: `view=3d&body=arm_fl/motor&iface=base_mount&dir=feature&explode=14&focus=1`
+(also `mate=<link>`, `frames=1`, `wires=0`, `hardware=0`). The vendor GNSS GLB
+is generated locally by `library/cad/py/gnss_vendor.py` in the UHD repo.
+
+Screenshots: `docs/screenshots/cad/`.

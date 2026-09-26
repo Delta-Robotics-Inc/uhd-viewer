@@ -8,6 +8,8 @@ const uhdRoot = fileURLToPath(new URL("../uhd", import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  // CAD artifacts (GLB, manifests) are fetched from the UHD checkout through Vite's /@fs route
+  define: { __UHD_FS__: JSON.stringify(`/@fs${uhdRoot}`) },
   resolve: {
     alias: {
       "@uhd": `${uhdRoot}/src`,

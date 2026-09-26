@@ -1060,3 +1060,259 @@ button:disabled {
   font-size: 9px;
   padding-left: 20px;
 }
+
+/* ---------------------------------------------------------------------------
+ * 3D view (PB-775)
+ * ------------------------------------------------------------------------- */
+.cad-view {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.cad-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.cad-canvas canvas {
+  display: block;
+}
+.cad-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 2;
+  flex-wrap: wrap;
+}
+.cad-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 10px var(--font-ui);
+  color: var(--text-muted);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.cad-slider input {
+  width: 110px;
+  accent-color: var(--brand);
+}
+.cad-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font: 12px var(--font-ui);
+}
+.cad-notes {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: 62%;
+  background: rgba(22, 22, 22, 0.88);
+  border: 1px solid var(--panel-border);
+  border-left: 2px solid var(--brand);
+  padding: 8px 10px;
+  font: 11px/1.5 var(--font-ui);
+  color: var(--text-muted);
+  z-index: 2;
+}
+.cad-inspector {
+  width: 360px;
+}
+.cad-title {
+  margin: 4px 0 2px;
+  font: 600 13px var(--font-ui);
+  color: var(--text-primary);
+}
+.cad-sub {
+  font: 11px/1.5 var(--font-ui);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.cad-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.cad-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  font: 11px var(--font-ui);
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.cad-row:hover {
+  background: #202020;
+}
+.cad-row.on {
+  border-color: var(--brand);
+  background: #231509;
+}
+.cad-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cad-row-via {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.gchips {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.gchip {
+  font: 600 9px var(--font-ui);
+  padding: 1px 4px;
+  border-radius: 2px;
+  border: 1px solid var(--panel-border);
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+}
+.gchip.bound,
+.gchip.ok {
+  color: var(--drc-configured);
+  border-color: color-mix(in srgb, var(--drc-configured) 50%, transparent);
+}
+.gchip.stale,
+.gchip.missing {
+  color: var(--drc-incompatible);
+  border-color: var(--drc-incompatible);
+}
+.gchip.unchecked {
+  color: var(--drc-partial);
+  border-color: color-mix(in srgb, var(--drc-partial) 50%, transparent);
+}
+.gchip.via {
+  color: var(--sig-digital);
+  border-color: color-mix(in srgb, var(--sig-digital) 50%, transparent);
+}
+.gchip.unmapped {
+  color: var(--text-faint);
+  border-style: dashed;
+}
+.gchip.logical {
+  color: var(--dom-network);
+  border-color: color-mix(in srgb, var(--dom-network) 50%, transparent);
+}
+.gchip.role-body {
+  color: var(--dom-mechanical);
+}
+.gchip.role-interface {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 50%, transparent);
+}
+.gchip.role-source {
+  color: var(--dom-software);
+}
+.cad-detail {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 6px;
+  margin-bottom: 8px;
+}
+.kv-grid {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 2px 8px;
+  font: 11px var(--font-ui);
+  margin: 4px 0 8px;
+}
+.kv-grid .k {
+  color: var(--text-faint);
+}
+.kv-grid .v {
+  color: var(--text-primary);
+}
+.cad-dir {
+  padding: 5px 6px;
+  margin: 3px 0;
+  border-left: 2px solid var(--panel-border);
+}
+.cad-dir.on {
+  border-left-color: var(--brand);
+  background: #1d1a17;
+}
+.cad-dir-label {
+  display: block;
+  font: 600 10px var(--font-ui);
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.cad-dir-none {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.cad-ref {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  font: 11px var(--font-ui);
+  margin: 2px 0;
+}
+.cad-ref code {
+  color: var(--text-primary);
+  font: 11px var(--font-ui);
+}
+.cad-sig {
+  color: var(--text-faint);
+  font-size: 10px;
+  flex-basis: 100%;
+}
+.cad-issue {
+  font: 11px/1.5 var(--font-ui);
+  color: var(--text-muted);
+  margin: 3px 0;
+}
+.cad-issue.error {
+  color: var(--drc-incompatible);
+}
+.cad-issue.warning {
+  color: var(--drc-partial);
+}
+.cad-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cad-artifact {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font: 11px var(--font-ui);
+  color: var(--text-primary);
+}
+.cad-artifact-fmt,
+.cad-artifact-if {
+  color: var(--text-faint);
+}
+.cad-end {
+  margin: 6px 0;
+}
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--brand);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}

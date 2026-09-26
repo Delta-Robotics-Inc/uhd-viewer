@@ -11,6 +11,7 @@ import { QUADCOPTER_TOP } from "./layout/quadcopter";
 import { Canvas, type Selection } from "./canvas/Canvas";
 import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
+import { CadView } from "./cad/CadView";
 
 /** Hand layouts per level, keyed by drill path. */
 const HAND_LAYOUTS: Record<string, LevelLayout> = { "": QUADCOPTER_TOP };
@@ -53,6 +54,7 @@ export default function App() {
   );
   const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? "hierarchy");
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
+  const [view, setView] = useState<"diagram" | "3d">(params.get("view") === "3d" ? "3d" : "diagram");
   const [positions, setPositions] = useState<Positions>(() => load("uhd-viewer:positions", {}));
   const [overrides, setOverrides] = useState<Overrides>(() => load("uhd-viewer:overrides", {}));
 
@@ -142,9 +144,15 @@ export default function App() {
           onConductors={setConductors}
           showGrounds={showGrounds}
           onGrounds={setShowGrounds}
+          view={view}
+          onView={setView}
         />
         <div className="workspace">
           <ActivityBar panel={panel} onPanel={setPanel} errors={errors} />
+          {view === "3d" ? (
+            <CadView key={scenario.id} system={system} lookup={scenario.lookup} />
+          ) : (
+          <>
           <main className="canvas">
             {scenario.id !== "nominal" && (
               <div className={`scenario-banner${errors ? " error" : ""}`}>
@@ -194,6 +202,8 @@ export default function App() {
               onPair={(l) => setPairLink(l.linkId)}
               topLevel={drill.length === 0}
             />
+          )}
+          </>
           )}
         </div>
       </div>
