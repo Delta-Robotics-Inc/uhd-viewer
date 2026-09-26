@@ -1,0 +1,27 @@
+{
+  "name": "@deltarobotics/uhd-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone viewer for UHD systems: modules, interfaces, interface links, and harnesses.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "type-check": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.0",
+    "lucide-react": "^1.48.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

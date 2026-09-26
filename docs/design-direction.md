@@ -1,0 +1,176 @@
+# UHD viewer design direction
+
+Status: direction agreed with the owner on 2026-09-26; samples in
+[`uhd-viewer-design.pen`](../uhd-viewer-design.pen). Tracking: PB-783 (B1) under
+PB-770. This covers the 2D system diagram. The CAD/spatial view is PB-788 (B6).
+
+Priority order for design work:
+
+1. The interface and harness system (links, opening links, detail level, topologies).
+2. Module and submodule display (groups, real modules with children, drilling in).
+3. Everything else (inspector, diagnostics, and the overall layout).
+
+Each sample in the Pencil file carries a **UHD model** note: supported, partial,
+gap, or viewer layout (not UHD). The notes are collected in
+[uhd-model-support.md](uhd-model-support.md). The design is locked first; the
+UHD model gaps are addressed afterwards (Track A / PB-778).
+
+## Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| Module | Any hardware unit. Can contain submodules. |
+| Interface | A connectable point on a module. It can be composed of child interfaces through slots (I2C → SDA, SCL). |
+| Interface link | A connection between two interfaces. A 1:1 link needs no harness. A composed link carries child links (SDA↔SDA, SCL↔SCL). |
+| Harness | A specialised module that physically carries interface links between two or more modules: a cable, bus backbone, splice, or switch. |
+| Group | A module with no interfaces of its own that exports all of its children's interfaces by default. |
+| Export | A child interface surfaced on its parent's boundary so neighbours can attach to it. |
+| Classification | The rule that colours links and ports (domain, DRC health, signal type…). |
+
+## Decisions
+
+### D1. Interface links exist without harnesses
+
+Two modules can connect their interfaces directly (board 01). A harness is
+only introduced when there is something physical to represent, such as a cable
+with connectors, a bus backbone, a splice, or a switch. Child interfaces have
+their own links underneath a 1:1 parent link.
+
+### D2. Harnesses are specialised modules drawn as their carrier line
+
+At the data layer a harness should differ little from a module: it has ports,
+parameters, artifacts, and geometry. On the graph it is drawn as the carrier
+line, with a **harness node** (pill) that opens it like a module. The harness's
+own ports (connector ends) are small squares on the line (board 04).
+
+Topologies to support first:
+
+- **Point-to-point cable**: two ends, with the cable's own identity.
+- **Bus** (many-to-many): a trunk line with drops, and per-drop labels (e.g. I2C addresses).
+- **Split / splice** (one-to-many): a source feeding a splice node that branches to drops.
+- **OR / switch** (one of N): the selected branch is solid and alternatives are dashed.
+
+Other topologies (daisy chain, star, ring) are added when a real project needs
+them. Every harness must correspond to something physical.
+
+### D3. Links route orthogonally with filleted corners
+
+Links do not use bezier curves as the alpha app does. They route with 90° turns
+and filleted corners, like an EDA schematic, and support user-editable
+waypoints. Every link has three independently positioned labels: the interface
+name at each end and the link name on the line (board 01). Route and label
+positions are viewer layout data, not UHD.
+
+### D4. Links can be opened like cutting a cable
+
+A composed link (I2C, UART, 3-phase) opens in place. The single line splits
+into its child links, each ending on a child port, and rejoins into one line
+when collapsed (board 02, following the owner's sketch in the file's first
+frame). While a link is open:
+
+- child links can be remapped by dragging a conductor end onto another child
+  port, for example to swap motor phases; a manual mapping shows a lock badge;
+- crossovers such as UART TX→RX are drawn as crossings;
+- an unmapped child stays visible as an open `?` socket instead of being hidden.
+
+### D5. Detail level is a per-link or global preference
+
+A link can be drawn **bundled** (one line with a conductor count, e.g. `3φ ×3`)
+or as **conductors** (every child link drawn side by side along the same route
+with concentric fillets). An automatic mode chooses by zoom level. Opening a
+link (D4) is the editable form; the conductor view is read-only detail
+(board 03).
+
+### D6. Ports: show all, or group by type
+
+- Modules with few interfaces show every port.
+- Modules with many interfaces show one grouped port per interface type
+  (`UART ×6`, `DIGITAL ×10`). Connecting an interface pops a concrete port out of
+  the group and decrements the count.
+- The default-visible set, grouping, side, and order are configurable per module.
+- Cards grow to fit their ports unless a geometry override fixes the size and
+  shape. Modules keep the alpha app's shape presets (rectangle, rounded, circle,
+  custom outline).
+
+Proposal, still to confirm: port glyph shape encodes domain (circle electrical,
+square mechanical), so the domain stays visible under any colour classification
+(board 05).
+
+### D7. Interface/harness classification
+
+Links and ports are coloured by a selectable **classification** (board 06):
+
+- **Domain** is the default: electrical, mechanical, pneumatic, hydraulic,
+  thermal, network.
+- **DRC health** uses the alpha app's four states: configured, partial,
+  incompatible, not configured.
+- **Domain-specific** modes, such as electrical signal type, colour one domain
+  by interface type and fade the others.
+
+Each mode ships with its own legend; a general legend builder comes later.
+Modules get a parallel classification system later (lifecycle, origin: local vs
+catalog).
+
+### D8. Hierarchy: groups and real modules
+
+An expanded module shows its submodules one level below (board 07).
+
+- **Group**: dashed outline and no interfaces of its own. Children's interfaces
+  are exported to the boundary as pass-through ports, and neighbours attach
+  there.
+- **Real module**: solid outline with its own boundary interfaces, linked
+  internally to its children and externally to neighbours. Unlinked boundary
+  ports stay visible.
+
+### D9. Drilling in: expand in place, or replace the canvas
+
+Both drill modes are supported.
+
+- In **replace-canvas** mode, the parent's boundary ports appear as sheet ports
+  on the canvas edge.
+- The header always shows a breadcrumb path (`QUADCOPTER / FC STACK / ESC 4-IN-1`).
+- The inspector's default view shows the hierarchy of modules and harnesses.
+
+### D10. The pair view is a first-class secondary view
+
+A left-to-right, wire-viz style view of exactly two modules, based on
+protoboard.ai/validate and the UHD ASCII visualizer (board 08). It opens from
+any link in the system diagram and is rendered from `PairValidationResult`:
+
+- fixed A and B columns, with ports on their inner edges;
+- one shared region per connection, with a state pill;
+- the parent link drawn thick and child conductors thin;
+- a census of unconnected interfaces, and a verdict.
+
+The dynamic system diagram remains the main view.
+
+### D11. Application layout follows the alpha app (not scoped yet)
+
+The layout follows the alpha app: a left activity menu, the canvas in the
+centre, a right-hand inspector, and a toolbar at the bottom, with the breadcrumb
+in the header. Its detailed design is deferred.
+
+## Visual foundations
+
+These are defined as Pencil variables in the design file:
+
+- **Surfaces:** carried over from the alpha dark theme (canvas `#1c1c1c`, card
+  `#2f2f2f`/`#44403c`, brand `#ff5c00`).
+- **Domain palette:** electrical `#f5a524`, mechanical `#94a3b8`, pneumatic
+  `#22d3ee`, hydraulic `#6366f1`, thermal `#f43f5e`, network `#a78bfa`.
+- **DRC palette:** carried over from alpha (`#22c55e`, `#eed202`, `#ef4444`,
+  `#6e7681`).
+- **Signal-type palette:** a separate set of variables (`sig-*`).
+- **Type:** Kode Mono throughout. ProtoMono (the alpha app's header font) isn't
+  available in Pencil; it is substituted there and should be used in the
+  implementation.
+- **Icons:** Lucide.
+
+## Open questions
+
+- Should port glyph shape encode domain (D6 proposal)?
+- Is RF/optical its own domain or an electrical sub-type?
+- Is module shape a definition hint in UHD, or purely layout?
+- Should the pair view and the website's /validate share one renderer package?
+- How do we visualise interface dependencies (interfaces filling other
+  interfaces' slots)? Intentionally deferred.
