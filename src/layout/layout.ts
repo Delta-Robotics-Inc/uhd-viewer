@@ -5,6 +5,8 @@
  */
 import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";
+import { GridRouter, GRID, snap } from "./router";
+import { at, lengths } from "../canvas/geometry";
 
 export interface Box {
   x: number;
@@ -14,9 +16,9 @@ export interface Box {
 }
 
 export interface LinkLayout {
-  /** Waypoints in absolute canvas coordinates. */
+  /** Pinned waypoints in absolute canvas coordinates (the router passes through them in order). */
   waypoints?: Pt[];
-  /** Label position as a fraction along the route. */
+  /** Label + toggle position as a fraction along the route (0..1). */
   labelT?: number;
 }
 
@@ -53,6 +55,13 @@ export interface ComputedLayout {
   routes: Record<string, Pt[]>;
   /** Label anchor per link (absent: route too short to label). */
   labels: Record<string, Pt>;
+  /** Label + toggle position as an arc length along the route. */
+  labelAt: Record<string, number>;
+  /** Harness region span along the route (arc lengths), for links that run through one. */
+  runs: Record<string, [number, number]>;
+  /** Pinned waypoints per link, and the automatic ones (the router's own bends). */
+  pins: Record<string, Pt[]>;
+  bends: Record<string, Pt[]>;
 }
 
 export const portKey = (node: string, port: string) => `${node}|${port}`;
@@ -121,11 +130,28 @@ function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: numb
   return boxes;
 }
 
+/** Nearest free grid position between lo and hi (exclusive) on one side of a card. */
+function gridSlot(v: number, lo: number, hi: number, used: Map<string, Set<number>>, key: string): number {
+  const taken = used.get(key) ?? new Set<number>();
+  used.set(key, taken);
+  const base = snap(v);
+  for (let k = 0; k < 64; k++) {
+    for (const c of k === 0 ? [base] : [base + k * GRID, base - k * GRID]) {
+      if (c > lo && c < hi && !taken.has(c)) {
+        taken.add(c);
+        return c;
+      }
+    }
+  }
+  return v;
+}
+
 export function computeLayout(
   vm: ViewModel,
   hand: LevelLayout | undefined,
   overrides: Record<string, { x: number; y: number }>,
   showGrounds: boolean,
+  linkOverrides?: Record<string, LinkLayout>,
 ): ComputedLayout {
   const linkedPorts = new Map<string, ViewLink[]>();
   for (const link of vm.links) {
@@ -141,7 +167,8 @@ export function computeLayout(
     const visible = node.ports.filter((p) => linkedPorts.has(portKey(node.id, p.id))).length;
     const hand0 = hand?.nodes[node.id];
     const d = defaultSize(node, visible);
-    sizes[node.id] = { w: hand0?.w ?? d.w, h: hand0?.h ?? d.h };
+    const up = (v: number) => Math.ceil(v / GRID) * GRID;
+    sizes[node.id] = { w: up(hand0?.w ?? d.w), h: up(hand0?.h ?? d.h) };
   }
 
   // positions (absolute)
@@ -165,7 +192,7 @@ export function computeLayout(
       x = o.x;
       y = o.y;
     }
-    boxes[node.id] = { x, y, ...size };
+    boxes[node.id] = { x: snap(x), y: snap(y), ...size };
   };
   // containers without a hand size wrap their children
   for (const node of vm.nodes) place(node);
@@ -176,8 +203,8 @@ export function computeLayout(
     const b = boxes[node.id];
     const maxX = Math.max(...kids.map((k) => k.x + k.w));
     const maxY = Math.max(...kids.map((k) => k.y + k.h));
-    b.w = Math.max(b.w, maxX - b.x + 28);
-    b.h = Math.max(b.h, maxY - b.y + 24);
+    b.w = Math.ceil(Math.max(b.w, maxX - b.x + 28) / GRID) * GRID;
+    b.h = Math.ceil(Math.max(b.h, maxY - b.y + 24) / GRID) * GRID;
   }
 
   // port sides
@@ -237,7 +264,7 @@ export function computeLayout(
   for (const [nodeId, count] of sideCount) {
     const node = vm.nodes.find((n) => n.id === nodeId)!;
     if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness") continue;
-    boxes[nodeId].h = Math.max(boxes[nodeId].h, 44 + count * PORT_PITCH);
+    boxes[nodeId].h = Math.ceil(Math.max(boxes[nodeId].h, 44 + count * PORT_PITCH) / GRID) * GRID;
   }
 
   const counterpartOf = (key: string): Pt | undefined => {
@@ -250,7 +277,9 @@ export function computeLayout(
 
   // distribute along each side, ordered by counterpart position; the second
   // pass re-orders by where the counterpart ports actually landed
-  for (let pass = 0; pass < 2; pass++)
+  let used = new Map<string, Set<number>>();
+  for (let pass = 0; pass < 2; pass++) {
+  used = new Map();
   for (const [sk, entries] of bySide) {
     if (pass === 1) {
       for (const e of entries) {
@@ -279,79 +308,53 @@ export function computeLayout(
         const harness = node.kind === "harness";
         const inset = node.expanded ? 34 : harness ? 4 : 28;
         p.x = side === "left" ? box.x : box.x + box.w;
-        p.y = box.y + inset + (box.h - inset - (harness ? 4 : 12)) * f;
+        p.y = gridSlot(box.y + inset + (box.h - inset - (harness ? 4 : 12)) * f, box.y, box.y + box.h, used, `${nodeId}|${side}`);
       } else {
-        p.x = box.x + 16 + (box.w - 32) * f;
+        p.x = gridSlot(box.x + 16 + (box.w - 32) * f, box.x, box.x + box.w, used, `${nodeId}|${side}`);
         p.y = side === "top" ? box.y : box.y + box.h;
       }
     });
   }
+  }
 
-  // routes
+  // routes: the grid router, shortest links first, through any pinned waypoints
   const routes: Record<string, Pt[]> = {};
-  for (const link of vm.links) {
-    if (link.ground && !showGrounds) continue;
-    const a = ports[portKey(link.source.node, link.source.port)];
-    const b = ports[portKey(link.target.node, link.target.port)];
-    if (!a || !b) continue;
+  const pins: Record<string, Pt[]> = {};
+  const bends: Record<string, Pt[]> = {};
+  const obstacles = vm.nodes.filter((n) => !n.expanded).map((n) => boxes[n.id]);
+  const router = new GridRouter(obstacles, Object.values(ports).map((p) => [p.x, p.y] as Pt));
+  const todo = vm.links
+    .filter((link) => !(link.ground && !showGrounds))
+    .map((link) => ({ link, a: ports[portKey(link.source.node, link.source.port)], b: ports[portKey(link.target.node, link.target.port)] }))
+    .filter((x) => x.a && x.b)
+    .sort((x, y) => Math.abs(x.a.x - x.b.x) + Math.abs(x.a.y - x.b.y) - (Math.abs(y.a.x - y.b.x) + Math.abs(y.a.y - y.b.y)));
+  for (const { link, a, b } of todo) {
     let sa = a.side;
-    let sb = b.side;
-    // a pass-through runs inward from the boundary
     const fromContainer = vm.nodes.find((n) => n.id === link.source.node)?.expanded;
     if (link.passThrough && fromContainer) {
       sa = ({ left: "right", right: "left", top: "bottom", bottom: "top" } as const)[sa];
     }
-    const wp = hand?.links?.[link.id]?.waypoints ?? [];
-    routes[link.id] = route([a.x, a.y], sa, [b.x, b.y], sb, wp);
+    const wp = linkOverrides?.[link.id]?.waypoints ?? hand?.links?.[link.id]?.waypoints ?? [];
+    pins[link.id] = wp;
+    routes[link.id] = link.passThrough ? route([a.x, a.y], sa, [b.x, b.y], b.side, wp) : router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
+    const pts = routes[link.id];
+    // automatic waypoints: every interior corner that is not a pin
+    bends[link.id] = pts.slice(1, -1).filter((p) => !wp.some((w) => Math.abs(w[0] - p[0]) < 1 && Math.abs(w[1] - p[1]) < 1));
   }
 
-  separateSegments(routes);
-  const labels = placeLabels(vm, routes, boxes, hand);
-  return { boxes, ports, groups, routes, labels };
-}
-
-/**
- * Nudge interior segments of different links apart when they would run on
- * top of each other (same axis, within 5 px, overlapping span). The first
- * and last segments are port stubs and never move.
- */
-function separateSegments(routes: Record<string, Pt[]>, gap = 9): void {
-  type Seg = { id: string; i: number; vertical: boolean; at: number; lo: number; hi: number };
-  const taken: Seg[] = [];
-  const segsOf = (id: string, pts: Pt[]): Seg[] => {
-    const out: Seg[] = [];
-    for (let i = 1; i < pts.length - 2; i++) {
-      const [a, b] = [pts[i], pts[i + 1]];
-      const vertical = Math.abs(a[0] - b[0]) < 0.5;
-      const horizontal = Math.abs(a[1] - b[1]) < 0.5;
-      if (!vertical && !horizontal) continue;
-      out.push(
-        vertical
-          ? { id, i, vertical, at: a[0], lo: Math.min(a[1], b[1]), hi: Math.max(a[1], b[1]) }
-          : { id, i, vertical, at: a[1], lo: Math.min(a[0], b[0]), hi: Math.max(a[0], b[0]) },
-      );
-    }
-    return out;
-  };
-  const clash = (s: Seg) =>
-    taken.some((t) => t.id !== s.id && t.vertical === s.vertical && Math.abs(t.at - s.at) < gap - 1 && t.lo < s.hi - 2 && s.lo < t.hi - 2);
-
-  for (const [id, pts] of Object.entries(routes)) {
-    for (const seg of segsOf(id, pts)) {
-      let shift = 0;
-      for (const step of [gap, -gap, 2 * gap, -2 * gap, 3 * gap, -3 * gap]) {
-        if (!clash({ ...seg, at: seg.at + shift })) break;
-        shift = step;
-      }
-      if (shift !== 0) {
-        const axis = seg.vertical ? 0 : 1;
-        pts[seg.i][axis] += shift;
-        pts[seg.i + 1][axis] += shift;
-        seg.at += shift;
-      }
-      taken.push(seg);
-    }
+  // harness regions: the middle of the route, clear of the port stubs
+  const runs: Record<string, [number, number]> = {};
+  for (const link of vm.links) {
+    const pts = routes[link.id];
+    if (!link.run || !pts) continue;
+    const L = lengths(pts).at(-1)!;
+    const inset = Math.min(56, L * 0.18);
+    runs[link.id] = [inset, L - inset];
   }
+
+  const labelAt = placeLabels(vm, routes, boxes, hand, linkOverrides, runs);
+  const labels: Record<string, Pt> = Object.fromEntries(Object.entries(labelAt).map(([id, s]) => [id, at(routes[id], s).p]));
+  return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends };
 }
 
 const CANDIDATES = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];
@@ -370,12 +373,13 @@ function placeLabels(
   routes: Record<string, Pt[]>,
   boxes: Record<string, Box>,
   hand: LevelLayout | undefined,
-): Record<string, Pt> {
+  linkOverrides: Record<string, LinkLayout> | undefined,
+  runs: Record<string, [number, number]>,
+): Record<string, number> {
   const placed: Box[] = [];
-  const out: Record<string, Pt> = {};
+  const out: Record<string, number> = {};
   const cards = [
     ...vm.nodes.filter((n) => !n.expanded).map((n) => boxes[n.id]),
-    // title bars of expanded groups and modules
     ...vm.nodes.filter((n) => n.expanded).map((n) => ({ ...boxes[n.id], h: 26 })),
   ];
   const overlaps = (a: Box, b: Box, pad = 3) =>
@@ -385,22 +389,26 @@ function placeLabels(
   for (const link of ordered) {
     const pts = routes[link.id];
     if (!pts || link.passThrough || link.segment === "b") continue;
-    if (pathLength(pts) < 70) continue;
+    const L = pathLength(pts);
+    if (L < 70) continue;
     const size = labelSize(link);
-    const fixed = hand?.links?.[link.id]?.labelT;
-    const tries = fixed !== undefined ? [fixed] : [longestMid(pts), ...CANDIDATES];
-    let best: { p: Pt; score: number } | undefined;
+    const fixed = linkOverrides?.[link.id]?.labelT ?? hand?.links?.[link.id]?.labelT;
+    const [lo, hi] = runs[link.id] ?? [0, L];
+    const within = (t: number) => (lo + (hi - lo) * t) / L;
+    const tries = fixed !== undefined ? [fixed] : [longestMid(pts), ...CANDIDATES.map(within)];
+    let best: { t: number; score: number } | undefined;
     for (const t of tries) {
       const p = pointAlong(pts, t);
-      const rect = { x: p[0] - size.w / 2, y: p[1] - size.h / 2, ...size };
+      const rect = { x: p[0] - size.w / 2, y: p[1] - 30, w: size.w, h: 40 };
       const score =
         placed.filter((b) => overlaps(rect, b)).length * 10 + cards.filter((b) => overlaps(rect, b, 0)).length * 4;
-      if (!best || score < best.score) best = { p, score };
+      if (!best || score < best.score) best = { t, score };
       if (score === 0) break;
     }
     if (!best) continue;
-    out[link.id] = best.p;
-    placed.push({ x: best.p[0] - size.w / 2, y: best.p[1] - size.h / 2, ...size });
+    out[link.id] = best.t * L;
+    const p = pointAlong(pts, best.t);
+    placed.push({ x: p[0] - size.w / 2, y: p[1] - 30, w: size.w, h: 40 });
   }
   return out;
 }

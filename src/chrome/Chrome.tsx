@@ -89,8 +89,8 @@ export function Header(props: {
         <span className="sep" />
         <Segmented
           options={[
-            { id: "bundled", label: "Bundled" },
-            { id: "conductors", label: "Conductors" },
+            { id: "bundled", label: "Basic" },
+            { id: "conductors", label: "Ribbon" },
           ]}
           value={props.conductors ? "conductors" : "bundled"}
           onChange={(v) => props.onConductors(v === "conductors")}

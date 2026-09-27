@@ -185,6 +185,15 @@ in the header. Its detailed design is deferred.
   link's path**: routed links bend, so the midpoint is not always the best
   place. Its position is stored as a distance along the route in the display
   file and follows the route when it is re-routed.
+- **Implemented (PB-803).** `src/canvas/LinkEdge.tsx` (basic and ribbon
+  modes, lanes, nested toggles, harness regions traced around their
+  contents, end marks and pin handles, draggable label + toggle),
+  `src/canvas/geometry.ts` (arc-length geometry, fans, region tracing) and
+  `src/layout/router.ts` (grid A*: cards avoided, bends and crossings
+  penalised, parallel runs kept apart, pinned waypoints visited in order).
+  A cable with two connector ends is one link; its lanes are the links UHD
+  derives through it and its conductors are the mated positions. Label
+  positions and pins persist per level and reset with the canvas reset.
 - **Routing.** A 16 px grid for nodes, ports, segments and bends. The router
   avoids modules and labels, penalises crossings and bends, and keeps parallel
   runs one grid step apart. Its bends are automatic waypoints (shown when a

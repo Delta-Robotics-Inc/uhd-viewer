@@ -1784,3 +1784,48 @@ body {
 .load-state.error {
   color: var(--drc-incompatible);
 }
+
+/* PB-803: harness regions, lanes and label handles */
+.harness-tab {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  background: #ffffff12;
+  border-radius: 4px 4px 0 0;
+  font-family: var(--font-ui);
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lane-name {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 12px;
+  padding: 0 4px;
+  background: var(--canvas-bg);
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-size: 7.5px;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lane-swatch {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.link-label {
+  user-select: none;
+  touch-action: none;
+}
+.harness-tab.below {
+  border-radius: 0 0 4px 4px;
+}

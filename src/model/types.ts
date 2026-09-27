@@ -70,6 +70,40 @@ export interface ViewChildLink {
   state: LinkState;
 }
 
+/**
+ * One lane of an expanded link (PB-803/805): a child interface of the link,
+ * or a link derived through a cable. A lane with its own children is itself a
+ * bundle and can be opened in place.
+ */
+export interface ViewLane {
+  id: string;
+  name: string;
+  domain: string;
+  protocol: string;
+  state: LinkState;
+  children: ViewLane[];
+}
+
+/** One physical conductor of a link, for ribbon (detailed) mode. */
+export interface ViewConductor {
+  id: string;
+  label: string;
+  /** Signal protocol of the conductor, for its colour ("power", "ground", "uart", …). */
+  protocol: string;
+}
+
+/** The harness a link runs through, drawn as a region along its route. */
+export interface ViewHarnessRun {
+  /** Harness child path at this level. */
+  id: string;
+  name: string;
+  icon: string;
+  /** Carried by a physical cable (connector ends) rather than named on a logical link. */
+  physical: boolean;
+  /** Only the first link of a harness carries its name tab. */
+  tab: boolean;
+}
+
 export interface ViewLink {
   id: string;
   source: ViewEndpoint;
@@ -92,6 +126,14 @@ export interface ViewLink {
   segment?: "a" | "b";
   /** Stored link id (shared by both segments). */
   linkId: string;
+  /** Other stored link ids drawn by this link (the second half of a cable). */
+  alsoIds?: string[];
+  /** Lanes shown when the link is expanded (basic mode). */
+  lanes?: ViewLane[];
+  /** Conductors shown in ribbon (detailed) mode. */
+  conductors?: ViewConductor[];
+  /** Harness region along the route. */
+  run?: ViewHarnessRun;
   /** Child links are a stored override (remapped by the user). */
   manual?: boolean;
   diagnostics: string[];

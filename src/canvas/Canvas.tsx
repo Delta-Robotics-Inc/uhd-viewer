@@ -13,7 +13,8 @@ import { colorFor, isFaded, type Classification } from "../model/classification"
 import type { ComputedLayout } from "../layout/layout";
 import type { LevelLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
-import { edgeTypes, type LinkData } from "./LinkEdge";
+import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
+import type { Pt } from "./routing";
 
 export type Selection = { kind: "node" | "link"; id: string } | null;
 
@@ -22,12 +23,14 @@ export interface CanvasProps {
   layout: ComputedLayout;
   hand?: LevelLayout;
   mode: Classification;
-  conductors: boolean;
+  detail: Detail;
   showGrounds: boolean;
   openLinks: Set<string>;
   selection: Selection;
   onSelect: (s: Selection) => void;
   onToggleLink: (id: string) => void;
+  onLabel: (linkId: string, t: number) => void;
+  onPins: (linkId: string, pins: Pt[]) => void;
   onToggleExpand: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
 }
@@ -80,14 +83,22 @@ export function Canvas(props: CanvasProps) {
             points: layout.routes[link.id],
             color,
             faded: isFaded(link, mode),
+            mode,
+            detail: props.detail,
             open: props.openLinks.has(link.linkId),
-            conductors: props.conductors,
-            label: layout.labels[link.id],
+            openLanes: props.openLinks,
+            run: layout.runs[link.id],
+            labelAt: layout.labelAt[link.id],
+            pins: layout.pins[link.id] ?? [],
+            bends: layout.bends[link.id] ?? [],
             onToggle: props.onToggleLink,
+            onToggleLane: props.onToggleLink,
+            onLabel: props.onLabel,
+            onPins: props.onPins,
           },
         };
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.conductors, props.hand, props.onToggleLink]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLabel, props.onPins]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {
@@ -114,6 +125,8 @@ export function Canvas(props: CanvasProps) {
       onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
       onPaneClick={() => props.onSelect(null)}
       nodesConnectable={false}
+      snapToGrid
+      snapGrid={[16, 16]}
       elevateEdgesOnSelect
       fitView
       fitViewOptions={{ padding: 0.08 }}
@@ -121,7 +134,7 @@ export function Canvas(props: CanvasProps) {
       maxZoom={2.5}
       attributionPosition="bottom-left"
     >
-      <Background variant={BackgroundVariant.Dots} gap={22} size={2.2} color="var(--canvas-dot)" bgColor="var(--canvas-bg)" />
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--canvas-dot)" bgColor="var(--canvas-bg)" />
     </ReactFlow>
   );
 }

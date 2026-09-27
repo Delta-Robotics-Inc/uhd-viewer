@@ -5,7 +5,8 @@ import { checkSystem } from "@uhd/system/checks.js";
 import { buildView, withOverrides } from "./model/from-uhd";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
-import { computeLayout, type LevelLayout } from "./layout/layout";
+import { computeLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
+import type { Pt } from "./canvas/routing";
 import { bundleUrlFromLocation, loadBundle, type LoadedSource } from "./source/source";
 import { Canvas, type Selection } from "./canvas/Canvas";
 import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
@@ -14,6 +15,8 @@ import { CadView } from "./cad/CadView";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
+/** Per level: pinned waypoints and label positions the user set (PB-803). */
+type LinkEdits = Record<string, Record<string, LinkLayout>>;
 type Overrides = Record<string, ChildLink[]>;
 
 function load<T>(key: string, fallback: T): T {
@@ -66,6 +69,7 @@ function Viewer({ source }: { source: LoadedSource }) {
   const [view, setView] = useState<"diagram" | "3d">(params.get("view") === "3d" ? "3d" : "diagram");
   const [positions, setPositions] = useState<Positions>(() => load("uhd-viewer:positions", {}));
   const [overrides, setOverrides] = useState<Overrides>(() => load("uhd-viewer:overrides", {}));
+  const [linkEdits, setLinkEdits] = useState<LinkEdits>(() => load("uhd-viewer:links", {}));
 
   const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0];
   const system = useMemo(() => withOverrides(scenario.system, overrides), [scenario, overrides]);
@@ -78,12 +82,20 @@ function Viewer({ source }: { source: LoadedSource }) {
   );
   const hand = HAND_LAYOUTS[levelKey];
   const layout = useMemo(
-    () => computeLayout(vm, hand, positions[levelKey] ?? {}, showGrounds),
-    [vm, hand, positions, levelKey, showGrounds],
+    () => computeLayout(vm, hand, positions[levelKey] ?? {}, showGrounds, linkEdits[levelKey]),
+    [vm, hand, positions, levelKey, showGrounds, linkEdits],
   );
 
   useEffect(() => save("uhd-viewer:positions", positions), [positions]);
   useEffect(() => save("uhd-viewer:overrides", overrides), [overrides]);
+  useEffect(() => save("uhd-viewer:links", linkEdits), [linkEdits]);
+  const editLink = useCallback(
+    (linkId: string, patch: LinkLayout) =>
+      setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
+    [levelKey],
+  );
+  const onLabel = useCallback((linkId: string, t: number) => editLink(linkId, { labelT: t }), [editLink]);
+  const onPins = useCallback((linkId: string, pins: Pt[]) => editLink(linkId, { waypoints: pins }), [editLink]);
 
   const toggle = (set: Set<string>, id: string) => {
     const next = new Set(set);
@@ -178,7 +190,7 @@ function Viewer({ source }: { source: LoadedSource }) {
               layout={layout}
               hand={hand}
               mode={mode}
-              conductors={conductors}
+              detail={conductors ? "ribbon" : "basic"}
               showGrounds={showGrounds}
               openLinks={openLinks}
               selection={selection}
@@ -186,8 +198,15 @@ function Viewer({ source }: { source: LoadedSource }) {
               onToggleLink={onToggleLink}
               onToggleExpand={onToggleExpand}
               onMove={onMove}
+              onLabel={onLabel}
+              onPins={onPins}
             />
-            <Toolbar onReset={() => setPositions((p) => ({ ...p, [levelKey]: {} }))} />
+            <Toolbar
+              onReset={() => {
+                setPositions((p) => ({ ...p, [levelKey]: {} }));
+                setLinkEdits((e) => ({ ...e, [levelKey]: {} }));
+              }}
+            />
             <Legend mode={mode} />
             {pair && <PairView vm={vm} link={pair} mode={mode} onClose={() => setPairLink(null)} />}
           </main>

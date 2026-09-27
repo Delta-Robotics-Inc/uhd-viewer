@@ -97,3 +97,10 @@ export function legendFor(mode: Classification): { label: string; color: string 
     { label: "NETWORK", color: DOMAIN_COLORS.network },
   ];
 }
+
+/** Colour of one conductor in ribbon mode: always by signal, whatever the classification. */
+export function conductorColor(protocol: string): string {
+  if (protocol === "ground") return "var(--sig-ground)";
+  const base = Object.keys(SIGNAL_COLORS).find((k) => protocol === k || protocol.startsWith(`${k}_`));
+  return base ? SIGNAL_COLORS[base] : "var(--sig-other)";
+}

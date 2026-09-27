@@ -16,12 +16,16 @@ import {
   validateLinks,
   type LinkResult,
   type ModuleLookup,
+  type ResolvedEndpoint,
 } from "@uhd/system/index.js";
+import { deriveLinks } from "@uhd/system/derive.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import { isConnector } from "@uhd/protocols/connector.js";
 import type {
   LinkState,
   ViewChildPort,
+  ViewConductor,
+  ViewLane,
   ViewLink,
   ViewModel,
   ViewNode,
@@ -160,6 +164,160 @@ function toLinks(r: LinkResult, prefix: string, harnessNode: string | undefined,
   ];
 }
 
+/** "UART5 (DJI)" → "UART5", "10V/12V BEC" → "10V/12V": a lane label short enough for the canvas. */
+const shortName = (name: string) => name.split(/\s[(—-]|\s(?=[A-Z][a-z])/)[0].trim();
+
+function leafProtocol(iface: InterfaceDef | undefined): string {
+  const p = iface?.protocols[0];
+  if (!p) return "custom";
+  if (p.type === "power" && p.roles.includes("ground")) return "ground";
+  return p.type;
+}
+
+/** The leaf interface behind one position of a resolved connector end. */
+function positionLeaf(end: ResolvedEndpoint, slot: string): InterfaceDef | undefined {
+  const composed = end.composed?.[slot];
+  if (composed) return composed.iface;
+  const bound = end.iface.profiles?.[0]?.bindings[slot];
+  const id = Array.isArray(bound) ? bound[0] : bound;
+  return id ? end.owner.interfaces.find((i) => i.id === id) : undefined;
+}
+
+function laneOf(r: LinkResult): ViewLane {
+  const names = [r.a.iface.name ?? r.a.iface.id, r.b.iface.name ?? r.b.iface.id].map(shortName);
+  const name = names.sort((x, y) => x.length - y.length)[0].toUpperCase();
+  return {
+    id: r.link.id,
+    name,
+    domain: r.a.iface.domain,
+    protocol: r.protocol,
+    state: STATE_OF(r),
+    children:
+      r.children.length > 1
+        ? r.children.map((c, i) => ({
+            id: `${r.link.id}#${i}`,
+            name: (c.a.slotId ?? c.a.leafId).replace(/^.*_/, "").toUpperCase(),
+            domain: r.a.iface.domain,
+            protocol: r.protocol,
+            state: STATE_OF(r),
+            children: [],
+          }))
+        : [],
+  };
+}
+
+const STATE_OF = (r: LinkResult): LinkState => r.state as LinkState;
+
+export interface LevelLinks {
+  links: ViewLink[];
+  /** Harness children drawn as regions on links, not as nodes. */
+  regionHarnesses: Set<string>;
+  /** Stored or derived link id → the view link that draws it (for diagnostics). */
+  owners: Map<string, string>;
+}
+
+/**
+ * The links of one level (PB-803/805). A harness with exactly two connector
+ * ends becomes one link from part to part with the harness as a region along
+ * it; its lanes are the links derived through its conductors and its
+ * conductors are the mated positions. Logical links that name a harness get
+ * the same region. Anything else keeps its own line.
+ */
+export function levelLinks(
+  def: ModuleDef,
+  results: LinkResult[],
+  lookup: ModuleLookup,
+  prefix: string,
+  overrides: Overrides | undefined,
+): LevelLinks {
+  const derived = deriveLinks(def, lookup, results);
+  const links: ViewLink[] = [];
+  const consumed = new Set<string>();
+  const regionHarnesses = new Set<string>();
+  const owners = new Map<string, string>();
+  const tabbed = new Set<string>();
+
+  for (const ref of def.children ?? []) {
+    const h = lookup(ref.moduleDefId);
+    if (h?.kind !== "harness") continue;
+    const ends = results.filter((r) => r.protocol === "connector" && [r.a, r.b].some((e) => e.owner === h && e.ownerPath[0] === ref.id));
+    if (ends.length !== 2) continue;
+    const part = (r: LinkResult) => (r.a.owner === h && r.a.ownerPath[0] === ref.id ? { end: r.link.b, res: r.b, first: false } : { end: r.link.a, res: r.a, first: true });
+    const [r1, r2] = ends;
+    const p1 = part(r1);
+    const p2 = part(r2);
+    const via = new Set([r1.link.id, r2.link.id]);
+    const carried = derived.filter((d) => d.derived!.via.some((v) => via.has(v)));
+    const lanes = carried.map(laneOf);
+    const conductors: ViewConductor[] = r1.children.map((c, i) => {
+      const slot = p1.first ? c.a.slotId : c.b.slotId;
+      const leaf = slot ? positionLeaf(p1.res, slot) : undefined;
+      const label = p1.res.iface.slots?.find((x) => x.id === slot)?.label ?? leaf?.name ?? slot ?? String(i + 1);
+      return { id: `${r1.link.id}#${slot ?? i}`, label: label.toUpperCase(), protocol: leafProtocol(leaf) };
+    });
+    const states = [r1, r2, ...carried].map(STATE_OF);
+    const state = states.reduce<LinkState>((w, x) => (RANK[x] > RANK[w] ? x : w), "configured");
+    const protocols = [...new Set(lanes.map((l) => l.protocol))];
+    const endpoint = (end: InterfaceLink["a"]) => ("child" in end ? { node: prefix + end.child, port: end.interfaceId } : { node: prefix.replace(/\/$/, ""), port: end.interfaceId });
+    const id = prefix + r1.link.id;
+    links.push({
+      id,
+      linkId: id,
+      alsoIds: [prefix + r2.link.id],
+      source: endpoint(p1.end),
+      target: endpoint(p2.end),
+      name: `${lanes.length} LINK${lanes.length === 1 ? "" : "S"}`,
+      domain: r1.a.iface.domain,
+      protocol: protocols.length === 1 ? protocols[0] : (protocols.find((p) => p !== "power") ?? "power"),
+      state,
+      children: lanes.map((l) => ({ id: l.id, label: l.name, a: l.name, b: l.name, state: l.state })),
+      lanes,
+      conductors,
+      run: { id: prefix + ref.id, name: (ref.name ?? h.name).toUpperCase(), icon: h.display?.icon ?? "cable", physical: true, tab: true },
+      diagnostics: [...r1.diagnostics, ...r2.diagnostics, ...carried.flatMap((d) => d.diagnostics)].map((d) => d.message),
+    });
+    consumed.add(r1.link.id).add(r2.link.id);
+    regionHarnesses.add(ref.id);
+    for (const x of [r1, r2, ...carried]) owners.set(prefix + x.link.id, id);
+  }
+
+  for (const r of results) {
+    if (consumed.has(r.link.id)) continue;
+    const harnessRef = r.link.harness ? def.children?.find((c) => c.id === r.link.harness) : undefined;
+    const harnessDef = harnessRef ? lookup(harnessRef.moduleDefId) : undefined;
+    const [view] = toLinks(r, prefix, undefined, Boolean(prefix === "" && overrides?.[r.link.id]));
+    if (r.children.length > 1) {
+      view.lanes = r.children.map((c, i) => ({
+        id: `${view.id}#${i}`,
+        name: (c.a.slotId ?? c.a.leafId).replace(/^.*_/, "").toUpperCase(),
+        domain: r.a.iface.domain,
+        protocol: r.protocol,
+        state: STATE_OF(r),
+        children: [],
+      }));
+      view.conductors = r.children.map((c, i) => ({
+        id: `${view.id}#c${i}`,
+        label: (c.a.pin ?? c.a.slotId ?? c.a.leafId).toUpperCase(),
+        protocol: leafProtocol(r.a.owner.interfaces.find((x) => x.id === c.a.leafId)),
+      }));
+    }
+    if (harnessRef && harnessDef?.kind === "harness") {
+      view.run = {
+        id: prefix + harnessRef.id,
+        name: (harnessRef.name ?? harnessDef.name).toUpperCase(),
+        icon: harnessDef.display?.icon ?? "cable",
+        physical: false,
+        tab: !tabbed.has(harnessRef.id),
+      };
+      tabbed.add(harnessRef.id);
+      regionHarnesses.add(harnessRef.id);
+    }
+    owners.set(prefix + r.link.id, view.id);
+    links.push(view);
+  }
+  return { links, regionHarnesses, owners };
+}
+
 export interface BuildOptions {
   /** Child ids (at this level) drawn expanded in place. */
   expanded: Set<string>;
@@ -267,6 +425,8 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
   }
 
   const levelResults = validateLinks(level, lookup);
+  const top = levelLinks(level, levelResults, lookup, "", opts.overrides);
+  const owners = new Map(top.owners);
   /** Link-scoped compositions (PB-805) are ports on their child for as long as the link exists. */
   const addComposedPorts = (results: LinkResult[], prefix: string) => {
     for (const r of results) {
@@ -292,26 +452,25 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     const def = lookup(ref.moduleDefId);
     if (!def) continue;
     const expanded = opts.expanded.has(ref.id) && (def.children?.length ?? 0) > 0 && def.kind !== "harness";
+    if (def.kind === "harness" && top.regionHarnesses.has(ref.id)) continue;
     const node = nodeFor(ref.id, ref.name, def, undefined, expanded);
     if (def.kind === "harness") addHarnessPorts(node, levelResults);
     nodes.push(node);
     if (!expanded) continue;
 
     const innerResults = validateLinks(def, lookup);
+    const innerLinks = levelLinks(def, innerResults, lookup, `${ref.id}/`, undefined);
+    for (const [k, v] of innerLinks.owners) owners.set(k, v);
     for (const inner of def.children ?? []) {
       const innerDef = lookup(inner.moduleDefId);
       if (!innerDef) continue;
+      if (innerDef.kind === "harness" && innerLinks.regionHarnesses.has(inner.id)) continue;
       const innerNode = nodeFor(`${ref.id}/${inner.id}`, inner.name, innerDef, ref.id);
       if (innerDef.kind === "harness") addHarnessPorts(innerNode, innerResults);
       nodes.push(innerNode);
     }
     addComposedPorts(innerResults, `${ref.id}/`);
-    const innerHarness = new Set((def.children ?? []).filter((c) => lookup(c.moduleDefId)?.kind === "harness").map((c) => c.id));
-    links.push(
-      ...innerResults.flatMap((r) =>
-        toLinks(r, `${ref.id}/`, r.link.harness && innerHarness.has(r.link.harness) ? `${ref.id}/${r.link.harness}` : undefined, false),
-      ),
-    );
+    links.push(...innerLinks.links);
 
     // pass-through lines from each boundary export to the child port it exposes
     const exports = def.exports?.length || def.kind === "group" ? resolveExports(def, lookup) : [];
@@ -333,12 +492,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
   }
 
   addComposedPorts(levelResults, "");
-  const harnessIds = new Set(nodes.filter((n) => n.kind === "harness" && !n.parent).map((n) => n.id));
-  links.push(
-    ...levelResults.flatMap((r) =>
-      toLinks(r, "", r.link.harness && harnessIds.has(r.link.harness) ? r.link.harness : undefined, Boolean(opts.overrides?.[r.link.id])),
-    ),
-  );
+  links.push(...top.links);
 
   // overlay system diagnostics (top level only): errors → incompatible, warnings → partial
   if (drill.length === 0) {
@@ -347,7 +501,8 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
       const state: LinkState = d.severity === "error" ? "incompatible" : "partial";
       for (const ref of d.refs) {
         if (!ref.startsWith("link:")) continue;
-        for (const link of links.filter((l) => l.linkId === ref.slice(5))) {
+        const owner = owners.get(ref.slice(5)) ?? ref.slice(5);
+        for (const link of links.filter((l) => l.linkId === owner)) {
           if (RANK[state] > RANK[link.state]) link.state = state;
           if (!link.diagnostics.includes(d.message)) link.diagnostics.push(d.message);
         }
