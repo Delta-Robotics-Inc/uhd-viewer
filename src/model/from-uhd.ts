@@ -18,6 +18,7 @@ import {
   type ModuleLookup,
 } from "@uhd/system/index.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
+import { isConnector } from "@uhd/protocols/connector.js";
 import type {
   LinkState,
   ViewChildPort,
@@ -204,7 +205,8 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     kind: def.kind ?? "module",
     ...(parent ? { parent } : {}),
     ...(expanded ? { expanded } : {}),
-    ports: def.kind === "harness" ? [] : portsOf(def, lookup),
+    // a harness shows its connector ends (PB-805); carried logical links add their own pairs
+    ports: def.kind === "harness" ? def.interfaces.filter(isConnector).map((i) => toPort(i, def)) : portsOf(def, lookup),
     shape: expanded ? "rect" : shapeFor(def),
     status: "configured",
     defId: def.id,
@@ -265,6 +267,26 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
   }
 
   const levelResults = validateLinks(level, lookup);
+  /** Link-scoped compositions (PB-805) are ports on their child for as long as the link exists. */
+  const addComposedPorts = (results: LinkResult[], prefix: string) => {
+    for (const r of results) {
+      for (const [end, resolved] of [[r.link.a, r.a], [r.link.b, r.b]] as const) {
+        if (!("child" in end) || !end.compose) continue;
+        const node = nodes.find((n) => n.id === prefix + end.child);
+        if (!node || node.ports.some((p) => p.id === end.interfaceId)) continue;
+        node.ports.push({
+          ...toPort(resolved.iface, resolved.owner),
+          name: resolved.iface.name ?? end.interfaceId,
+          children: Object.entries(resolved.composed ?? {}).map(([slotId, c]) => ({
+            slotId,
+            name: c.iface.name ?? c.iface.id,
+            leafId: c.iface.id,
+            pin: c.iface.pin !== undefined ? String(c.iface.pin) : undefined,
+          })),
+        });
+      }
+    }
+  };
 
   for (const ref of level.children ?? []) {
     const def = lookup(ref.moduleDefId);
@@ -283,6 +305,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
       if (innerDef.kind === "harness") addHarnessPorts(innerNode, innerResults);
       nodes.push(innerNode);
     }
+    addComposedPorts(innerResults, `${ref.id}/`);
     const innerHarness = new Set((def.children ?? []).filter((c) => lookup(c.moduleDefId)?.kind === "harness").map((c) => c.id));
     links.push(
       ...innerResults.flatMap((r) =>
@@ -309,6 +332,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     }
   }
 
+  addComposedPorts(levelResults, "");
   const harnessIds = new Set(nodes.filter((n) => n.kind === "harness" && !n.parent).map((n) => n.id));
   links.push(
     ...levelResults.flatMap((r) =>
