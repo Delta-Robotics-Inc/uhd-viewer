@@ -150,6 +150,35 @@ The layout follows the alpha app: a left activity menu, the canvas in the
 centre, a right-hand inspector, and a toolbar at the bottom, with the breadcrumb
 in the header. Its detailed design is deferred.
 
+### D12. Harness regions, bundles and routing (board 09, PB-803)
+
+- **Harness regions.** A harness is part of the link it carries: module →
+  link line → harness region → link line → module. The region is tight to
+  its own lines and follows their shape (a bus region follows the spine and
+  taps), with a dotted outline and a light fill. The harness name sits outside
+  it as a small tab; lengths, gauges, members and hardware lists belong in the
+  inspector, not on the canvas.
+- **Bundles, basic mode.** One line at each module (it is one link). The
+  expanded form breaks out into labelled lanes between two breakout bars in the
+  middle of the run and rejoins before the far module.
+- **Bundles, detailed mode (ribbon).** Every signal end to end at a tight
+  pitch in its own colour, over a soft band in the link's colour. The ends are
+  slim handles whose dots are only slightly wider than the lines, and each line
+  starts at its own dot. Expanded, the ribbon curves out into labelled lanes on
+  the grid and back in.
+- **Label and toggle.** The link label sits centred directly above the
+  expand/collapse toggle, a rounded box sized to what it spans (the line or
+  ribbon when collapsed, every lane when expanded). Together they form one
+  handle that defaults to the link's midpoint and **can be dragged along the
+  link's path**: routed links bend, so the midpoint is not always the best
+  place. Its position is stored as a distance along the route in the display
+  file and follows the route when it is re-routed.
+- **Routing.** A 16 px grid for nodes, ports, segments and bends. The router
+  avoids modules and labels, penalises crossings and bends, and keeps parallel
+  runs one grid step apart. Its bends are automatic waypoints (shown when a
+  link is selected); dragging one pins it, it is saved in the display file, and
+  the router must pass through it from then on.
+
 ## Visual foundations
 
 These are defined as Pencil variables in the design file:
