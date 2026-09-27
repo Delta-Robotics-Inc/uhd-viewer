@@ -253,7 +253,17 @@ export function levelLinks(
       const slot = p1.first ? c.a.slotId : c.b.slotId;
       const leaf = slot ? positionLeaf(p1.res, slot) : undefined;
       const label = p1.res.iface.slots?.find((x) => x.id === slot)?.label ?? leaf?.name ?? slot ?? String(i + 1);
-      return { id: `${r1.link.id}#${slot ?? i}`, label: label.toUpperCase(), protocol: leafProtocol(leaf) };
+      // the derived link this conductor belongs to decides its DRC state
+      const owner = leaf
+        ? carried.find((d) => [d.a.iface.id, d.b.iface.id].includes(leaf.id) || d.children.some((ch) => ch.a.leafId === leaf.id || ch.b.leafId === leaf.id))
+        : undefined;
+      return {
+        id: `${r1.link.id}#${slot ?? i}`,
+        label: label.toUpperCase(),
+        protocol: leafProtocol(leaf),
+        domain: leaf?.domain ?? r1.a.iface.domain,
+        state: owner ? STATE_OF(owner) : STATE_OF(r1),
+      };
     });
     const states = [r1, r2, ...carried].map(STATE_OF);
     const state = states.reduce<LinkState>((w, x) => (RANK[x] > RANK[w] ? x : w), "configured");
@@ -299,6 +309,8 @@ export function levelLinks(
         id: `${view.id}#c${i}`,
         label: (c.a.pin ?? c.a.slotId ?? c.a.leafId).toUpperCase(),
         protocol: leafProtocol(r.a.owner.interfaces.find((x) => x.id === c.a.leafId)),
+        domain: r.a.iface.domain,
+        state: STATE_OF(r),
       }));
     }
     if (harnessRef && harnessDef?.kind === "harness") {

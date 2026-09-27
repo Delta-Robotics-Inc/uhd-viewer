@@ -90,6 +90,9 @@ export interface ViewConductor {
   label: string;
   /** Signal protocol of the conductor, for its colour ("power", "ground", "uart", …). */
   protocol: string;
+  domain: string;
+  /** DRC state of the connection this conductor carries. */
+  state: LinkState;
 }
 
 /** The harness a link runs through, drawn as a region along its route. */

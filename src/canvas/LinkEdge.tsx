@@ -15,7 +15,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { BaseEdge, EdgeLabelRenderer, useReactFlow, type Edge, type EdgeProps } from "@xyflow/react";
-import type { ViewLane, ViewLink } from "../model/types";
+import type { ViewConductor, ViewLane, ViewLink } from "../model/types";
 import { colorFor, conductorColor, type Classification } from "../model/classification";
 import { filletPath, type Pt } from "./routing";
 import {
@@ -98,6 +98,9 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
 
   const geo = useMemo(() => {
     if (!data || data.points.length < 2) return null;
+    // conductors follow the classification: domain, DRC state, or signal type
+    const tint = (c: ViewConductor) =>
+      data.mode === "signal" ? conductorColor(c.protocol) : colorFor({ domain: c.domain, protocol: c.protocol, state: c.state }, data.mode);
     const { link, points, detail, open, run } = data;
     const L = totalLength(points);
     const edge = Math.min(40, L * 0.15);
@@ -123,17 +126,17 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       if (expanded) {
         const shapes = ribbonExpanded(points, n, e0, e1);
         shapes.forEach((sh, i) => {
-          lines.push({ d: sh.d, color: conductorColor(conductors[i].protocol), width: 2.4, key: conductors[i].id });
+          lines.push({ d: sh.d, color: tint(conductors[i]), width: 2.4, key: conductors[i].id });
           samples.push(...sh.samples);
         });
         const offs = offsets(n, LANE_PITCH);
-        conductors.forEach((c, i) => names.push({ s: e0 + RUN + 20, o: offs[i], text: c.label, color: conductorColor(c.protocol), swatch: true }));
+        conductors.forEach((c, i) => names.push({ s: e0 + RUN + 20, o: offs[i], text: c.label, color: tint(c), swatch: true }));
         band = regionOutline(shapes.flatMap((s) => s.samples), 5);
         span = (n - 1) * LANE_PITCH + 16;
         straight = [e0 + RUN, e1 - RUN];
       } else {
         ribbon(points, n).forEach((r, i) => {
-          lines.push({ d: r.d, color: conductorColor(conductors[i].protocol), width: 2.4, key: conductors[i].id });
+          lines.push({ d: r.d, color: tint(conductors[i]), width: 2.4, key: conductors[i].id });
           samples.push(...r.samples);
         });
         span = n * RIBBON_PITCH + 4;
@@ -209,7 +212,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       });
     }
 
-    return { L, lines, samples, names, span, band, region, regionBox, anchor, ribbonMode, expandable, expanded, nested, conductors };
+    return { L, lines, samples, names, span, band, region, regionBox, anchor, ribbonMode, expandable, expanded, nested, conductors, tint };
   }, [data]);
 
   if (!data || !geo) return null;
@@ -242,7 +245,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
           strokeWidth={1.3}
         />
         {geo.conductors.map((c, i) => (
-          <circle key={c.id} cx={p[0] + nrm[0] * offs[i]} cy={p[1] + nrm[1] * offs[i]} r={2.2} fill={conductorColor(c.protocol)} />
+          <circle key={c.id} cx={p[0] + nrm[0] * offs[i]} cy={p[1] + nrm[1] * offs[i]} r={2.2} fill={geo.tint(c)} />
         ))}
       </g>
     );
