@@ -168,6 +168,16 @@ in the header. Its detailed design is deferred.
   slim handles whose dots are only slightly wider than the lines, and each line
   starts at its own dot. Expanded, the ribbon curves out into labelled lanes on
   the grid and back in.
+- **Expanding through a harness (PB-805).** Every multi-child link expands
+  the same way whether or not a harness carries it: one line at each module,
+  one lane per child interface in the middle. When a harness carries it, the
+  dotted region grows to hug the expanded lanes (it is traced around them, so
+  a bus follows its spine and taps, and a split follows each branch). Taps and
+  splits carry every lane; a junction dot marks where a lane joins its own
+  net, and a small gap marks a crossing with no connection. A cable that
+  carries several links (the DJI 3-in-1) is one line from socket to socket;
+  its lanes are the links derived from its conductors, and a lane that is
+  itself a bundle (UART5: TX · RX) has its own toggle.
 - **Label and toggle.** The link label sits centred directly above the
   expand/collapse toggle, a rounded box sized to what it spans (the line or
   ribbon when collapsed, every lane when expanded). Together they form one
