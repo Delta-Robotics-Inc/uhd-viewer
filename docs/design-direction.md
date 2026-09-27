@@ -158,9 +158,11 @@ in the header. Its detailed design is deferred.
   taps), with a dotted outline and a light fill. The harness name sits outside
   it as a small tab; lengths, gauges, members and hardware lists belong in the
   inspector, not on the canvas.
-- **Bundles, basic mode.** One line at each module (it is one link). The
-  expanded form breaks out into labelled lanes between two breakout bars in the
-  middle of the run and rejoins before the far module.
+- **Bundles, basic mode.** One line at each module (it is one link). Expanded,
+  the signals flow out of that line into labelled lanes in stages: the
+  outermost pair branches first and the innermost pair last (and in reverse
+  order where they rejoin), so the lanes fan out and back without bars or
+  crossings.
 - **Bundles, detailed mode (ribbon).** Every signal end to end at a tight
   pitch in its own colour, over a soft band in the link's colour. The ends are
   slim handles whose dots are only slightly wider than the lines, and each line
