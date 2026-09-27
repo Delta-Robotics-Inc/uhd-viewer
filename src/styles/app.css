@@ -1829,3 +1829,24 @@ body {
 .harness-tab.below {
   border-radius: 0 0 4px 4px;
 }
+
+/* Port dots: filled, centred on the port point (the handle is only an anchor) */
+.react-flow__handle.port-anchor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.port-dot {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+.port-dot.selected {
+  box-shadow: 0 0 0 2px var(--canvas-bg), 0 0 0 3.5px var(--brand);
+}

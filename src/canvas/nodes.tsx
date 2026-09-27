@@ -32,7 +32,12 @@ function portColor(p: PlacedPort, mode: Classification): string {
   return colorFor({ domain: p.port.domain, protocol: link?.protocol ?? p.port.protocol, state: link?.state }, mode);
 }
 
-function Ports({ data, labels }: { data: NodeData; labels: boolean }) {
+/**
+ * Ports are absolutely positioned inside the node's element, whose origin is
+ * inside its border: `border` shifts them back so each dot sits exactly on
+ * the port point where its links end.
+ */
+function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; border?: number }) {
   const { box, ports, mode, showGrounds, selectedPorts, node } = data;
   const perSide = (side: string) => ports.filter((q) => q.side === side).length;
   const widthFor = (p: PlacedPort) =>
@@ -47,8 +52,8 @@ function Ports({ data, labels }: { data: NodeData; labels: boolean }) {
           <Port
             key={p.port.id}
             placed={p}
-            x={p.x - box.x}
-            y={p.y - box.y}
+            x={p.x - box.x - border}
+            y={p.y - box.y - border}
             color={portColor(p, mode)}
             faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode)}
             exported={Boolean(p.port.exported) && node.expanded}
@@ -94,7 +99,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
         <div className="module-title">{node.label}</div>
         {!circle && <PortGroups groups={data.groups} mode={data.mode} />}
       </div>
-      <Ports data={data} labels={!circle} />
+      <Ports data={data} labels={!circle} border={2} />
     </div>
   );
 }
@@ -104,12 +109,13 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
   const group = node.kind === "group";
   return (
     <div className={`container${group ? " group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
+      {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
         <Icon name={node.icon} size={12} strokeWidth={1.8} />
         <span>{node.label}</span>
         <span className="container-kind">{group ? "GROUP" : "MODULE"}</span>
       </div>
-      <Ports data={data} labels={false} />
+      <Ports data={data} labels={false} border={0} />
     </div>
   );
 }
@@ -122,7 +128,7 @@ export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
     <div className={`sheet-port${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }}>
       <Icon name={port?.side === "left" ? "arrow-left-from-line" : "arrow-right-to-line"} size={12} color={color} />
       <span>{node.label}</span>
-      <Ports data={data} labels={false} />
+      <Ports data={data} labels={false} border={1} />
     </div>
   );
 }
@@ -136,7 +142,7 @@ export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
       <Icon name={node.icon} size={12} color={color} />
       <span className="harness-name">{node.label}</span>
       <span className="harness-kind">HARNESS</span>
-      <Ports data={data} labels={false} />
+      <Ports data={data} labels={false} border={1.5} />
     </div>
   );
 }
