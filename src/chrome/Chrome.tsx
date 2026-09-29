@@ -3,7 +3,7 @@ import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
-import { ArtifactsSection, type ArtifactResolver } from "./Artifacts";
+import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
 import { CLASSIFICATIONS, colorFor, legendFor, type Classification } from "../model/classification";
 import { evidenceFor } from "../model/evidence";
@@ -522,7 +522,7 @@ function InspectorView(props: {
             def={props.defFor(node.defId)}
             onDrill={props.onDrill}
             onToggleExpand={props.onToggleExpand}
-            artifacts={<ArtifactsSection def={props.defFor(node.defId)} resolve={props.resolveArtifact} appearance={node.defId ? props.appearance?.[node.defId] : undefined} />}
+            artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} />}
           />
         ) : link ? (
           <LinkDetails

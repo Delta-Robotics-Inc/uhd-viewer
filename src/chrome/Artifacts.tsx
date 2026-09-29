@@ -27,7 +27,57 @@ export function thumbnailOf(def: ModuleDef): ArtifactDef | undefined {
 
 const urlOf = (def: ModuleDef, a: ArtifactDef, resolve: ArtifactResolver) => a.url ?? (a.filePath ? resolve(def.id, a.filePath) : undefined);
 
-export function ArtifactsSection({ def, resolve, appearance }: { def?: ModuleDef; resolve: ArtifactResolver; appearance?: Appearance }) {
+const hasArtifacts = (def: ModuleDef) => Boolean(thumbnailOf(def) || glbFor(def));
+
+/**
+ * An assembly (FC + ESC stack, an arm) usually has no CAD of its own: show its
+ * parts' artifacts instead, one part at a time, picked from a row of names.
+ */
+export function AssemblyArtifacts({
+  def,
+  lookup,
+  resolve,
+  appearance,
+}: {
+  def?: ModuleDef;
+  lookup: (id?: string) => ModuleDef | undefined;
+  resolve: ArtifactResolver;
+  appearance?: Record<string, Appearance>;
+}) {
+  const [pick, setPick] = useState(0);
+  if (!def) return null;
+  if (hasArtifacts(def)) return <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} />;
+  // parts with artifacts, depth first, once per definition
+  const parts: { name: string; def: ModuleDef }[] = [];
+  const seen = new Set<string>();
+  const walk = (d: ModuleDef, depth: number) => {
+    for (const ref of d.children ?? []) {
+      const c = lookup(ref.moduleDefId);
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      if (hasArtifacts(c)) parts.push({ name: ref.name ?? c.name, def: c });
+      else if (depth < 3) walk(c, depth + 1);
+    }
+  };
+  walk(def, 0);
+  if (!parts.length) return null;
+  const cur = parts[Math.min(pick, parts.length - 1)];
+  return (
+    <>
+      <div className="section-title">ARTIFACTS · PARTS</div>
+      <div className="artifact-parts">
+        {parts.map((p, i) => (
+          <button key={p.def.id} className={`mini${p === cur ? " on" : ""}`} onClick={() => setPick(i)}>
+            {p.name.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      <ArtifactsSection def={cur.def} resolve={resolve} appearance={appearance?.[cur.def.id]} titled={false} />
+    </>
+  );
+}
+
+export function ArtifactsSection({ def, resolve, appearance, titled = true }: { def?: ModuleDef; resolve: ArtifactResolver; appearance?: Appearance; titled?: boolean }) {
   if (!def) return null;
   const thumb = thumbnailOf(def);
   const glb = glbFor(def);
@@ -35,7 +85,7 @@ export function ArtifactsSection({ def, resolve, appearance }: { def?: ModuleDef
   if (!thumb && !glb && !files.length) return null;
   return (
     <>
-      <div className="section-title">ARTIFACTS</div>
+      {titled && <div className="section-title">ARTIFACTS</div>}
       {thumb && <Thumbnail url={urlOf(def, thumb, resolve)} name={thumb.name} />}
       {glb && <CadPreview def={def} url={urlOf(def, glb, resolve)} appearance={appearance} />}
       {files.length > 0 && (

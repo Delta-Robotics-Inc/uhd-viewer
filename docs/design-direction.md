@@ -134,7 +134,8 @@ Both drill modes are supported.
   artifacts: the thumbnail (an image artifact tagged `thumbnail`, else any
   image that is not a datasheet page), the body CAD in a small viewer that
   turns slowly until grabbed and then orbits with the pointer, and links to
-  its other CAD and drawing files.
+  its other CAD and drawing files. An assembly without CAD of its own (the
+  FC + ESC stack, an arm) shows its parts' artifacts, one part at a time.
 
 ### D10. The pair view is a first-class secondary view
 
