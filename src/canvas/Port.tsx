@@ -14,6 +14,8 @@ export interface PortProps {
   label?: boolean;
   ground?: boolean;
   selected?: boolean;
+  /** Draw the dot (off where a ribbon's pin handle already marks the port). */
+  dot?: boolean;
   /** Max label width in px (from port spacing and card size). */
   labelWidth?: number;
 }
@@ -47,7 +49,7 @@ function GroundGlyph({ side, x, y, color }: { side: PortProps["placed"]["side"];
   );
 }
 
-export function Port({ placed, x, y, color, faded, exported, label, ground, selected, labelWidth = 76 }: PortProps) {
+export function Port({ placed, x, y, color, faded, exported, label, ground, selected, dot = true, labelWidth = 76 }: PortProps) {
   const mechanical = placed.port.domain === "mechanical";
   const size = exported ? 11 : 9;
   const id = `p:${placed.port.id}`;
@@ -56,7 +58,7 @@ export function Port({ placed, x, y, color, faded, exported, label, ground, sele
     <>
       <Handle type="source" id={id} position={POSITION[placed.side]} className="port-anchor" style={{ left: x, top: y }} isConnectable={false} />
       <Handle type="target" id={id} position={POSITION[placed.side]} className="port-anchor" style={{ left: x, top: y }} isConnectable={false} />
-      <span
+      {dot && <span
         className={`port-dot${exported ? " exported" : ""}${selected ? " selected" : ""}`}
         style={{
           left: x - size / 2,
@@ -67,7 +69,7 @@ export function Port({ placed, x, y, color, faded, exported, label, ground, sele
           borderRadius: mechanical ? 2 : "50%",
           opacity: faded ? 0.25 : 1,
         }}
-      />
+      />}
       {ground && <GroundGlyph side={placed.side} x={x} y={y} color={color} />}
       {label && (
         <span className="port-label" style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>

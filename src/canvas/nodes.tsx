@@ -13,6 +13,8 @@ export interface NodeData extends Record<string, unknown> {
   mode: Classification;
   showGrounds: boolean;
   selectedPorts: Set<string>;
+  /** Ports ("node|port") whose link draws its own pin handle (ribbon mode): no dot. */
+  ribbonPorts?: Set<string>;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
@@ -60,6 +62,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
             label={labels}
             ground={onlyGround && !showGrounds}
             selected={selectedPorts.has(p.port.id)}
+            dot={!data.ribbonPorts?.has(`${node.id}|${p.port.id}`)}
             labelWidth={widthFor(p)}
           />
         );

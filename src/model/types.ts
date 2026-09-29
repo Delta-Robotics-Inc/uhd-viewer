@@ -82,6 +82,8 @@ export interface ViewLane {
   protocol: string;
   state: LinkState;
   children: ViewLane[];
+  /** Conductor ids this lane carries (ribbon mode groups them under the lane). */
+  conductors?: string[];
 }
 
 /** One physical conductor of a link, for ribbon (detailed) mode. */

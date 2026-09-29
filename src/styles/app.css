@@ -1850,3 +1850,20 @@ body {
 .port-dot.selected {
   box-shadow: 0 0 0 2px var(--canvas-bg), 0 0 0 3.5px var(--brand);
 }
+
+.link-reset {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  margin-right: -3px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.link-reset:hover {
+  background: #ffffff1f;
+}

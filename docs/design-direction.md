@@ -178,13 +178,36 @@ in the header. Its detailed design is deferred.
   carries several links (the DJI 3-in-1) is one line from socket to socket;
   its lanes are the links derived from its conductors, and a lane that is
   itself a bundle (UART5: TX · RX) has its own toggle.
-- **Label and toggle.** The link label sits centred directly above the
-  expand/collapse toggle, a rounded box sized to what it spans (the line or
-  ribbon when collapsed, every lane when expanded). Together they form one
-  handle that defaults to the link's midpoint and **can be dragged along the
-  link's path**: routed links bend, so the midpoint is not always the best
-  place. Its position is stored as a distance along the route in the display
-  file and follows the route when it is re-routed.
+- **One level at a time, in both modes.** Expanding a link shows its lanes;
+  a lane that is itself a bundle stays one line (basic) or one sub-ribbon of
+  its conductors (ribbon), named for what it is ("UART", not "UART1"), with its
+  own toggle. Opening it splits it in place, and so on down. A collapsed link
+  shows no child count: the expansion is one click away.
+- **Label and toggle.** The link label sits beside the expand/collapse toggle,
+  a rounded box sized to what it spans (the line or ribbon when collapsed,
+  every lane when expanded). The toggles of every open level **overlap at the
+  same point**: each nested box spans its own lanes and sits on top of the
+  box that contains it; a box whose centre is covered carries its − in a
+  small cap on the label's side. Label and toggles form one handle that
+  defaults to the middle of the longest straight stretch and **can be dragged
+  along the link's path** (by the label or any toggle; a press without a drag
+  is a click). Its position is stored as a fraction along the route and
+  follows the route when it is re-routed.
+- **Expansion length.** An expansion sits on one straight stretch, never in a
+  bend. Its straight part is at least what the lane names need and at most a
+  little more, so it can slide along a long stretch. On a short stretch the
+  fans steepen first; the toggle then moves past the names instead of
+  between them; only a stretch the user forces it onto that is shorter still
+  drops the names. Placed automatically, it moves to the nearest stretch it
+  fits on; placed by the user, it stays where it was put.
+- **Nothing in a bend.** Harness ends (connector handles and end marks),
+  toggles and labels are kept a fillet radius plus half their size clear of
+  every corner. A harness region grown to take in an expansion keeps its ends
+  on straight stretches. A ribbon cannot sidestep in less than about its own
+  width, so short S-jogs in a ribbon become a gentle diagonal, and its fillet
+  radius grows with its width so the inner conductor still turns round.
+- **Ports under a ribbon.** In ribbon mode a multi-conductor link ends in its
+  own pin handle, which replaces the port dot (no dot under the handle).
 - **Implemented (PB-803).** `src/canvas/LinkEdge.tsx` (basic and ribbon
   modes, lanes, nested toggles, harness regions traced around their
   contents, end marks and pin handles, draggable label + toggle),
@@ -194,11 +217,35 @@ in the header. Its detailed design is deferred.
   A cable with two connector ends is one link; its lanes are the links UHD
   derives through it and its conductors are the mated positions. Label
   positions and pins persist per level and reset with the canvas reset.
+- **Waypoints.** Pinned waypoints are released by double-clicking them, or
+  all at once with the reset button on the selected link's label.
 - **Routing.** A 16 px grid for nodes, ports, segments and bends. The router
   avoids modules and labels, penalises crossings and bends, and keeps parallel
   runs one grid step apart. Its bends are automatic waypoints (shown when a
   link is selected); dragging one pins it, it is saved in the display file, and
   the router must pass through it from then on.
+
+### D13. Text reads upright or bottom-to-top (CAD convention)
+
+All text on the canvas either reads upright (left to right) or is turned
+90° anticlockwise so it reads bottom to top, with the top of the letters
+facing left. It is never upside down or turned clockwise, whichever way a
+link travels, so a drawing reads from the bottom edge or the right edge, as
+in standard CAD drawing practice (ISO 128 / ASME Y14.2 unidirectional and
+aligned text).
+
+- **Link and harness labels run parallel to their line.** On a horizontal
+  stretch the link label sits above the toggle, upright; on a vertical one it
+  sits to the right, turned to read bottom to top with its top towards the
+  line. A harness tab sits on top of (or under) a horizontal region and on the
+  left edge of a vertical one, turned the same way.
+- **Lane names run along their lane**, upright or bottom to top, starting
+  where the straight part begins and running into it whichever way the link
+  travels.
+- **Everything else is upright**: port labels (on every side of a card),
+  module titles, tags, the chrome and the 3D callouts (screen-space cards).
+- Implemented in `src/canvas/LinkEdge.tsx`: only `rotate(-90deg)` is ever
+  applied to text.
 
 ## Visual foundations
 

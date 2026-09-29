@@ -6,7 +6,9 @@
 import { filletPath, offsetPolyline, type Pt } from "./routing";
 
 export const RUN = 24; // length of one fan
+const RUN_DEFAULT = RUN;
 export const STAGE = 24; // stagger between fan stages (outer lanes first)
+const STAGE_DEFAULT = STAGE;
 export const LANE_PITCH = 16;
 export const RIBBON_PITCH = 6;
 const RADIUS = 12;
@@ -77,7 +79,7 @@ const normal = (d: Pt): Pt => [d[1], -d[0]]; // left of travel, as offsetPolylin
  * A lane that leaves the centre line at arc length `sa`, runs offset by `o`,
  * and rejoins it at `sb`. Offset 0 is the centre line itself.
  */
-export function lane(points: Pt[], o: number, sa: number, sb: number): LaneShape {
+export function lane(points: Pt[], o: number, sa: number, sb: number, RUN = RUN_DEFAULT): LaneShape {
   if (o === 0 || sb - sa < 2 * RUN + 2) {
     const sub = subpath(points, sa, sb);
     return { d: filletPath(sub, RADIUS), samples: densify(sub), from: sa, to: sb };
@@ -117,7 +119,7 @@ export const offsets = (n: number, pitch: number) => Array.from({ length: n }, (
  * Staged fans (basic mode): outer lanes leave first and rejoin last. Returns
  * [start, end] arc lengths per lane between `s0` and `s1`.
  */
-export function stagedSpans(offs: number[], s0: number, s1: number): [number, number][] {
+export function stagedSpans(offs: number[], s0: number, s1: number, STAGE = STAGE_DEFAULT): [number, number][] {
   const mags = [...new Set(offs.map((o) => Math.abs(o)).filter((m) => m > 0))].sort((a, b) => b - a);
   const inner = Math.max(0, mags.length - 1);
   return offs.map((o) => {
@@ -126,38 +128,123 @@ export function stagedSpans(offs: number[], s0: number, s1: number): [number, nu
   });
 }
 
+/** Fillet radius for the centre line of a ribbon `width` wide, so its inner conductor still turns round. */
+export const ribbonRadius = (width: number) => Math.max(RADIUS, width / 2 + 6);
+
 /** Stroke points of a ribbon (parallel conductors at a fixed pitch) along the whole route. */
-export function ribbon(points: Pt[], n: number): { d: string; samples: Pt[] }[] {
+export function ribbon(points: Pt[], n: number, radius = RADIUS): { d: string; samples: Pt[] }[] {
   return offsets(n, RIBBON_PITCH).map((o) => {
-    const off = offsetPolyline(points, o, RADIUS);
+    const off = offsetPolyline(points, o, radius);
     return { d: filletPath(off.points, off.radii), samples: densify(off.points) };
   });
 }
 
 /**
- * A ribbon that stays tight outside [s0, s1] and fans out to lanes inside
- * it (detailed mode, expanded): every conductor fans at once.
+ * Conductors that run at offsets `tight` outside [s0, s1] and fan to offsets
+ * `wide` inside it, all at once over `fan` (ribbon mode, expanded). Both
+ * sides are offsets of the same centre line, so every conductor leaves and
+ * rejoins exactly where its neighbours do.
  */
-export function ribbonExpanded(points: Pt[], n: number, s0: number, s1: number): LaneShape[] {
-  const tight = offsets(n, RIBBON_PITCH);
-  const wide = offsets(n, LANE_PITCH);
+export function fanned(points: Pt[], tight: number[], wide: number[], s0: number, s1: number, fan = RUN, radius = RADIUS): LaneShape[] {
+  const L = totalLength(points);
+  const da = at(points, s0 + fan).d;
+  const db = at(points, s1 - fan).d;
   return tight.map((t, i) => {
-    const whole = offsetPolyline(points, t, RADIUS).points;
-    const head = subpath(whole, 0, s0);
-    const tail = subpath(whole, s1, totalLength(whole));
-    const mid = subpath(points, s0 + RUN, s1 - RUN);
-    const w = offsetPolyline(mid, wide[i], RADIUS);
+    const head = offsetPolyline(subpath(points, 0, s0), t, radius);
+    const tail = offsetPolyline(subpath(points, s1, L), t, radius);
+    const w = offsetPolyline(subpath(points, s0 + fan, s1 - fan), wide[i], radius);
+    const a = head.points[head.points.length - 1];
+    const b = tail.points[0];
     const first = w.points[0];
     const last = w.points[w.points.length - 1];
-    const a = at(whole, s0);
-    const b = at(whole, s1);
+    const ad = at(points, s0).d;
+    const bd = at(points, s1).d;
     const d =
-      `${filletPath(head, RADIUS)} C${add(a.p, a.d, RUN / 2).join(",")} ${add(first, at(points, s0 + RUN).d, -RUN / 2).join(",")} ${first[0]},${first[1]}` +
+      `${filletPath(head.points, head.radii)} C${add(a, ad, fan / 2).join(",")} ${add(first, da, -fan / 2).join(",")} ${first[0]},${first[1]}` +
       filletPath(w.points, w.radii).replace(/^M[^L]*/, "") +
-      ` C${add(last, at(points, s1 - RUN).d, RUN / 2).join(",")} ${add(b.p, b.d, -RUN / 2).join(",")} ${b.p[0]},${b.p[1]}` +
-      filletPath(tail, RADIUS).replace(/^M[^L]*/, "");
-    return { d, samples: [...densify(head), ...densify(w.points), ...densify(tail)], from: s0 + RUN, to: s1 - RUN };
+      ` C${add(last, db, fan / 2).join(",")} ${add(b, bd, -fan / 2).join(",")} ${b[0]},${b[1]}` +
+      filletPath(tail.points, tail.radii).replace(/^M[^L]*/, "");
+    return { d, samples: [...densify(head.points), ...densify([a, first]), ...densify(w.points), ...densify([last, b]), ...densify(tail.points)], from: s0 + fan, to: s1 - fan };
   });
+}
+
+/**
+ * The straight stretches of a route as arc-length intervals, each kept `clear`
+ * of the corners at its ends (and `end` of the route's own ends).
+ */
+export function straights(points: Pt[], clear: number, end = 0): [number, number][] {
+  const L = lengths(points);
+  const out: [number, number][] = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = L[i - 1] + (i > 1 ? clear : end);
+    const b = L[i] - (i < points.length - 1 ? clear : end);
+    if (b >= a) out.push([a, b]);
+  }
+  return out;
+}
+
+/**
+ * The nearest arc length to `s` that sits on a straight stretch, clear of the
+ * bends (handles and toggles never sit in a corner). Where no stretch is long
+ * enough, the middle of the longest segment.
+ */
+export function clearOfBends(points: Pt[], s: number, clear: number, end = 0): number {
+  const iv = straights(points, clear, end);
+  if (!iv.length) {
+    const L = lengths(points);
+    let best = 1;
+    for (let i = 2; i < points.length; i++) if (L[i] - L[i - 1] > L[best] - L[best - 1]) best = i;
+    return (L[best - 1] + L[best]) / 2;
+  }
+  let out = s;
+  let dist = Infinity;
+  for (const [a, b] of iv) {
+    const c = Math.max(a, Math.min(b, s));
+    if (Math.abs(c - s) < dist) {
+      dist = Math.abs(c - s);
+      out = c;
+    }
+  }
+  return out;
+}
+
+/** The straight stretch (with `clear` at its corners) that contains arc length `s`. */
+export function stretchAt(points: Pt[], s: number, clear: number, end = 0): [number, number] {
+  const L = lengths(points);
+  for (let i = 1; i < points.length; i++) {
+    if (s <= L[i] + 0.5 || i === points.length - 1) return [L[i - 1] + (i > 1 ? clear : end), L[i] - (i < points.length - 1 ? clear : end)];
+  }
+  return [0, L[L.length - 1]];
+}
+
+/**
+ * Turn short S-jogs (a sidestep between two runs in the same direction,
+ * shorter than `min`) into a gentle diagonal: a wide ribbon cannot take two
+ * right angles in less than its own width without its conductors crossing.
+ */
+export function easeJogs(points: Pt[], min: number): Pt[] {
+  let pts = points.map((p) => [...p] as Pt);
+  for (let guard = 0; guard < 16; guard++) {
+    let changed = false;
+    for (let i = 1; i < pts.length - 2; i++) {
+      const [a, b, c, e] = [pts[i - 1], pts[i], pts[i + 1], pts[i + 2]];
+      const j = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const lin = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const lout = Math.hypot(e[0] - c[0], e[1] - c[1]);
+      if (j >= min || j < 0.5 || !lin || !lout) continue;
+      const din: Pt = [(b[0] - a[0]) / lin, (b[1] - a[1]) / lin];
+      const dout: Pt = [(e[0] - c[0]) / lout, (e[1] - c[1]) / lout];
+      if (din[0] * dout[0] + din[1] * dout[1] < 0.99) continue; // not an S-jog
+      // leave the first and last runs (the port stubs) a little straight
+      const k = Math.min(Math.max(min, 2 * j), lin - (i === 1 ? 10 : 2), lout - (i + 2 === pts.length - 1 ? 10 : 2));
+      if (k < j / 2) continue;
+      pts = [...pts.slice(0, i), add(b, din, -k), add(c, dout, k), ...pts.slice(i + 2)];
+      changed = true;
+      break;
+    }
+    if (!changed) break;
+  }
+  return pts;
 }
 
 /**

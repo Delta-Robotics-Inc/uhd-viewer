@@ -6,7 +6,10 @@
 import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
-import { at, lengths } from "../canvas/geometry";
+import { at, clearOfBends, lengths } from "../canvas/geometry";
+
+/** Distance kept between a corner and anything placed on a link (handles, toggles). */
+export const BEND_CLEAR = 28;
 
 export interface Box {
   x: number;
@@ -62,6 +65,8 @@ export interface ComputedLayout {
   /** Pinned waypoints per link, and the automatic ones (the router's own bends). */
   pins: Record<string, Pt[]>;
   bends: Record<string, Pt[]>;
+  /** Links whose label (and expansion point) the user or the display file placed. */
+  labelFixed: Record<string, boolean>;
 }
 
 export const portKey = (node: string, port: string) => `${node}|${port}`;
@@ -349,12 +354,16 @@ export function computeLayout(
     if (!link.run || !pts) continue;
     const L = lengths(pts).at(-1)!;
     const inset = Math.min(56, L * 0.18);
-    runs[link.id] = [inset, L - inset];
+    // the harness ends (connector handles) sit on straight stretches, never in a bend
+    const a = clearOfBends(pts, inset, BEND_CLEAR, 12);
+    const b = clearOfBends(pts, L - inset, BEND_CLEAR, 12);
+    runs[link.id] = b - a >= 24 ? [a, b] : [inset, L - inset];
   }
 
   const labelAt = placeLabels(vm, routes, boxes, hand, linkOverrides, runs);
   const labels: Record<string, Pt> = Object.fromEntries(Object.entries(labelAt).map(([id, s]) => [id, at(routes[id], s).p]));
-  return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends };
+  const labelFixed = Object.fromEntries(vm.links.map((l) => [l.id, (linkOverrides?.[l.id]?.labelT ?? hand?.links?.[l.id]?.labelT) !== undefined]));
+  return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends, labelFixed };
 }
 
 const CANDIDATES = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];

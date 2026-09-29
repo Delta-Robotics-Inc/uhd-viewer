@@ -40,6 +40,14 @@ export function Canvas(props: CanvasProps) {
 
   const selectedLinks = selection?.kind === "link" ? vm.links.filter((l) => l.linkId === selection.id) : [];
 
+  // in ribbon mode a multi-conductor link ends in its own pin handle, so the port dot underneath is hidden
+  const ribbonPorts = useMemo(() => {
+    const out = new Set<string>();
+    if (props.detail !== "ribbon") return out;
+    for (const l of vm.links) if ((l.conductors?.length ?? 0) > 1 && layout.routes[l.id]) for (const e of [l.source, l.target]) out.add(`${e.node}|${e.port}`);
+    return out;
+  }, [vm, layout, props.detail]);
+
   const nodes = useMemo<Node<NodeData>[]>(() => {
     // parents before children, as React Flow requires
     const ordered = [...vm.nodes].sort((a, b) => Number(Boolean(a.parent)) - Number(Boolean(b.parent)));
@@ -56,13 +64,13 @@ export function Canvas(props: CanvasProps) {
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
-        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts },
+        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
         selected: selection?.kind === "node" && selection.id === node.id,
         style: { width: box.w, height: box.h },
         zIndex: node.expanded ? 0 : 2,
       };
     });
-  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks]);
+  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts]);
 
   const edges = useMemo<Edge<LinkData>[]>(() => {
     return vm.links
@@ -89,6 +97,7 @@ export function Canvas(props: CanvasProps) {
             openLanes: props.openLinks,
             run: layout.runs[link.id],
             labelAt: layout.labelAt[link.id],
+            labelFixed: layout.labelFixed[link.id] ?? false,
             pins: layout.pins[link.id] ?? [],
             bends: layout.bends[link.id] ?? [],
             onToggle: props.onToggleLink,

@@ -185,7 +185,9 @@ function positionLeaf(end: ResolvedEndpoint, slot: string): InterfaceDef | undef
 
 function laneOf(r: LinkResult): ViewLane {
   const names = [r.a.iface.name ?? r.a.iface.id, r.b.iface.name ?? r.b.iface.id].map(shortName);
-  const name = names.sort((x, y) => x.length - y.length)[0].toUpperCase();
+  // a bundle is named for what it is ("UART", "I2C"), not which instance ("UART1"): it opens to show its signals
+  const shortest = names.sort((x, y) => x.length - y.length)[0].toUpperCase();
+  const name = r.children.length > 1 ? shortest.replace(/(?<=[A-Z])\d+$/, "") : shortest;
   return {
     id: r.link.id,
     name,
@@ -257,8 +259,16 @@ export function levelLinks(
       const owner = leaf
         ? carried.find((d) => [d.a.iface.id, d.b.iface.id].includes(leaf.id) || d.children.some((ch) => ch.a.leafId === leaf.id || ch.b.leafId === leaf.id))
         : undefined;
+      const id = `${r1.link.id}#${slot ?? i}`;
+      if (owner && leaf) {
+        // group the conductor under its lane, and under the lane's child when it carries one
+        const lane = lanes.find((l) => l.id === owner.link.id)!;
+        (lane.conductors ??= []).push(id);
+        const k = owner.children.findIndex((ch) => ch.a.leafId === leaf.id || ch.b.leafId === leaf.id);
+        if (k >= 0 && lane.children[k]) (lane.children[k].conductors ??= []).push(id);
+      }
       return {
-        id: `${r1.link.id}#${slot ?? i}`,
+        id,
         label: label.toUpperCase(),
         protocol: leafProtocol(leaf),
         domain: leaf?.domain ?? r1.a.iface.domain,
@@ -304,6 +314,7 @@ export function levelLinks(
         protocol: r.protocol,
         state: STATE_OF(r),
         children: [],
+        conductors: [`${view.id}#c${i}`],
       }));
       view.conductors = r.children.map((c, i) => ({
         id: `${view.id}#c${i}`,
