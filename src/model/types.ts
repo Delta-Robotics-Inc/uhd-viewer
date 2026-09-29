@@ -101,6 +101,8 @@ export interface ViewConductor {
 export interface ViewHarnessRun {
   /** Harness child path at this level. */
   id: string;
+  /** Its UHD definition id (for the inspector: artifacts, thumbnail, CAD). */
+  defId: string;
   name: string;
   icon: string;
   /** Carried by a physical cable (connector ends) rather than named on a logical link. */

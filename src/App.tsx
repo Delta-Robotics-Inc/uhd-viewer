@@ -247,6 +247,8 @@ function Viewer({ source }: { source: LoadedSource }) {
               openLinks={openLinks}
               diagnostics={diagnostics}
               defFor={defFor}
+              resolveArtifact={source.resolveArtifact}
+              appearance={source.display.spatial?.appearance}
               bSlotsFor={bSlotsFor}
               overrides={overrides}
               onOverride={onOverride}

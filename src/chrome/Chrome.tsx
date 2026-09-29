@@ -3,6 +3,8 @@ import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
+import { ArtifactsSection, type ArtifactResolver } from "./Artifacts";
+import type { Appearance } from "../source/source";
 import { CLASSIFICATIONS, colorFor, legendFor, type Classification } from "../model/classification";
 import { evidenceFor } from "../model/evidence";
 import { Icon } from "../canvas/Icon";
@@ -236,6 +238,7 @@ function NodeDetails({
   def,
   onDrill,
   onToggleExpand,
+  artifacts,
 }: {
   node: ViewNode;
   vm: ViewModel;
@@ -243,6 +246,8 @@ function NodeDetails({
   def?: ModuleDef;
   onDrill: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  /** Thumbnail and CAD preview. */
+  artifacts?: React.ReactNode;
 }) {
   const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
   return (
@@ -263,6 +268,7 @@ function NodeDetails({
           <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>
         </div>
       )}
+      {artifacts}
       <EvidenceSection def={def} />
       {node.kind !== "harness" && (
         <>
@@ -295,7 +301,10 @@ function LinkDetails({
   bSlots,
   override,
   onOverride,
+  harness,
 }: {
+  /** The harness carrying the link: its artifacts (thumbnail, CAD). */
+  harness?: React.ReactNode;
   link: ViewLink;
   mode: Classification;
   open: boolean;
@@ -326,11 +335,12 @@ function LinkDetails({
       <Row k="PROTOCOL" v={link.protocol} />
       <Row k="DOMAIN" v={link.domain} />
       <Row k="STATE" v={STATE_LABEL[link.state]} />
-      <Row k="HARNESS" v={link.harness} />
+      <Row k="HARNESS" v={link.run?.name ?? link.harness} />
       <div className="actions">
         <button onClick={onPair}>PAIR VIEW</button>
         {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
       </div>
+      {harness}
       {link.children.length > 0 && (
         <>
           <div className="section-title">
@@ -474,6 +484,9 @@ function InspectorView(props: {
   openLinks: Set<string>;
   diagnostics: SystemDiagnostic[];
   defFor: (defId?: string) => ModuleDef | undefined;
+  /** Artifact URLs (from the bundle source) and per-definition appearance hints, for the previews. */
+  resolveArtifact: ArtifactResolver;
+  appearance?: Record<string, Appearance>;
   bSlotsFor: (link: ViewLink) => string[];
   overrides: Record<string, ChildLink[]>;
   onOverride: (linkId: string, childLinks: ChildLink[] | null) => void;
@@ -502,7 +515,15 @@ function InspectorView(props: {
       </div>
       <div className="inspector-body">
         {node ? (
-          <NodeDetails node={node} vm={vm} mode={props.mode} def={props.defFor(node.defId)} onDrill={props.onDrill} onToggleExpand={props.onToggleExpand} />
+          <NodeDetails
+            node={node}
+            vm={vm}
+            mode={props.mode}
+            def={props.defFor(node.defId)}
+            onDrill={props.onDrill}
+            onToggleExpand={props.onToggleExpand}
+            artifacts={<ArtifactsSection def={props.defFor(node.defId)} resolve={props.resolveArtifact} appearance={node.defId ? props.appearance?.[node.defId] : undefined} />}
+          />
         ) : link ? (
           <LinkDetails
             link={link}
@@ -513,6 +534,11 @@ function InspectorView(props: {
             bSlots={props.bSlotsFor(link)}
             override={props.overrides[link.linkId]}
             onOverride={props.topLevel ? (c) => props.onOverride(link.linkId, c) : undefined}
+            harness={
+              link.run && (
+                <ArtifactsSection def={props.defFor(link.run.defId)} resolve={props.resolveArtifact} appearance={props.appearance?.[link.run.defId]} />
+              )
+            }
           />
         ) : props.panel === "checks" ? (
           <Checks diagnostics={props.diagnostics} vm={vm} onSelect={props.onSelect} />

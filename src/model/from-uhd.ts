@@ -293,7 +293,7 @@ export function levelLinks(
       children: lanes.map((l) => ({ id: l.id, label: l.name, a: l.name, b: l.name, state: l.state })),
       lanes,
       conductors,
-      run: { id: prefix + ref.id, name: (ref.name ?? h.name).toUpperCase(), icon: h.display?.icon ?? "cable", physical: true, tab: true },
+      run: { id: prefix + ref.id, defId: h.id, name: (ref.name ?? h.name).toUpperCase(), icon: h.display?.icon ?? "cable", physical: true, tab: true },
       diagnostics: [...r1.diagnostics, ...r2.diagnostics, ...carried.flatMap((d) => d.diagnostics)].map((d) => d.message),
     });
     consumed.add(r1.link.id).add(r2.link.id);
@@ -327,6 +327,7 @@ export function levelLinks(
     if (harnessRef && harnessDef?.kind === "harness") {
       view.run = {
         id: prefix + harnessRef.id,
+        defId: harnessDef.id,
         name: (harnessRef.name ?? harnessDef.name).toUpperCase(),
         icon: harnessDef.display?.icon ?? "cable",
         physical: false,

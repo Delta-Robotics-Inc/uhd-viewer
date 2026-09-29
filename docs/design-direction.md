@@ -130,6 +130,11 @@ Both drill modes are supported.
   on the canvas edge.
 - The header always shows a breadcrumb path (`QUADCOPTER / FC STACK / ESC 4-IN-1`).
 - The inspector's default view shows the hierarchy of modules and harnesses.
+- A selected module (or the harness a selected link runs through) shows its
+  artifacts: the thumbnail (an image artifact tagged `thumbnail`, else any
+  image that is not a datasheet page), the body CAD in a small viewer that
+  turns slowly until grabbed and then orbits with the pointer, and links to
+  its other CAD and drawing files.
 
 ### D10. The pair view is a first-class secondary view
 
