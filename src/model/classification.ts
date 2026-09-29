@@ -31,6 +31,7 @@ const DRC_COLORS: Record<LinkState, string> = {
 
 const SIGNAL_COLORS: Record<string, string> = {
   power: "var(--sig-power)",
+  ground: "var(--sig-ground)",
   bldc_3phase: "var(--sig-phase)",
   bldc_phase: "var(--sig-phase)",
   dshot: "var(--sig-pwm)",
@@ -58,7 +59,7 @@ export function colorFor(item: Colorable, mode: Classification): string {
   if (mode === "drc") return DRC_COLORS[item.state ?? "unconfigured"];
   if (mode === "signal") {
     if (item.domain !== "electrical") return "#3a3a3a";
-    return SIGNAL_COLORS[item.protocol] ?? "var(--sig-other)";
+    return signalColor(item.protocol);
   }
   return DOMAIN_COLORS[item.domain] ?? "var(--sig-other)";
 }
@@ -80,6 +81,7 @@ export function legendFor(mode: Classification): { label: string; color: string 
   if (mode === "signal") {
     return [
       { label: "POWER", color: SIGNAL_COLORS.power },
+      { label: "GROUND", color: SIGNAL_COLORS.ground },
       { label: "MOTOR PHASE", color: SIGNAL_COLORS.bldc_3phase },
       { label: "DSHOT / ESC", color: SIGNAL_COLORS.dshot },
       { label: "UART / CRSF", color: SIGNAL_COLORS.uart },
@@ -98,9 +100,11 @@ export function legendFor(mode: Classification): { label: string; color: string 
   ];
 }
 
-/** Colour of one conductor in ribbon mode: always by signal, whatever the classification. */
-export function conductorColor(protocol: string): string {
-  if (protocol === "ground") return "var(--sig-ground)";
+/** Signal-type colour: one table for links, lanes and conductors ("uart_tx" is a UART). */
+function signalColor(protocol: string): string {
   const base = Object.keys(SIGNAL_COLORS).find((k) => protocol === k || protocol.startsWith(`${k}_`));
   return base ? SIGNAL_COLORS[base] : "var(--sig-other)";
 }
+
+/** Colour of one conductor in signal mode (the same table as links and lanes). */
+export const conductorColor = signalColor;

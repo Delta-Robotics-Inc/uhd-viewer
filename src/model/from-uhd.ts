@@ -174,6 +174,15 @@ function leafProtocol(iface: InterfaceDef | undefined): string {
   return p.type;
 }
 
+/**
+ * Signal type of a lane or conductor (signal classification): what the link it
+ * belongs to carries (I2C, UART, power…), except that a ground is a ground.
+ * Leaves alone are not enough: I2C's SCL and SDA are declared as digital lines.
+ */
+function signalOf(linkProtocol: string, leaf?: InterfaceDef): string {
+  return leafProtocol(leaf) === "ground" ? "ground" : linkProtocol;
+}
+
 /** The leaf interface behind one position of a resolved connector end. */
 function positionLeaf(end: ResolvedEndpoint, slot: string): InterfaceDef | undefined {
   const composed = end.composed?.[slot];
@@ -188,11 +197,12 @@ function laneOf(r: LinkResult): ViewLane {
   // a bundle is named for what it is ("UART", "I2C"), not which instance ("UART1"): it opens to show its signals
   const shortest = names.sort((x, y) => x.length - y.length)[0].toUpperCase();
   const name = r.children.length > 1 ? shortest.replace(/(?<=[A-Z])\d+$/, "") : shortest;
+  const leafOf = (id?: string) => r.a.owner.interfaces.find((x) => x.id === id);
   return {
     id: r.link.id,
     name,
     domain: r.a.iface.domain,
-    protocol: r.protocol,
+    protocol: signalOf(r.protocol, r.a.iface),
     state: STATE_OF(r),
     children:
       r.children.length > 1
@@ -200,7 +210,7 @@ function laneOf(r: LinkResult): ViewLane {
             id: `${r.link.id}#${i}`,
             name: (c.a.slotId ?? c.a.leafId).replace(/^.*_/, "").toUpperCase(),
             domain: r.a.iface.domain,
-            protocol: r.protocol,
+            protocol: signalOf(r.protocol, leafOf(c.a.leafId)),
             state: STATE_OF(r),
             children: [],
           }))
@@ -270,7 +280,7 @@ export function levelLinks(
       return {
         id,
         label: label.toUpperCase(),
-        protocol: leafProtocol(leaf),
+        protocol: owner ? signalOf(owner.protocol, leaf) : leafProtocol(leaf),
         domain: leaf?.domain ?? r1.a.iface.domain,
         state: owner ? STATE_OF(owner) : STATE_OF(r1),
       };
@@ -288,7 +298,8 @@ export function levelLinks(
       target: endpoint(p2.end),
       name: `${lanes.length} LINK${lanes.length === 1 ? "" : "S"}`,
       domain: r1.a.iface.domain,
-      protocol: protocols.length === 1 ? protocols[0] : (protocols.find((p) => p !== "power") ?? "power"),
+      // the cable reads as the signal it carries (UART, I2C…), or as power when it only carries supply and return
+      protocol: protocols.find((p) => p !== "power" && p !== "ground") ?? (protocols.includes("power") || protocols.includes("ground") ? "power" : protocols[0] ?? "custom"),
       state,
       children: lanes.map((l) => ({ id: l.id, label: l.name, a: l.name, b: l.name, state: l.state })),
       lanes,
@@ -307,11 +318,12 @@ export function levelLinks(
     const harnessDef = harnessRef ? lookup(harnessRef.moduleDefId) : undefined;
     const [view] = toLinks(r, prefix, undefined, Boolean(prefix === "" && overrides?.[r.link.id]));
     if (r.children.length > 1) {
+      const leafOf = (id?: string) => r.a.owner.interfaces.find((x) => x.id === id);
       view.lanes = r.children.map((c, i) => ({
         id: `${view.id}#${i}`,
         name: (c.a.slotId ?? c.a.leafId).replace(/^.*_/, "").toUpperCase(),
         domain: r.a.iface.domain,
-        protocol: r.protocol,
+        protocol: signalOf(r.protocol, leafOf(c.a.leafId)),
         state: STATE_OF(r),
         children: [],
         conductors: [`${view.id}#c${i}`],
@@ -319,7 +331,7 @@ export function levelLinks(
       view.conductors = r.children.map((c, i) => ({
         id: `${view.id}#c${i}`,
         label: (c.a.pin ?? c.a.slotId ?? c.a.leafId).toUpperCase(),
-        protocol: leafProtocol(r.a.owner.interfaces.find((x) => x.id === c.a.leafId)),
+        protocol: signalOf(r.protocol, leafOf(c.a.leafId)),
         domain: r.a.iface.domain,
         state: STATE_OF(r),
       }));
@@ -340,6 +352,24 @@ export function levelLinks(
     links.push(view);
   }
   return { links, regionHarnesses, owners };
+}
+
+/**
+ * Carry a check result on a link down to what is drawn inside it, so expanded
+ * lanes and ribbon conductors follow the DRC classification too: a finding on
+ * the link itself applies to all of them, one on a link derived through a
+ * cable only to that lane (and its conductors).
+ */
+function overlayChildren(link: ViewLink, refId: string, state: LinkState) {
+  const bump = (x: { state: LinkState }) => {
+    if (RANK[state] > RANK[x.state]) x.state = state;
+  };
+  const all = (ls: ViewLane[]): ViewLane[] => ls.flatMap((l) => [l, ...all(l.children)]);
+  const direct = link.linkId === refId || link.alsoIds?.includes(refId) || !link.run?.physical;
+  const hit = direct ? all(link.lanes ?? []) : all((link.lanes ?? []).filter((l) => l.id === refId));
+  hit.forEach(bump);
+  const conductorIds = new Set(hit.flatMap((l) => l.conductors ?? []));
+  for (const c of link.conductors ?? []) if (direct || conductorIds.has(c.id)) bump(c);
 }
 
 export interface BuildOptions {
@@ -529,6 +559,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
         for (const link of links.filter((l) => l.linkId === owner)) {
           if (RANK[state] > RANK[link.state]) link.state = state;
           if (!link.diagnostics.includes(d.message)) link.diagnostics.push(d.message);
+          overlayChildren(link, ref.slice(5), state);
         }
       }
     }
