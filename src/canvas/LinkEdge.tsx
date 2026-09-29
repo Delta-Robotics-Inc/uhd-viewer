@@ -1,19 +1,21 @@
 /**
- * One link on the canvas (PB-803, design board 09 · D12).
+ * One link on the canvas (PB-803, design board 09 · D12, D13).
  *
  * Basic mode: one line at each module. Ribbon mode: every conductor end to
  * end at a tight pitch in its own colour over a soft band. Expanding a link
- * opens one level at a time in both modes: its lanes appear (a lane that is
- * itself a bundle stays one line, or one sub-ribbon, with its own toggle) and
- * each bundle opens again in place. A link that runs through a harness gets a
+ * is one breakout: its lanes leave the line together. A lane that itself has
+ * children stays one line (or one sub-ribbon) with its own toggle; opening it
+ * is a second breakout a level further in, so each level of the hierarchy is
+ * its own step along the line. A link that runs through a harness gets a
  * tight dotted region along the harness's span that grows around whatever is
  * drawn inside it, with the harness ends marked.
  *
- * The expansion sits on one straight stretch of the route, centred on the
- * toggle; its length follows the stretch between a minimum (room for the lane
- * names) and a maximum. The toggles of every level overlap at that point and
- * the label sits beside them; dragging the label or a toggle moves the whole
- * expansion along the route. Handles and toggles never sit in a bend.
+ * The expansion sits on one straight stretch of the route; its length follows
+ * the stretch between a minimum (room for every level's names) and a maximum.
+ * The toggles of every level overlap at one point and the label sits beside
+ * them; dragging the label or a toggle moves the whole expansion along the
+ * route, and dragging the label across the line moves it to the other side.
+ * The harness tab behaves the same way. Handles and toggles never sit in a bend.
  *
  * When the link is selected its waypoints show: automatic bends hollow,
  * pinned ones solid. Dragging a bend pins it; double-clicking a pin releases it.
@@ -27,25 +29,24 @@ import {
   LANE_PITCH,
   RIBBON_PITCH,
   RUN,
-  STAGE,
   at,
   clearOfBends,
   densify,
   easeJogs,
-  fanned,
-  lane,
   offsets,
   project,
   regionOutline,
   ribbon,
   ribbonRadius,
-  stagedSpans,
+  stepped,
   straights,
+  type Plateau,
   stretchAt,
   subpath,
   totalLength,
 } from "./geometry";
 import { Icon } from "./Icon";
+import type { LinkLayout } from "../layout/layout";
 import { GRID } from "../layout/router";
 
 export type Detail = "basic" | "ribbon";
@@ -70,7 +71,9 @@ export interface LinkData extends Record<string, unknown> {
   bends: Pt[];
   onToggle: (id: string) => void;
   onToggleLane: (id: string) => void;
-  onLabel: (linkId: string, t: number) => void;
+  /** Where the user put the label and harness tab (and which side of the line). */
+  edit?: LinkLayout;
+  onLayout: (linkId: string, patch: LinkLayout) => void;
   onPins: (linkId: string, pins: Pt[]) => void;
 }
 
@@ -100,8 +103,6 @@ const bundle = (it: Item) => it.children.length > 1;
  * dblclick nor a ref survives.
  */
 const lastPress: { current: { key: string; t: number } | null } = { current: null };
-/** The label or toggle being slid along its link (module-level for the same reason). */
-const slide: { current: { x: number; y: number; moved: boolean } | null } = { current: null };
 
 /** The expansion's items: lanes in basic mode, lanes grouping their conductors in ribbon mode. */
 function itemsOf(link: ViewLink, ribbonMode: boolean): Item[] {
@@ -140,6 +141,25 @@ function visibleItems(items: Item[], open: Set<string>, depth = 1, parents: Item
 
 const horizontal = (d: Pt) => Math.abs(d[0]) > Math.abs(d[1]);
 
+/** The offset sign (left of travel is positive) that points above a horizontal stretch or right of a vertical one. */
+function defaultSign(d: Pt): number {
+  const nrm: Pt = [d[1], -d[0]];
+  return (horizontal(d) ? -nrm[1] : nrm[0]) >= 0 ? 1 : -1;
+}
+
+/**
+ * Text beside a line, parallel to it (design D13): upright on a horizontal
+ * stretch (above, or below when not on the default side); on a vertical one
+ * turned to read bottom to top (right, or left). `at` is the edge nearest the
+ * line; `cls` is "below" where the flat edge of a tab faces up (or left).
+ */
+function placeText(d: Pt, [x, y]: Pt, onDefault: boolean): { tf: string; cls: string } {
+  if (horizontal(d)) return onDefault ? { tf: `translate(${x}px, ${y}px) translate(-50%, -100%)`, cls: "" } : { tf: `translate(${x}px, ${y}px) translate(-50%, 0)`, cls: "below" };
+  return onDefault
+    ? { tf: `translate(${x}px, ${y}px) rotate(-90deg) translate(-50%, 0)`, cls: "below" }
+    : { tf: `translate(${x}px, ${y}px) rotate(-90deg) translate(-50%, -100%)`, cls: "" };
+}
+
 interface ToggleBox {
   key: string;
   /** Extent across the link (offsets from the centre line). */
@@ -173,47 +193,74 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
 
     const items = itemsOf(link, ribbonMode);
     const expandable = ribbonMode ? n > 1 : items.length > 1;
+    const isOpen = (it: Item) => bundle(it) && data.openLanes.has(it.id);
     const vis = visibleItems(items, data.openLanes);
     const tight = offsets(n, RIBBON_PITCH);
 
-    // offsets across the expansion: one per visible item; in ribbon mode items keep their conductors at the ribbon pitch
+    // final offsets, where every open level has broken out: one per visible item; in ribbon
+    // mode an item keeps its conductors at the ribbon pitch
     const wide: number[] = new Array(n).fill(0);
-    let itemOff: number[];
+    const finalOff = new Map<Item, number>();
     if (ribbonMode) {
       let x = 0;
-      itemOff = vis.map(({ item }, k) => {
+      const raw = vis.map(({ item }, k) => {
         if (k > 0) x += LANE_PITCH;
         const start = x;
         item.conductors.forEach((ci, j) => (wide[ci] = start + j * RIBBON_PITCH));
         x += (item.conductors.length - 1) * RIBBON_PITCH;
         return (start + x) / 2;
       });
-      const mid = x / 2;
-      itemOff = itemOff.map((o) => o - mid);
-      for (let i = 0; i < n; i++) wide[i] -= mid;
-    } else itemOff = offsets(vis.length, LANE_PITCH);
+      vis.forEach(({ item }, k) => finalOff.set(item, raw[k] - x / 2));
+      for (let i = 0; i < n; i++) wide[i] -= x / 2;
+    } else offsets(vis.length, LANE_PITCH).forEach((o, k) => finalOff.set(vis[k].item, o));
+    /** What an item finally spreads across (its visible descendants, or its conductors). */
+    const spanOf = (it: Item): [number, number] => {
+      const os = ribbonMode ? it.conductors.map((ci) => wide[ci]) : vis.filter((v) => v.item === it || v.parents.includes(it)).map((v) => finalOff.get(v.item)!);
+      return [Math.min(...os), Math.max(...os)];
+    };
+    /** An item's own line (or sub-ribbon) runs at the middle of what it breaks out into. */
+    const centreOf = (it: Item) => {
+      const [a, b] = spanOf(it);
+      return (a + b) / 2;
+    };
 
-    // fan length, and the straight part the lane names need
-    const mags = [...new Set(itemOff.map((o) => Math.abs(o)).filter((m) => m > 0))];
-    const F = ribbonMode ? Math.max(RUN, Math.min(40, Math.max(...wide.map((w, i) => Math.abs(w - tight[i]))) * 0.7)) : RUN + Math.max(0, mags.length - 1) * STAGE;
-    const nameW = Math.max(0, ...vis.map((v) => v.item.name.length)) * NAME_CHAR + (ribbonMode ? 9 : 0) + 8;
-    // names then toggle: centred needs the names' room on both sides; tight puts the toggle after the names
-    const centred = 2 * (6 + nameW + 6 + TOGGLE / 2);
-    const need = 6 + nameW + 6 + TOGGLE + 4;
+    // levels (design D12): level 1 is the link's own breakout; a child that itself has children
+    // breaks out again, one level further in. Siblings always break out together.
+    const levels: Item[][] = [];
+    for (let cur = items; cur.length; cur = cur.filter(isOpen).flatMap((it) => it.children)) levels.push(cur);
+    const D = levels.length;
+    /** A conductor's offset at level d (0: the tight ribbon). */
+    const conductorAt = (ci: number, d: number): number => {
+      if (d === 0) return tight[ci];
+      const x = levels[d - 1].find((it) => it.conductors.includes(ci));
+      if (!x) return conductorAt(ci, d - 1);
+      if (x.conductors.length === 1) return wide[ci];
+      return centreOf(x) + (x.conductors.indexOf(ci) - (x.conductors.length - 1) / 2) * RIBBON_PITCH;
+    };
+    const fans = levels.map((_, i) =>
+      ribbonMode ? Math.max(RUN, Math.min(40, Math.max(...tight.map((_, ci) => Math.abs(conductorAt(ci, i + 1) - conductorAt(ci, i)))) * 0.7)) : RUN,
+    );
+    const nameRoom = levels.map((lv) => 6 + Math.max(...lv.map((it) => it.name.length)) * NAME_CHAR + (ribbonMode ? 9 : 0) + 8 + 6);
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    const fanTotal = 2 * sum(fans);
+    // names then toggle: centred needs every level's names on both sides; tight puts the toggle after the names
+    const tightNeed = fanTotal + sum(nameRoom) + 4 * D + TOGGLE + 8;
+    const centredNeed = fanTotal + 2 * sum(nameRoom) + TOGGLE + 8;
 
     // the expansion point: on a straight stretch, clear of the bends
     const clear = R + TOGGLE / 2 + 4;
     let c = clearOfBends(P, data.labelAt !== undefined ? onP(data.labelAt) : L / 2, clear, 12);
     const expanded = open && expandable;
     let win: [number, number] | undefined;
-    let fan = F;
-    let straight: [number, number] = [0, L];
+    let A: number[] = [];
+    let B: number[] = [];
+    let F = fans;
     let showNames = true;
     if (expanded) {
       if (!data.labelFixed) {
         // placed automatically: move to the nearest stretch the expansion fits on (or the longest)
         const iv = straights(P, R + (data.run ? 14 : 0), 12);
-        const fit = iv.filter(([a, b]) => b - a >= need + 2 * F);
+        const fit = iv.filter(([a, b]) => b - a >= tightNeed);
         const pool = fit.length ? fit : iv.length ? [iv.reduce((x, y) => (y[1] - y[0] > x[1] - x[0] ? y : x))] : [];
         let best = c;
         let dist = Infinity;
@@ -226,15 +273,23 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       // leave room at both ends of the stretch for the harness ends (connector handles) outside the fans
       const [a, b] = stretchAt(P, c, R + (data.run ? 14 : 0), 12);
       const avail = b - a;
-      // on a stretch too short for full fans, the fans steepen before the names lose their room
-      fan = avail >= need + 2 * F ? F : Math.max(12, Math.min(F, (avail - need) / 2));
-      const S = Math.max(MIN_STRAIGHT, Math.min(centred + MAX_EXTRA, avail - 2 * fan));
-      showNames = S >= need;
-      const W = S + 2 * fan;
+      // on a short stretch the fans steepen first, then the names drop (only where the user forces it)
+      const k = avail >= tightNeed ? 1 : Math.max(0.4, Math.min(1, (avail - (tightNeed - fanTotal)) / fanTotal));
+      F = fans.map((f) => f * k);
+      showNames = avail >= tightNeed - fanTotal * (1 - k) - 0.5;
+      const room = showNames ? nameRoom : nameRoom.map(() => 8);
+      const centred = showNames && avail >= centredNeed;
+      const base = 2 * sum(F) + (centred ? 2 * sum(room) : sum(room) + 4 * D) + TOGGLE + 8;
+      const W = base + Math.max(0, Math.min(MAX_EXTRA, avail - base));
       const w0 = W <= avail ? Math.max(a, Math.min(b - W, c - W / 2)) : Math.max(2, Math.min(L - W - 2, c - W / 2));
       win = [w0, w0 + W];
-      c = S >= centred ? w0 + W / 2 : w0 + W - fan - TOGGLE / 2 - 4;
-      straight = [w0 + fan, w0 + W - fan];
+      A = [w0];
+      B = [w0 + W];
+      for (let d = 1; d < D; d++) {
+        A.push(A[d - 1] + F[d - 1] + room[d - 1]);
+        B.push(B[d - 1] - F[d - 1] - (centred ? room[d - 1] : 4));
+      }
+      c = centred ? w0 + W / 2 : B[D - 1] - F[D - 1] - TOGGLE / 2 - 4;
     }
 
     // what gets drawn
@@ -243,23 +298,43 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
     const names: { s: number; o: number; text: string; color: string; swatch?: boolean }[] = [];
     let band: string | undefined;
     const laneColor = (l?: ViewLane) => (data.mode === "domain" || !l ? data.color : colorFor(l, data.mode));
+    const draw = (plateaus: Plateau[], color: string, width: number, key: string) => {
+      const sh = stepped(P, plateaus, R);
+      lines.push({ d: sh.d, color, width, key });
+      samples.push(...sh.samples);
+    };
+
+    if (win) {
+      // names: every item at the start of its own level's straight, on its own line
+      levels.forEach((lv, i) =>
+        lv.forEach((it) => {
+          const single = ribbonMode && it.conductors.length === 1;
+          names.push({
+            s: A[i] + F[i] + 6,
+            o: centreOf(it),
+            text: it.name,
+            color: single ? tint(conductors[it.conductors[0]]) : ribbonMode ? data.color : laneColor(it.lane),
+            swatch: single,
+          });
+        }),
+      );
+    }
 
     if (ribbonMode) {
       if (win) {
-        const shapes = fanned(P, tight, wide, win[0], win[1], fan, R);
-        shapes.forEach((sh, i) => {
-          lines.push({ d: sh.d, color: tint(conductors[i]), width: 2.4, key: conductors[i].id });
-          samples.push(...sh.samples);
-        });
-        vis.forEach(({ item }, k) => {
-          const single = item.conductors.length === 1;
-          names.push({ s: straight[0] + 6, o: itemOff[k], text: item.name, color: single ? tint(conductors[item.conductors[0]]) : data.color, swatch: single });
-        });
+        // every conductor steps out level by level and back
+        for (let ci = 0; ci < n; ci++) {
+          const pl: Plateau[] = [{ o: tight[ci], a: 0, b: A[0] }];
+          for (let d = 1; d <= D; d++) pl.push({ o: conductorAt(ci, d), a: A[d - 1] + F[d - 1], b: d < D ? A[d] : B[D - 1] - F[D - 1] });
+          for (let d = D - 1; d >= 1; d--) pl.push({ o: conductorAt(ci, d), a: B[d], b: B[d - 1] - F[d - 1] });
+          pl.push({ o: tight[ci], a: B[0], b: L });
+          draw(pl, tint(conductors[ci]), 2.4, conductors[ci].id);
+        }
         const inWin = (p: Pt) => {
           const q = project(P, p);
           return q > win[0] - 4 && q < win[1] + 4;
         };
-        band = regionOutline(shapes.flatMap((s) => s.samples.filter(inWin)), 5);
+        band = regionOutline(samples.filter(inWin), 5);
       } else {
         ribbon(P, n, R).forEach((r, i) => {
           lines.push({ d: r.d, color: tint(conductors[i]), width: 2.4, key: conductors[i].id });
@@ -267,21 +342,22 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
         });
       }
     } else if (win) {
-      const k = fan / F; // steeper fans on a short stretch
-      const spans = stagedSpans(itemOff, win[0], win[1], STAGE * k);
-      const innerStart = Math.max(...spans.map((s) => s[0]));
-      const innerEnd = Math.min(...spans.map((s) => s[1]));
-      const near = subpath(P, 0, innerStart);
-      const far = subpath(P, innerEnd, L);
-      lines.push({ d: filletPath(near, RADIUS), color: data.color, width: 2, key: "near" }, { d: filletPath(far, RADIUS), color: data.color, width: 2, key: "far" });
-      samples.push(...densify(near), ...densify(far));
-      vis.forEach(({ item }, i) => {
-        const sh = lane(P, itemOff[i], spans[i][0], spans[i][1], RUN * k);
-        const color = laneColor(item.lane);
-        lines.push({ d: sh.d, color, width: bundle(item) ? 3 : 2, key: item.id });
-        samples.push(...sh.samples);
-        names.push({ s: straight[0] + 6, o: itemOff[i], text: item.name, color });
-      });
+      // the link's own line up to its breakout and from its rejoin
+      draw([{ o: 0, a: 0, b: A[0] }], data.color, 2, "near");
+      draw([{ o: 0, a: B[0], b: L }], data.color, 2, "far");
+      // each item leaves its parent's line with its siblings, and an open one breaks out again a level in
+      const walk = (list: Item[], d: number, parent: number) => {
+        for (const it of list) {
+          const o = centreOf(it);
+          const color = laneColor(it.lane);
+          if (isOpen(it)) {
+            draw([{ o: parent, a: A[d], b: A[d] }, { o, a: A[d] + F[d], b: A[d + 1] }], color, 3, `${it.id}<`);
+            draw([{ o, a: B[d + 1], b: B[d] - F[d] }, { o: parent, a: B[d], b: B[d] }], color, 3, `${it.id}>`);
+            walk(it.children, d + 1, o);
+          } else draw([{ o: parent, a: A[d], b: A[d] }, { o, a: A[d] + F[d], b: B[d] - F[d] }, { o: parent, a: B[d], b: B[d] }], color, bundle(it) ? 3 : 2, it.id);
+        }
+      };
+      walk(items.length === levels[0].length ? items : levels[0], 0, 0);
     } else {
       samples.push(...densify(P));
     }
@@ -290,54 +366,42 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
     const boxes: ToggleBox[] = [];
     const at0 = at(P, c);
     const nrm: Pt = [at0.d[1], -at0.d[0]];
-    // caps go on the label's side (above a horizontal link, right of a vertical one), clear of the harness tab
-    const capHi = horizontal(at0.d) ? nrm[1] < 0 : nrm[0] > 0;
-    const withGlyph = (key: string, lo: number, hi: number, isOpen: boolean, depth: number, onClick: () => void, inner: ToggleBox[]) => {
+    // the label's side as an offset sign: above a horizontal stretch or right of a vertical one, unless flipped
+    const labelOnDefault = !data.edit?.labelFlip;
+    const labelSign = defaultSign(at0.d) * (labelOnDefault ? 1 : -1);
+    // caps go on the label's side, clear of the harness tab
+    const capHi = labelSign > 0;
+    const withGlyph = (key: string, lo: number, hi: number, open: boolean, depth: number, onClick: () => void, inner: ToggleBox[]) => {
       const mid = (lo + hi) / 2;
       const covered = inner.some((b) => b.depth === depth + 1 && mid > b.lo - 5 && mid < b.hi + 5);
-      if (!covered) return boxes.push({ key, lo, hi, glyph: mid, open: isOpen, depth, onClick });
+      if (!covered) return boxes.push({ key, lo, hi, glyph: mid, open, depth, onClick });
       return capHi
-        ? boxes.push({ key, lo, hi: hi + 14, glyph: hi + 7, open: isOpen, depth, onClick })
-        : boxes.push({ key, lo: lo - 14, hi, glyph: lo - 7, open: isOpen, depth, onClick });
+        ? boxes.push({ key, lo, hi: hi + 14, glyph: hi + 7, open, depth, onClick })
+        : boxes.push({ key, lo: lo - 14, hi, glyph: lo - 7, open, depth, onClick });
     };
     if (expandable) {
       if (!expanded) {
         const half = ribbonMode ? (n * RIBBON_PITCH) / 2 + 2 : 10;
         withGlyph("main", -half, half, false, 0, () => data.onToggle(link.linkId), []);
       } else {
-        const extentOf = (it: Item): [number, number] => {
-          if (ribbonMode) {
-            const ws = it.conductors.map((ci) => wide[ci]);
-            return [Math.min(...ws) - RIBBON_PITCH / 2 - 2, Math.max(...ws) + RIBBON_PITCH / 2 + 2];
-          }
-          const ks = vis.map((v, k) => ({ v, k })).filter(({ v }) => v.item === it || v.parents.includes(it)).map(({ k }) => itemOff[k]);
-          return [Math.min(...ks) - 8, Math.max(...ks) + 8];
-        };
+        const pad = ribbonMode ? RIBBON_PITCH / 2 + 2 : 8;
         // nested bundles first (deepest first), so a parent knows whether its centre is covered
-        const nested: { it: Item; depth: number }[] = [];
-        const walk = (list: Item[], depth: number) => {
-          for (const it of list) {
-            if (!bundle(it)) continue;
-            nested.push({ it, depth });
-            if (data.openLanes.has(it.id)) walk(it.children, depth + 1);
-          }
-        };
-        walk(items, 1);
+        const nested = levels.flatMap((lv, i) => lv.filter(bundle).map((it) => ({ it, depth: i + 1 })));
         nested.sort((x, y) => y.depth - x.depth);
         for (const { it, depth } of nested) {
-          const [lo, hi] = extentOf(it);
-          const isOpen = data.openLanes.has(it.id);
-          withGlyph(`n${it.id}`, lo, hi, isOpen, depth, () => data.onToggleLane(it.id), isOpen ? [...boxes] : []);
+          const [lo, hi] = isOpen(it) ? spanOf(it) : [centreOf(it), centreOf(it)];
+          const half = isOpen(it) || !ribbonMode ? pad : (it.conductors.length * RIBBON_PITCH) / 2 + 2;
+          withGlyph(`n${it.id}`, lo - (isOpen(it) ? pad : half), hi + (isOpen(it) ? pad : half), isOpen(it), depth, () => data.onToggleLane(it.id), isOpen(it) ? [...boxes] : []);
         }
-        const all = ribbonMode ? wide : itemOff;
-        withGlyph("main", Math.min(...all) - 10, Math.max(...all) + 10, true, 0, () => data.onToggle(link.linkId), [...boxes]);
+        const all = [...finalOff.values(), ...(ribbonMode ? wide : [])];
+        withGlyph("main", Math.min(...all) - pad - 2, Math.max(...all) + pad + 2, true, 0, () => data.onToggle(link.linkId), [...boxes]);
       }
       boxes.sort((x, y) => x.depth - y.depth);
     }
 
     // harness region: tight to what runs inside the harness span (grown to take in the expansion)
     let region: string | undefined;
-    let regionBox: { x: number; y: number; side: "above" | "below" | "left" } | undefined;
+    let tab: { tf: string; cls: string } | undefined;
     let run = data.run ? ([onP(data.run[0]), onP(data.run[1])] as [number, number]) : undefined;
     if (run && win) {
       // grown to take in the expansion, with its ends (connector handles) still on straight stretches
@@ -346,6 +410,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       const after = (s: number) => Math.min(L - 6, ...iv.filter(([, b]) => b >= s).map(([a, b]) => Math.max(a, s)));
       run = [run[0] < win[0] - 8 ? run[0] : before(win[0] - 8), run[1] > win[1] + 8 ? run[1] : after(win[1] + 8)];
     }
+    let tabAt: number | undefined;
     if (run) {
       const [r0, r1] = run;
       const inside = (p: Pt) => {
@@ -358,24 +423,47 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
           : densify(subpath(P, r0, r1));
       const inner = [...core, ...samples.filter(inside)];
       region = regionOutline(inner, 10);
-      // the name tab runs along the region, reading upright or bottom-to-top (design D13): on a
-      // vertical region it sits on the left edge; on a horizontal one on top, or underneath on a short run
-      const xs = inner.map((p) => p[0]);
-      const ys = inner.map((p) => p[1]);
-      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-      const vertical = y1 - y0 > x1 - x0;
-      const below = !vertical && r1 - r0 < 260;
-      regionBox = vertical
-        ? { x: x0 - 10, y: y0 + 16, side: "left" }
-        : { x: x0 - 10, y: below ? y1 + 10 : y0 - 10, side: below ? "below" : "above" };
+      if (link.run?.tab) {
+        // the name tab works like the link label (design D13): parallel to the line, on a straight
+        // stretch (by default the long one nearest the harness's middle), outside the region, on
+        // the side away from the link label unless flipped; drag it along or across
+        const tabLen = link.run.name.length * 5.6 + 30;
+        const mid = (r0 + r1) / 2;
+        const iv = straights(P, R + 4, 8)
+          .map(([a, b]) => [Math.max(a, r0 + 4), Math.min(b, r1 - 4)] as [number, number])
+          .filter(([a, b]) => b > a);
+        let s = data.edit?.tabT !== undefined ? onP(data.edit.tabT * totalLength(data.points)) : undefined;
+        if (s === undefined) {
+          const fit = iv.filter(([a, b]) => b - a >= tabLen);
+          const pool = fit.length ? fit : iv.length ? [iv.reduce((x, y) => (y[1] - y[0] > x[1] - x[0] ? y : x))] : [];
+          let best = mid;
+          let dist = Infinity;
+          for (const [a, b] of pool) {
+            const lo = Math.min(a + tabLen / 2, (a + b) / 2);
+            const hi = Math.max(b - tabLen / 2, (a + b) / 2);
+            const q = Math.max(lo, Math.min(hi, mid));
+            if (Math.abs(q - mid) < dist) [best, dist] = [q, Math.abs(q - mid)];
+          }
+          s = best;
+        } else s = clearOfBends(P, s, R + 4, 8);
+        tabAt = s;
+        const ta = at(P, s);
+        const tn: Pt = [ta.d[1], -ta.d[0]];
+        // opposite the label by default
+        const tabOnDefault = labelOnDefault === Boolean(data.edit?.tabFlip);
+        const sign = defaultSign(ta.d) * (tabOnDefault ? 1 : -1);
+        // how far the region reaches on that side around the tab
+        const near = inner.filter((q) => Math.abs(project(P, q) - s!) <= tabLen / 2 + 8);
+        const reach = Math.max(4, ...near.map((q) => sign * ((q[0] - ta.p[0]) * tn[0] + (q[1] - ta.p[1]) * tn[1]))) + 10;
+        const [x, y] = [ta.p[0] + tn[0] * sign * reach, ta.p[1] + tn[1] * sign * reach];
+        tab = placeText(ta.d, [x, y], tabOnDefault);
+      }
     }
 
-    // label: beside the toggles, on the side away from the caps
+    // label: beside the toggles, on its side
     const extent = boxes.length ? boxes.reduce((e, b) => [Math.min(e[0], b.lo), Math.max(e[1], b.hi)], [Infinity, -Infinity]) : [-4, 4];
-    const ends = [0, 1].map((k) => {
-      const o = extent[k];
-      return [at0.p[0] + nrm[0] * o, at0.p[1] + nrm[1] * o] as Pt;
-    });
+    const edge = labelSign > 0 ? extent[1] + 4 : extent[0] - 4;
+    const label = placeText(at0.d, [at0.p[0] + nrm[0] * edge, at0.p[1] + nrm[1] * edge], labelOnDefault);
 
     return {
       P,
@@ -386,11 +474,13 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       names: showNames ? names : [],
       band,
       region,
-      regionBox,
+      tab,
+      tabAt,
       run,
       anchor: data.labelAt !== undefined ? at0 : undefined,
       nrm,
-      ends,
+      label,
+      labelOnDefault,
       ribbonMode,
       expandable,
       expanded,
@@ -410,26 +500,45 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
   };
   const snapPt = (p: Pt): Pt => [Math.round(p[0] / GRID) * GRID, Math.round(p[1] / GRID) * GRID];
 
-  /** Drag the label or a toggle along the route; a press without a drag is a click. */
-  const slider = (onClick?: () => void) => ({
+  /**
+   * Drag the label (or a toggle, or the harness tab) along the route; dragging
+   * it across the line moves it to the other side. A press without a drag is a
+   * click. The drag listens on the window: the edge remounts as the layout
+   * updates, which ends any pointer capture on its elements.
+   */
+  const slider = (what: "label" | "tab", onClick?: () => void) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation();
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
-      slide.current = { x: e.clientX, y: e.clientY, moved: false };
+      if (e.button !== 0) return;
+      const P = geo.P;
+      const L0 = totalLength(points);
+      const start = { x: e.clientX, y: e.clientY };
+      let moved = false;
+      let onDefault = what === "label" ? geo.labelOnDefault : geo.labelOnDefault === Boolean(data.edit?.tabFlip);
+      const labelOnDefault = geo.labelOnDefault;
+      const move = (ev: PointerEvent) => {
+        if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 4) return;
+        moved = true;
+        const f = flow.screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+        const q: Pt = [f.x, f.y];
+        const t = project(points, q) / L0;
+        // which side of the line the pointer is on (only once it is clearly across)
+        const a = at(P, project(P, q));
+        const across = ((q[0] - a.p[0]) * a.d[1] - (q[1] - a.p[1]) * a.d[0]) * defaultSign(a.d);
+        if (Math.abs(across) > 14) onDefault = across > 0;
+        if (what === "label") data.onLayout(link.linkId, { labelT: t, labelFlip: !onDefault });
+        else data.onLayout(link.linkId, { tabT: t, tabFlip: labelOnDefault === onDefault });
+      };
+      // capture phase: the window sees these before any element can stop them
+      const up = () => {
+        window.removeEventListener("pointermove", move, true);
+        window.removeEventListener("pointerup", up, true);
+        if (!moved) onClick?.();
+      };
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", up, true);
     },
-    onPointerMove: (e: React.PointerEvent) => {
-      const d = slide.current;
-      if (!d) return;
-      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
-      d.moved = true;
-      data.onLabel(link.linkId, project(points, toFlow(e)) / totalLength(points));
-    },
-    onPointerUp: (e: React.PointerEvent) => {
-      e.stopPropagation();
-      const d = slide.current;
-      slide.current = null;
-      if (d && !d.moved) onClick?.();
-    },
+    onPointerUp: (e: React.PointerEvent) => e.stopPropagation(),
     onClick: (e: React.MouseEvent) => e.stopPropagation(),
   });
 
@@ -474,7 +583,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
     const y1 = Math.max(...corners.map((q) => q[1]));
     const g: Pt = [p[0] + nrm[0] * b.glyph, p[1] + nrm[1] * b.glyph];
     return (
-      <g key={b.key} className="link-toggle-box nodrag nopan" style={{ cursor: "pointer", pointerEvents: "all" }} {...slider(b.onClick)}>
+      <g key={b.key} className="link-toggle-box nodrag nopan" style={{ cursor: "pointer", pointerEvents: "all" }} {...slider("label", b.onClick)}>
         <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} rx={4} fill="var(--canvas-bg)" stroke={color} strokeWidth={b.depth ? 1.2 : 1.5} />
         <path
           d={b.open ? `M${g[0] - 3.5},${g[1]} h7` : `M${g[0] - 3.5},${g[1]} h7 M${g[0]},${g[1] - 3.5} v7`}
@@ -540,18 +649,6 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
   };
 
   const anchor = geo.anchor;
-  // label beside the toggles and parallel to the line (design D13): above a horizontal stretch;
-  // right of a vertical one, turned to read bottom-to-top with its top towards the line
-  const labelTf = anchor
-    ? horizontal(anchor.d)
-      ? `translate(${anchor.p[0]}px, ${Math.min(...geo.ends.map((q) => q[1])) - 4}px) translate(-50%, -100%)`
-      : `translate(${Math.max(...geo.ends.map((q) => q[0])) + 4}px, ${anchor.p[1]}px) rotate(-90deg) translate(-50%, 0)`
-    : undefined;
-  const tabTf = (b: { x: number; y: number; side: "above" | "below" | "left" }) =>
-    b.side === "left"
-      ? `translate(${b.x}px, ${b.y}px) rotate(-90deg) translate(-100%, -100%)`
-      : `translate(${b.x}px, ${b.y}px) translate(0, ${b.side === "below" ? "0" : "-100%"})`;
-
   return (
     <>
       {geo.region && (
@@ -593,10 +690,12 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       )}
 
       <EdgeLabelRenderer>
-        {data.run?.length && link.run?.tab && geo.regionBox && (
+        {link.run?.tab && geo.tab && (
           <div
-            className={`harness-tab ${geo.regionBox.side}`}
-            style={{ transform: tabTf(geo.regionBox), transformOrigin: "0 0", opacity: faded ? 0.3 : 1 }}
+            className={`harness-tab nodrag nopan ${geo.tab.cls}`}
+            style={{ transform: geo.tab.tf, transformOrigin: "0 0", opacity: faded ? 0.3 : 1 }}
+            title="Drag along the harness, or across it to the other side"
+            {...slider("tab")}
           >
             <Icon name={link.run.icon} size={10} color={color} />
             <span>{link.run.name}</span>
@@ -627,12 +726,12 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
               </div>
             );
           })}
-        {!link.passThrough && labelTf && (
+        {!link.passThrough && geo.anchor && (
           <div
             className={`link-label nodrag nopan${selected ? " selected" : ""}`}
-            style={{ transform: labelTf, transformOrigin: "0 0", borderColor: color, color, opacity: faded ? 0.25 : 1, cursor: "grab" }}
-            title="Drag along the link to move the label and its expansion"
-            {...slider()}
+            style={{ transform: geo.label.tf, transformOrigin: "0 0", borderColor: color, color, opacity: faded ? 0.25 : 1, cursor: "grab" }}
+            title="Drag along the link to move the label and its expansion, or across it to the other side"
+            {...slider("label")}
           >
             {link.manual && <Icon name="lock" size={9} />}
             <span>{link.name.toUpperCase()}</span>

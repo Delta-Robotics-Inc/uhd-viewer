@@ -158,11 +158,9 @@ in the header. Its detailed design is deferred.
   taps), with a dotted outline and a light fill. The harness name sits outside
   it as a small tab; lengths, gauges, members and hardware lists belong in the
   inspector, not on the canvas.
-- **Bundles, basic mode.** One line at each module (it is one link). Expanded,
-  the signals flow out of that line into labelled lanes in stages: the
-  outermost pair branches first and the innermost pair last (and in reverse
-  order where they rejoin), so the lanes fan out and back without bars or
-  crossings.
+- **Bundles, basic mode.** One line at each module (it is one link).
+  Expanded, it breaks out into labelled lanes, one per child interface, all
+  leaving the line at the same point and rejoining it at the same point.
 - **Bundles, detailed mode (ribbon).** Every signal end to end at a tight
   pitch in its own colour, over a soft band in the link's colour. The ends are
   slim handles whose dots are only slightly wider than the lines, and each line
@@ -178,11 +176,16 @@ in the header. Its detailed design is deferred.
   carries several links (the DJI 3-in-1) is one line from socket to socket;
   its lanes are the links derived from its conductors, and a lane that is
   itself a bundle (UART5: TX · RX) has its own toggle.
-- **One level at a time, in both modes.** Expanding a link shows its lanes;
-  a lane that is itself a bundle stays one line (basic) or one sub-ribbon of
-  its conductors (ribbon), named for what it is ("UART", not "UART1"), with its
-  own toggle. Opening it splits it in place, and so on down. A collapsed link
-  shows no child count: the expansion is one click away.
+- **Levels: a breakout per level of the hierarchy, in both modes.**
+  Expanding a link is one breakout: its child interfaces leave the line
+  together (siblings never stagger). A child that itself has children stays
+  one line (basic, drawn thicker) or one sub-ribbon of its conductors (ribbon),
+  named for what it is ("UART", not "UART1"), with its own toggle. Opening it
+  is a second, independent breakout a level further in: the child runs as a
+  single line first, carrying its name, then splits into its own children.
+  Each level has its own fan and its own lane names at the start of its
+  straight part, so the depth of the hierarchy reads from the line itself. A
+  collapsed link shows no child count: the expansion is one click away.
 - **Label and toggle.** The link label sits beside the expand/collapse toggle,
   a rounded box sized to what it spans (the line or ribbon when collapsed,
   every lane when expanded). The toggles of every open level **overlap at the
@@ -191,8 +194,9 @@ in the header. Its detailed design is deferred.
   small cap on the label's side. Label and toggles form one handle that
   defaults to the middle of the longest straight stretch and **can be dragged
   along the link's path** (by the label or any toggle; a press without a drag
-  is a click). Its position is stored as a fraction along the route and
-  follows the route when it is re-routed.
+  is a click). Dragging the label **across the line** puts it on the other
+  side (the caps follow it). Its position and side are stored per link
+  (`labelT`, `labelFlip`) and follow the route when it is re-routed.
 - **Expansion length.** An expansion sits on one straight stretch, never in a
   bend. Its straight part is at least what the lane names need and at most a
   little more, so it can slide along a long stretch. On a short stretch the
@@ -236,9 +240,13 @@ aligned text).
 
 - **Link and harness labels run parallel to their line.** On a horizontal
   stretch the link label sits above the toggle, upright; on a vertical one it
-  sits to the right, turned to read bottom to top with its top towards the
-  line. A harness tab sits on top of (or under) a horizontal region and on the
-  left edge of a vertical one, turned the same way.
+  sits to the right, turned to read bottom to top. Either can be dragged
+  across the line to the other side (below, or left).
+- **Harness tabs work like link labels.** A tab sits outside its region on a
+  straight stretch, by default the long one nearest the middle of the harness
+  and on the side opposite the link label, turned like the label on a
+  vertical stretch. It can be dragged along the harness or across it
+  (`tabT`, `tabFlip`).
 - **Lane names run along their lane**, upright or bottom to top, starting
   where the straight part begins and running into it whichever way the link
   travels.

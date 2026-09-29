@@ -23,6 +23,12 @@ export interface LinkLayout {
   waypoints?: Pt[];
   /** Label + toggle position as a fraction along the route (0..1). */
   labelT?: number;
+  /** Label on the other side of the line (below a horizontal stretch, left of a vertical one). */
+  labelFlip?: boolean;
+  /** Harness name tab position as a fraction along the route (absent: placed automatically). */
+  tabT?: number;
+  /** Tab on the same side as the label (it defaults to the opposite side). */
+  tabFlip?: boolean;
 }
 
 export interface LevelLayout {
@@ -67,6 +73,8 @@ export interface ComputedLayout {
   bends: Record<string, Pt[]>;
   /** Links whose label (and expansion point) the user or the display file placed. */
   labelFixed: Record<string, boolean>;
+  /** The display file's and the user's label and tab placement per link, merged. */
+  edits: Record<string, LinkLayout>;
 }
 
 export const portKey = (node: string, port: string) => `${node}|${port}`;
@@ -363,7 +371,8 @@ export function computeLayout(
   const labelAt = placeLabels(vm, routes, boxes, hand, linkOverrides, runs);
   const labels: Record<string, Pt> = Object.fromEntries(Object.entries(labelAt).map(([id, s]) => [id, at(routes[id], s).p]));
   const labelFixed = Object.fromEntries(vm.links.map((l) => [l.id, (linkOverrides?.[l.id]?.labelT ?? hand?.links?.[l.id]?.labelT) !== undefined]));
-  return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends, labelFixed };
+  const edits = Object.fromEntries(vm.links.map((l) => [l.id, { ...hand?.links?.[l.id], ...linkOverrides?.[l.id] }]));
+  return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends, labelFixed, edits };
 }
 
 const CANDIDATES = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];

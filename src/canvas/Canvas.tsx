@@ -11,7 +11,7 @@ import {
 import type { ViewModel } from "../model/types";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import type { ComputedLayout } from "../layout/layout";
-import type { LevelLayout } from "../layout/layout";
+import type { LevelLayout, LinkLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
@@ -29,7 +29,7 @@ export interface CanvasProps {
   selection: Selection;
   onSelect: (s: Selection) => void;
   onToggleLink: (id: string) => void;
-  onLabel: (linkId: string, t: number) => void;
+  onLayout: (linkId: string, patch: LinkLayout) => void;
   onPins: (linkId: string, pins: Pt[]) => void;
   onToggleExpand: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
@@ -102,12 +102,13 @@ export function Canvas(props: CanvasProps) {
             bends: layout.bends[link.id] ?? [],
             onToggle: props.onToggleLink,
             onToggleLane: props.onToggleLink,
-            onLabel: props.onLabel,
+            onLayout: props.onLayout,
+            edit: layout.edits[link.id],
             onPins: props.onPins,
           },
         };
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLabel, props.onPins]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {

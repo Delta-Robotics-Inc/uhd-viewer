@@ -6,9 +6,6 @@
 import { filletPath, offsetPolyline, type Pt } from "./routing";
 
 export const RUN = 24; // length of one fan
-const RUN_DEFAULT = RUN;
-export const STAGE = 24; // stagger between fan stages (outer lanes first)
-const STAGE_DEFAULT = STAGE;
 export const LANE_PITCH = 16;
 export const RIBBON_PITCH = 6;
 const RADIUS = 12;
@@ -63,43 +60,8 @@ export function project(points: Pt[], q: Pt): number {
   return best.s;
 }
 
-export interface LaneShape {
-  d: string;
-  /** Dense points (for regions and hit tests). */
-  samples: Pt[];
-  /** Where the lane runs at its full offset (for names). */
-  from: number;
-  to: number;
-}
-
 const add = (a: Pt, b: Pt, k = 1): Pt => [a[0] + b[0] * k, a[1] + b[1] * k];
 const normal = (d: Pt): Pt => [d[1], -d[0]]; // left of travel, as offsetPolyline
-
-/**
- * A lane that leaves the centre line at arc length `sa`, runs offset by `o`,
- * and rejoins it at `sb`. Offset 0 is the centre line itself.
- */
-export function lane(points: Pt[], o: number, sa: number, sb: number, RUN = RUN_DEFAULT): LaneShape {
-  if (o === 0 || sb - sa < 2 * RUN + 2) {
-    const sub = subpath(points, sa, sb);
-    return { d: filletPath(sub, RADIUS), samples: densify(sub), from: sa, to: sb };
-  }
-  const mid = subpath(points, sa + RUN, sb - RUN);
-  const off = offsetPolyline(mid, o, RADIUS);
-  const a = at(points, sa);
-  const b = at(points, sb);
-  const first = off.points[0];
-  const last = off.points[off.points.length - 1];
-  const da = at(points, sa + RUN).d;
-  const db = at(points, sb - RUN).d;
-  const body = filletPath(off.points, off.radii).replace(/^M[^L]*/, "");
-  const d =
-    `M${a.p[0]},${a.p[1]} C${add(a.p, a.d, RUN / 2).join(",")} ${add(first, da, -RUN / 2).join(",")} ${first[0]},${first[1]}` +
-    ` L${first[0]},${first[1]}${body}` +
-    ` C${add(last, db, RUN / 2).join(",")} ${add(b.p, b.d, -RUN / 2).join(",")} ${b.p[0]},${b.p[1]}`;
-  const samples = [...densify([a.p, first]), ...densify(off.points), ...densify([last, b.p])];
-  return { d, samples, from: sa + RUN, to: sb - RUN };
-}
 
 export function densify(points: Pt[], step = 3): Pt[] {
   const out: Pt[] = [];
@@ -115,19 +77,6 @@ export function densify(points: Pt[], step = 3): Pt[] {
 /** Offsets for n lanes centred on the line. */
 export const offsets = (n: number, pitch: number) => Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * pitch);
 
-/**
- * Staged fans (basic mode): outer lanes leave first and rejoin last. Returns
- * [start, end] arc lengths per lane between `s0` and `s1`.
- */
-export function stagedSpans(offs: number[], s0: number, s1: number, STAGE = STAGE_DEFAULT): [number, number][] {
-  const mags = [...new Set(offs.map((o) => Math.abs(o)).filter((m) => m > 0))].sort((a, b) => b - a);
-  const inner = Math.max(0, mags.length - 1);
-  return offs.map((o) => {
-    const stage = o === 0 ? inner : mags.indexOf(Math.abs(o));
-    return [s0 + stage * STAGE, s1 - stage * STAGE];
-  });
-}
-
 /** Fillet radius for the centre line of a ribbon `width` wide, so its inner conductor still turns round. */
 export const ribbonRadius = (width: number) => Math.max(RADIUS, width / 2 + 6);
 
@@ -136,35 +85,6 @@ export function ribbon(points: Pt[], n: number, radius = RADIUS): { d: string; s
   return offsets(n, RIBBON_PITCH).map((o) => {
     const off = offsetPolyline(points, o, radius);
     return { d: filletPath(off.points, off.radii), samples: densify(off.points) };
-  });
-}
-
-/**
- * Conductors that run at offsets `tight` outside [s0, s1] and fan to offsets
- * `wide` inside it, all at once over `fan` (ribbon mode, expanded). Both
- * sides are offsets of the same centre line, so every conductor leaves and
- * rejoins exactly where its neighbours do.
- */
-export function fanned(points: Pt[], tight: number[], wide: number[], s0: number, s1: number, fan = RUN, radius = RADIUS): LaneShape[] {
-  const L = totalLength(points);
-  const da = at(points, s0 + fan).d;
-  const db = at(points, s1 - fan).d;
-  return tight.map((t, i) => {
-    const head = offsetPolyline(subpath(points, 0, s0), t, radius);
-    const tail = offsetPolyline(subpath(points, s1, L), t, radius);
-    const w = offsetPolyline(subpath(points, s0 + fan, s1 - fan), wide[i], radius);
-    const a = head.points[head.points.length - 1];
-    const b = tail.points[0];
-    const first = w.points[0];
-    const last = w.points[w.points.length - 1];
-    const ad = at(points, s0).d;
-    const bd = at(points, s1).d;
-    const d =
-      `${filletPath(head.points, head.radii)} C${add(a, ad, fan / 2).join(",")} ${add(first, da, -fan / 2).join(",")} ${first[0]},${first[1]}` +
-      filletPath(w.points, w.radii).replace(/^M[^L]*/, "") +
-      ` C${add(last, db, fan / 2).join(",")} ${add(b, bd, -fan / 2).join(",")} ${b[0]},${b[1]}` +
-      filletPath(tail.points, tail.radii).replace(/^M[^L]*/, "");
-    return { d, samples: [...densify(head.points), ...densify([a, first]), ...densify(w.points), ...densify([last, b]), ...densify(tail.points)], from: s0 + fan, to: s1 - fan };
   });
 }
 
@@ -309,4 +229,52 @@ export function regionOutline(samples: Pt[], pad: number): string {
     poly = next;
   }
   return "M" + poly.filter((_, i) => i % 2 === 0).map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L") + "Z";
+}
+
+/** A stretch of a line at a constant offset from the centre line, between arc lengths a and b. */
+export interface Plateau {
+  o: number;
+  a: number;
+  b: number;
+}
+
+/**
+ * A line that steps between offsets from the centre line: it runs each
+ * plateau parallel to the route and curves smoothly from one to the next over
+ * the gap between them (b of one to a of the next). Consecutive plateaus at
+ * the same offset join straight through. The building block of every
+ * breakout: a lane leaving its parent line, and a conductor stepping out
+ * level by level.
+ */
+export function stepped(points: Pt[], plateaus: Plateau[], radius = RADIUS): { d: string; samples: Pt[] } {
+  const ps: Plateau[] = [];
+  for (const p of plateaus) {
+    const last = ps[ps.length - 1];
+    if (last && Math.abs(last.o - p.o) < 0.01) last.b = Math.max(last.b, p.b);
+    else ps.push({ ...p });
+  }
+  const pointAt = (s: number, o: number): Pt => {
+    const { p, d } = at(points, s);
+    return add(p, normal(d), o);
+  };
+  let d = "";
+  const samples: Pt[] = [];
+  let end: Pt | undefined;
+  ps.forEach((p, i) => {
+    const sub = p.b - p.a > 0.5 ? offsetPolyline(subpath(points, p.a, p.b), p.o, radius) : undefined;
+    const start = sub ? sub.points[0] : pointAt(p.a, p.o);
+    if (i === 0) d = `M${start[0]},${start[1]}`;
+    else if (end) {
+      const q = ps[i - 1];
+      const h = Math.max(1, (p.a - q.b) / 2);
+      d += ` C${add(end, at(points, q.b).d, h).join(",")} ${add(start, at(points, p.a).d, -h).join(",")} ${start[0]},${start[1]}`;
+      samples.push(...densify([end, start]));
+    }
+    if (sub) {
+      d += filletPath(sub.points, sub.radii).replace(/^M[^L]*/, "");
+      samples.push(...densify(sub.points));
+      end = sub.points[sub.points.length - 1];
+    } else end = start;
+  });
+  return { d, samples };
 }

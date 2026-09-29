@@ -1799,7 +1799,10 @@ body {
   letter-spacing: 0.5px;
   color: var(--text-primary);
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: all;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 .lane-name {
   position: absolute;

@@ -94,7 +94,6 @@ function Viewer({ source }: { source: LoadedSource }) {
       setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
     [levelKey],
   );
-  const onLabel = useCallback((linkId: string, t: number) => editLink(linkId, { labelT: t }), [editLink]);
   const onPins = useCallback((linkId: string, pins: Pt[]) => editLink(linkId, { waypoints: pins }), [editLink]);
 
   const toggle = (set: Set<string>, id: string) => {
@@ -198,7 +197,7 @@ function Viewer({ source }: { source: LoadedSource }) {
               onToggleLink={onToggleLink}
               onToggleExpand={onToggleExpand}
               onMove={onMove}
-              onLabel={onLabel}
+              onLayout={editLink}
               onPins={onPins}
             />
             <Toolbar
