@@ -20,7 +20,7 @@
  * When the link is selected its waypoints show: automatic bends hollow,
  * pinned ones solid. Dragging a bend pins it; double-clicking a pin releases it.
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { BaseEdge, EdgeLabelRenderer, useReactFlow, type Edge, type EdgeProps } from "@xyflow/react";
 import type { ViewConductor, ViewLane, ViewLink } from "../model/types";
 import { colorFor, conductorColor, type Classification } from "../model/classification";
@@ -47,6 +47,7 @@ import {
 } from "./geometry";
 import { Icon } from "./Icon";
 import type { LinkLayout } from "../layout/layout";
+import type { Live } from "../App";
 import { GRID } from "../layout/router";
 
 export type Detail = "basic" | "ribbon";
@@ -75,6 +76,7 @@ export interface LinkData extends Record<string, unknown> {
   edit?: LinkLayout;
   onLayout: (linkId: string, patch: LinkLayout) => void;
   onPins: (linkId: string, pins: Pt[]) => void;
+  onLive: (live: Live | null) => void;
 }
 
 export type LinkEdgeType = Edge<LinkData, "link">;
@@ -174,7 +176,6 @@ interface ToggleBox {
 
 export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
   const flow = useReactFlow();
-  const [drag, setDrag] = useState<{ kind: "pin" | "bend"; index: number; at: Pt } | null>(null);
 
   const geo = useMemo(() => {
     if (!data || data.points.length < 2) return null;
@@ -595,58 +596,63 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
     );
   };
 
-  const commitPins = (dragged: { kind: "pin" | "bend"; index: number }, to: Pt) => {
-    const pins = [...data.pins];
-    if (dragged.kind === "pin") pins[dragged.index] = to;
-    else {
-      const s = project(points, data.bends[dragged.index]);
-      const order = pins.map((p) => project(points, p));
-      const at = order.findIndex((o) => o > s);
-      pins.splice(at < 0 ? pins.length : at, 0, to);
-    }
-    data.onPins(link.linkId, pins);
-  };
-
-  const waypoint = (p: Pt, kind: "pin" | "bend", index: number) => {
-    const live = drag && drag.kind === kind && drag.index === index ? drag.at : p;
-    return (
-      <g
-        key={`${kind}${index}`}
-        className="nodrag nopan"
-        style={{ cursor: "move", pointerEvents: "all" }}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          const key = `${link.linkId}|${kind}${index}`;
-          const now = performance.now();
-          if (kind === "pin" && lastPress.current?.key === key && now - lastPress.current.t < 400) {
-            lastPress.current = null;
-            data.onPins(link.linkId, data.pins.filter((_, i) => i !== index));
-            return;
-          }
-          lastPress.current = { key, t: now };
-          (e.target as Element).setPointerCapture(e.pointerId);
-          setDrag({ kind, index, at: p });
-        }}
-        onPointerMove={(e) => {
-          if (drag && drag.kind === kind && drag.index === index) setDrag({ ...drag, at: snapPt(toFlow(e)) });
-        }}
-        onPointerUp={(e) => {
-          if (!drag) return;
-          const to = snapPt(toFlow(e));
-          setDrag(null);
-          if (Math.hypot(to[0] - p[0], to[1] - p[1]) >= 1) commitPins({ kind, index }, to);
-        }}
-      >
-        <title>{kind === "pin" ? "Pinned waypoint: drag to move, double-click to release" : "Drag to pin a waypoint here"}</title>
-        <circle cx={live[0]} cy={live[1]} r={9} fill="transparent" />
-        {kind === "pin" ? (
-          <rect x={live[0] - 4.5} y={live[1] - 4.5} width={9} height={9} rx={2} fill="var(--brand)" stroke="var(--canvas-bg)" strokeWidth={1.5} />
-        ) : (
-          <circle cx={live[0]} cy={live[1]} r={4.5} fill="var(--canvas-bg)" stroke="var(--text-muted)" strokeWidth={1.5} />
-        )}
-      </g>
-    );
-  };
+  /**
+   * Drag a waypoint: the link reroutes live through it as it moves (only this
+   * link, around the others), and everything reroutes once it is dropped.
+   * Dragging an automatic bend pins it. Tracked on the window like the label.
+   */
+  const waypoint = (p: Pt, kind: "pin" | "bend", index: number) => (
+    <g
+      key={`${kind}${index}`}
+      className="nodrag nopan"
+      style={{ cursor: "move", pointerEvents: "all" }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.button !== 0) return;
+        const key = `${link.linkId}|${kind}${index}`;
+        const now = performance.now();
+        if (kind === "pin" && lastPress.current?.key === key && now - lastPress.current.t < 400) {
+          lastPress.current = null;
+          data.onPins(link.linkId, data.pins.filter((_, i) => i !== index));
+          return;
+        }
+        lastPress.current = { key, t: now };
+        const pins = [...data.pins];
+        let at = kind === "pin" ? index : -1;
+        let last = p;
+        data.onLive({ links: new Set([link.linkId]) });
+        const move = (ev: PointerEvent) => {
+          const f = flow.screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+          const to = snapPt([f.x, f.y]);
+          if (to[0] === last[0] && to[1] === last[1]) return;
+          last = to;
+          if (at < 0) {
+            // an automatic bend becomes a pin, in route order among the existing pins
+            const s = project(points, p);
+            const k = pins.findIndex((q) => project(points, q) > s);
+            at = k < 0 ? pins.length : k;
+            pins.splice(at, 0, to);
+          } else pins[at] = to;
+          data.onPins(link.linkId, [...pins]);
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move, true);
+          window.removeEventListener("pointerup", up, true);
+          data.onLive(null);
+        };
+        window.addEventListener("pointermove", move, true);
+        window.addEventListener("pointerup", up, true);
+      }}
+    >
+      <title>{kind === "pin" ? "Pinned waypoint: drag to move, double-click to release" : "Drag to pin a waypoint here"}</title>
+      <circle cx={p[0]} cy={p[1]} r={9} fill="transparent" />
+      {kind === "pin" ? (
+        <rect x={p[0] - 4.5} y={p[1] - 4.5} width={9} height={9} rx={2} fill="var(--brand)" stroke="var(--canvas-bg)" strokeWidth={1.5} />
+      ) : (
+        <circle cx={p[0]} cy={p[1]} r={4.5} fill="var(--canvas-bg)" stroke="var(--text-muted)" strokeWidth={1.5} />
+      )}
+    </g>
+  );
 
   const anchor = geo.anchor;
   return (

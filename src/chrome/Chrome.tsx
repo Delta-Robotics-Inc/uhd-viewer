@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
@@ -32,7 +32,7 @@ function Segmented<T extends string>({
   );
 }
 
-export function Header(props: {
+function HeaderView(props: {
   vm: ViewModel;
   onNavigate: (depth: number) => void;
   scenarios: { id: string; label: string }[];
@@ -109,7 +109,7 @@ export function Header(props: {
 
 export type Panel = "hierarchy" | "checks";
 
-export function ActivityBar({ panel, onPanel, errors }: { panel: Panel | null; onPanel: (p: Panel | null) => void; errors: number }) {
+function ActivityBarView({ panel, onPanel, errors }: { panel: Panel | null; onPanel: (p: Panel | null) => void; errors: number }) {
   const items: { id?: Panel; icon: string; label: string }[] = [
     { id: "hierarchy", icon: "list-tree", label: "Hierarchy" },
     { id: "checks", icon: "shield-check", label: "System checks" },
@@ -465,7 +465,7 @@ function Checks({ diagnostics, vm, onSelect }: { diagnostics: SystemDiagnostic[]
   );
 }
 
-export function Inspector(props: {
+function InspectorView(props: {
   vm: ViewModel;
   panel: Panel;
   onPanel: (p: Panel) => void;
@@ -528,7 +528,7 @@ export function Inspector(props: {
 // Bottom toolbar and legend
 // ---------------------------------------------------------------------------
 
-export function Toolbar({ onReset }: { onReset: () => void }) {
+function ToolbarView({ onReset }: { onReset: () => void }) {
   const flow = useReactFlow();
   const tools = [
     { icon: "maximize", label: "Fit view", run: () => flow.fitView({ padding: 0.08, duration: 300 }) },
@@ -547,7 +547,7 @@ export function Toolbar({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function Legend({ mode }: { mode: Classification }) {
+function LegendView({ mode }: { mode: Classification }) {
   return (
     <div className="legend">
       <div className="legend-title">{CLASSIFICATIONS.find((c) => c.id === mode)?.label}</div>
@@ -560,3 +560,10 @@ export function Legend({ mode }: { mode: Classification }) {
     </div>
   );
 }
+
+/** Memoised: re-renders only when its props change, not on every frame of a canvas drag. */
+export const Header = memo(HeaderView);
+export const ActivityBar = memo(ActivityBarView);
+export const Inspector = memo(InspectorView);
+export const Toolbar = memo(ToolbarView);
+export const Legend = memo(LegendView);

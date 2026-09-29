@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import { checkSystem } from "@uhd/system/checks.js";
 import { buildView, withOverrides } from "./model/from-uhd";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
-import { computeLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
+import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
 import type { Pt } from "./canvas/routing";
 import { bundleUrlFromLocation, loadBundle, type LoadedSource } from "./source/source";
 import { Canvas, type Selection } from "./canvas/Canvas";
@@ -32,6 +32,20 @@ function save(key: string, value: unknown) {
   } catch {
     /* storage unavailable: state stays in memory */
   }
+}
+
+/** Save once things settle, not on every frame of a drag. */
+function useSaved(key: string, value: unknown) {
+  useEffect(() => {
+    const t = setTimeout(() => save(key, value), 250);
+    return () => clearTimeout(t);
+  }, [key, value]);
+}
+
+/** What is being dragged right now (see LiveLayout). */
+export interface Live {
+  nodes?: Set<string>;
+  links?: Set<string>;
 }
 
 /** Initial view state from the URL: ?scenario=o4-on-vbat&mode=drc&detail=conductors&drill=stack&open=gnss_i2c&panel=checks */
@@ -81,14 +95,19 @@ function Viewer({ source }: { source: LoadedSource }) {
     [system, scenario, drill, expanded, overrides, diagnostics],
   );
   const hand = HAND_LAYOUTS[levelKey];
-  const layout = useMemo(
-    () => computeLayout(vm, hand, positions[levelKey] ?? {}, showGrounds, linkEdits[levelKey]),
-    [vm, hand, positions, levelKey, showGrounds, linkEdits],
-  );
+  // while something is dragged only the links it touches are rerouted; all of them once it is dropped
+  const [live, setLive] = useState<Live | null>(null);
+  const previous = useRef<ComputedLayout | null>(null);
+  const layout = useMemo(() => {
+    const prev = previous.current;
+    const next = computeLayout(vm, hand, positions[levelKey] ?? {}, showGrounds, linkEdits[levelKey], live && prev ? { previous: prev, ...live } : undefined);
+    previous.current = next;
+    return next;
+  }, [vm, hand, positions, levelKey, showGrounds, linkEdits, live]);
 
-  useEffect(() => save("uhd-viewer:positions", positions), [positions]);
-  useEffect(() => save("uhd-viewer:overrides", overrides), [overrides]);
-  useEffect(() => save("uhd-viewer:links", linkEdits), [linkEdits]);
+  useSaved("uhd-viewer:positions", positions);
+  useSaved("uhd-viewer:overrides", overrides);
+  useSaved("uhd-viewer:links", linkEdits);
   const editLink = useCallback(
     (linkId: string, patch: LinkLayout) =>
       setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
@@ -139,6 +158,24 @@ function Viewer({ source }: { source: LoadedSource }) {
     [vm],
   );
 
+  // stable callbacks and props, so the memoised chrome skips canvas-drag frames
+  const onNavigate = useCallback((depth: number) => {
+    setDrill((d) => d.slice(0, depth));
+    setSelection(null);
+  }, []);
+  const scenarioList = useMemo(() => SCENARIOS.map((s) => ({ id: s.id, label: s.label })), [SCENARIOS]);
+  const onScenario = useCallback((id: string) => {
+    setScenarioId(id);
+    setSelection(null);
+    setDrill([]);
+  }, []);
+  const onReset = useCallback(() => {
+    setPositions((p) => ({ ...p, [levelKey]: {} }));
+    setLinkEdits((e) => ({ ...e, [levelKey]: {} }));
+  }, [levelKey]);
+  const defFor = useCallback((id?: string) => (id ? scenario.lookup(id) : undefined), [scenario]);
+  const onPair = useCallback((l: ViewLink) => setPairLink(l.linkId), []);
+
   const errors = diagnostics.filter((d) => d.severity === "error").length;
   const pair = pairLink ? vm.links.find((l) => l.linkId === pairLink) : undefined;
 
@@ -147,17 +184,10 @@ function Viewer({ source }: { source: LoadedSource }) {
       <div className="app">
         <Header
           vm={vm}
-          onNavigate={(depth) => {
-            setDrill((d) => d.slice(0, depth));
-            setSelection(null);
-          }}
-          scenarios={SCENARIOS.map((s) => ({ id: s.id, label: s.label }))}
+          onNavigate={onNavigate}
+          scenarios={scenarioList}
           scenario={scenario.id}
-          onScenario={(id) => {
-            setScenarioId(id);
-            setSelection(null);
-            setDrill([]);
-          }}
+          onScenario={onScenario}
           mode={mode}
           onMode={setMode}
           conductors={conductors}
@@ -198,13 +228,11 @@ function Viewer({ source }: { source: LoadedSource }) {
               onToggleExpand={onToggleExpand}
               onMove={onMove}
               onLayout={editLink}
+              onLive={setLive}
               onPins={onPins}
             />
             <Toolbar
-              onReset={() => {
-                setPositions((p) => ({ ...p, [levelKey]: {} }));
-                setLinkEdits((e) => ({ ...e, [levelKey]: {} }));
-              }}
+              onReset={onReset}
             />
             <Legend mode={mode} />
             {pair && <PairView vm={vm} link={pair} mode={mode} onClose={() => setPairLink(null)} />}
@@ -218,7 +246,7 @@ function Viewer({ source }: { source: LoadedSource }) {
               mode={mode}
               openLinks={openLinks}
               diagnostics={diagnostics}
-              defFor={(id) => (id ? scenario.lookup(id) : undefined)}
+              defFor={defFor}
               bSlotsFor={bSlotsFor}
               overrides={overrides}
               onOverride={onOverride}
@@ -226,7 +254,7 @@ function Viewer({ source }: { source: LoadedSource }) {
               onDrill={onDrill}
               onToggleLink={onToggleLink}
               onToggleExpand={onToggleExpand}
-              onPair={(l) => setPairLink(l.linkId)}
+              onPair={onPair}
               topLevel={drill.length === 0}
             />
           )}

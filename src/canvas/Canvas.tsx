@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   Background,
+  Position,
   BackgroundVariant,
   ConnectionMode,
   ReactFlow,
@@ -15,6 +16,9 @@ import type { LevelLayout, LinkLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
+import type { Live } from "../App";
+
+const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
 export type Selection = { kind: "node" | "link"; id: string } | null;
 
@@ -33,9 +37,27 @@ export interface CanvasProps {
   onPins: (linkId: string, pins: Pt[]) => void;
   onToggleExpand: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
+  /** A drag starts (what moves) or ends (null): the layout reroutes only what moves meanwhile. */
+  onLive: (live: Live | null) => void;
+}
+
+/**
+ * Reuse last render's object for anything whose content did not change, so
+ * React Flow's memoised node and edge wrappers skip it: a drag then re-renders
+ * only what moves. Objects compare by identity, plain values by content.
+ */
+function stable<T extends { id: string }>(cache: Map<string, { key: unknown[]; value: T }>, id: string, key: unknown[], make: () => T): T {
+  const hit = cache.get(id);
+  const same = (a: unknown, b: unknown) => a === b || (typeof a === "object" && typeof b === "object" && a !== null && b !== null && !(a instanceof Set) && JSON.stringify(a) === JSON.stringify(b));
+  if (hit && hit.key.length === key.length && hit.key.every((k, i) => same(k, key[i]))) return hit.value;
+  const value = make();
+  cache.set(id, { key, value });
+  return value;
 }
 
 export function Canvas(props: CanvasProps) {
+  const nodeCache = useRef(new Map<string, { key: unknown[]; value: Node<NodeData> }>());
+  const edgeCache = useRef(new Map<string, { key: unknown[]; value: Edge<LinkData> }>());
   const { vm, layout, mode, selection } = props;
 
   const selectedLinks = selection?.kind === "link" ? vm.links.filter((l) => l.linkId === selection.id) : [];
@@ -59,7 +81,11 @@ export function Canvas(props: CanvasProps) {
       for (const l of selectedLinks) {
         for (const end of [l.source, l.target]) if (end.node === node.id) selectedPorts.add(end.port);
       }
-      return {
+      const portKey = ports.map((p) => [p.port.id, p.x, p.y, p.side, p.links.map((l) => l.id + l.state).join()]);
+      const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
+      const selected = selection?.kind === "node" && selection.id === node.id;
+      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected];
+      return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
@@ -67,8 +93,17 @@ export function Canvas(props: CanvasProps) {
         data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
         selected: selection?.kind === "node" && selection.id === node.id,
         style: { width: box.w, height: box.h },
+        // size and handle positions are known from the layout: handing them over means React Flow
+        // never drops its measured handle bounds when a node object is replaced (which blanked
+        // every edge for a frame on each change: the flicker while dragging)
+        width: box.w,
+        height: box.h,
+        measured: { width: box.w, height: box.h },
+        handles: ports.flatMap((p) =>
+          (["source", "target"] as const).map((type) => ({ id: `p:${p.port.id}`, type, position: POSITION[p.side], x: p.x - box.x, y: p.y - box.y, width: 1, height: 1 })),
+        ),
         zIndex: node.expanded ? 0 : 2,
-      };
+      }));
     });
   }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts]);
 
@@ -77,14 +112,21 @@ export function Canvas(props: CanvasProps) {
       .filter((link) => layout.routes[link.id])
       .map((link) => {
         const color = colorFor(link, mode);
-        return {
+        const selected = selection?.kind === "link" && selection.id === link.linkId;
+        const open = props.openLinks.has(link.linkId);
+        const key = [
+          link, layout.routes[link.id], color, mode, props.detail, open, props.openLinks, layout.runs[link.id], layout.labelAt[link.id],
+          layout.labelFixed[link.id], layout.pins[link.id], layout.bends[link.id], layout.edits[link.id], selected,
+          props.onToggleLink, props.onLayout, props.onPins, props.onLive,
+        ];
+        return stable(edgeCache.current, link.id, key, () => ({
           id: link.id,
           type: "link",
           source: link.source.node,
           target: link.target.node,
           sourceHandle: `p:${link.source.port}`,
           targetHandle: `p:${link.target.port}`,
-          selected: selection?.kind === "link" && selection.id === link.linkId,
+          selected,
           zIndex: link.passThrough ? 1 : 3,
           data: {
             link,
@@ -93,7 +135,7 @@ export function Canvas(props: CanvasProps) {
             faded: isFaded(link, mode),
             mode,
             detail: props.detail,
-            open: props.openLinks.has(link.linkId),
+            open,
             openLanes: props.openLinks,
             run: layout.runs[link.id],
             labelAt: layout.labelAt[link.id],
@@ -105,10 +147,11 @@ export function Canvas(props: CanvasProps) {
             onLayout: props.onLayout,
             edit: layout.edits[link.id],
             onPins: props.onPins,
+            onLive: props.onLive,
           },
-        };
+        }));
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {
@@ -131,6 +174,8 @@ export function Canvas(props: CanvasProps) {
       connectionMode={ConnectionMode.Loose}
       onNodesChange={onNodesChange}
       onNodeClick={(_, n) => props.onSelect({ kind: "node", id: n.id })}
+      onNodeDragStart={(_, n, all) => props.onLive({ nodes: new Set([n.id, ...all.map((x) => x.id)]) })}
+      onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
       onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
       onPaneClick={() => props.onSelect(null)}

@@ -159,12 +159,26 @@ function gridSlot(v: number, lo: number, hi: number, used: Map<string, Set<numbe
   return v;
 }
 
+/**
+ * A drag in progress: only the links touching what moves are rerouted, around
+ * the routes the other links already have; everything is rerouted once the
+ * drag ends. Keeps dragging a module or a waypoint at frame rate.
+ */
+export interface LiveLayout {
+  previous: ComputedLayout;
+  /** Nodes being dragged (their children move with them). */
+  nodes?: Set<string>;
+  /** Links whose waypoints are being dragged. */
+  links?: Set<string>;
+}
+
 export function computeLayout(
   vm: ViewModel,
   hand: LevelLayout | undefined,
   overrides: Record<string, { x: number; y: number }>,
   showGrounds: boolean,
   linkOverrides?: Record<string, LinkLayout>,
+  live?: LiveLayout,
 ): ComputedLayout {
   const linkedPorts = new Map<string, ViewLink[]>();
   for (const link of vm.links) {
@@ -341,7 +355,19 @@ export function computeLayout(
     .map((link) => ({ link, a: ports[portKey(link.source.node, link.source.port)], b: ports[portKey(link.target.node, link.target.port)] }))
     .filter((x) => x.a && x.b)
     .sort((x, y) => Math.abs(x.a.x - x.b.x) + Math.abs(x.a.y - x.b.y) - (Math.abs(y.a.x - y.b.x) + Math.abs(y.a.y - y.b.y)));
+  // live drag: keep the routes of links that nothing moved, and route the rest around them
+  const moves = (node: string) => [...(live?.nodes ?? [])].some((m) => node === m || node.startsWith(`${m}/`));
+  const affected = (link: ViewLink) =>
+    !live || !live.previous.routes[link.id] || live.links?.has(link.linkId) || moves(link.source.node) || moves(link.target.node);
+  for (const { link } of todo) {
+    if (affected(link)) continue;
+    routes[link.id] = live!.previous.routes[link.id];
+    pins[link.id] = live!.previous.pins[link.id] ?? [];
+    bends[link.id] = live!.previous.bends[link.id] ?? [];
+    if (!link.passThrough) router.occupy(routes[link.id]);
+  }
   for (const { link, a, b } of todo) {
+    if (!affected(link)) continue;
     let sa = a.side;
     const fromContainer = vm.nodes.find((n) => n.id === link.source.node)?.expanded;
     if (link.passThrough && fromContainer) {

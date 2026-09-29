@@ -73,6 +73,11 @@ export class GridRouter {
   private blocked: Uint8Array;
   /** Cells used by earlier routes: bit 1 horizontal run, bit 2 vertical run. */
   private used: Uint8Array;
+  /** Search state, allocated once and reused: a state is valid when its stamp is the current search's. */
+  private g: Float64Array;
+  private prev: Int32Array;
+  private stamp: Uint32Array;
+  private gen = 0;
 
   constructor(obstacles: Rect[], extra: Pt[] = [], margin = 12) {
     const xs = [...obstacles.flatMap((b) => [b.x, b.x + b.w]), ...extra.map((p) => p[0])];
@@ -83,6 +88,9 @@ export class GridRouter {
     this.H = Math.ceil(Math.max(...ys) / GRID) + margin - this.y0 + 1;
     this.blocked = new Uint8Array(this.W * this.H);
     this.used = new Uint8Array(this.W * this.H);
+    this.g = new Float64Array(this.W * this.H * 4);
+    this.prev = new Int32Array(this.W * this.H * 4);
+    this.stamp = new Uint32Array(this.W * this.H * 4);
     for (const b of obstacles) {
       // a cell is blocked when its point lies inside the card (edges included, so routes keep off outlines)
       for (let gx = Math.ceil(b.x / GRID); gx <= Math.floor((b.x + b.w) / GRID); gx++) {
@@ -130,9 +138,9 @@ export class GridRouter {
   }
 
   private search(start: Pt, startDir: number, goal: Pt, arriveDir: number): { cells: Pt[]; dir: number } | undefined {
-    const N = this.W * this.H * 4;
-    const g = new Float64Array(N).fill(Infinity);
-    const prev = new Int32Array(N).fill(-1);
+    const { g, prev, stamp } = this;
+    const gen = ++this.gen;
+    const cost = (st: number) => (stamp[st] === gen ? g[st] : Infinity);
     const si = this.idx(start[0], start[1]);
     const gi = this.idx(goal[0], goal[1]);
     if (si < 0 || gi < 0) return undefined;
@@ -140,10 +148,14 @@ export class GridRouter {
     const h = (i: number) => Math.abs((i % this.W) - (gi % this.W)) + Math.abs(Math.floor(i / this.W) - Math.floor(gi / this.W));
     const s0 = si * 4 + startDir;
     g[s0] = 0;
+    prev[s0] = -1;
+    stamp[s0] = gen;
     heap.push(h(si), s0);
     let found = -1;
     let expanded = 0;
-    while (heap.size && expanded < 200000) {
+    // a search that has to wander this far is blocked (e.g. mid-drag, a card over a port): give up and jog
+    const limit = 6000 + 80 * (Math.abs(start[0] - goal[0]) + Math.abs(start[1] - goal[1]));
+    while (heap.size && expanded < limit) {
       const st = heap.pop()!;
       expanded++;
       const cell = st >> 2;
@@ -167,9 +179,10 @@ export class GridRouter {
         if (u) c += (horizontal ? u & 1 : u & 2) ? COST.parallel : COST.cross;
         const ns = ni * 4 + nd;
         const ng = g[st] + c;
-        if (ng < g[ns]) {
+        if (ng < cost(ns)) {
           g[ns] = ng;
           prev[ns] = st;
+          stamp[ns] = gen;
           heap.push(ng + h(ni), ns);
         }
       }
@@ -182,6 +195,12 @@ export class GridRouter {
     }
     cells.reverse();
     return { cells, dir: found & 3 };
+  }
+
+  /** Treat an existing route (canvas coordinates, axis-aligned) as occupied, as if it had just been routed. */
+  occupy(points: Pt[]) {
+    const cells = points.map(([x, y]) => [Math.round(x / GRID), Math.round(y / GRID)] as Pt);
+    this.mark(cells.filter((c, i) => i === 0 || c[0] !== cells[i - 1][0] || c[1] !== cells[i - 1][1]));
   }
 
   private mark(cells: Pt[]) {
