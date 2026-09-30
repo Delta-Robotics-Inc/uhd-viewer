@@ -1,14 +1,14 @@
 /**
  * 3D view (PB-775): the quadcopter assembled from UHD links, with interface
  * geometry resolved through three binding directions, mounting hardware
- * placed from the harnesses' fastener stacks, wire harnesses simulated as
- * ropes, and callout labels.
+ * placed from the harnesses' fastener stacks, wire harnesses drawn from their
+ * own routed artifacts (placed by the parts they connect), and callout labels.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { GeometryFrame, ModuleDef } from "@uhd/types/index.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
-import type { GeometryManifest, MateEdge } from "@uhd/system/geometry.js";
+import type { GeometryManifest, HarnessPlacement, MateEdge } from "@uhd/system/geometry.js";
 import type { LoadedSource } from "../source/source";
 import {
   DIRECTIONS,
@@ -23,7 +23,6 @@ import {
 } from "./model";
 import { COLORS, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
-import { rope, strands } from "./wires";
 import { Icon } from "../canvas/Icon";
 
 const params = new URLSearchParams(window.location.search);
@@ -46,10 +45,65 @@ function instanceNames(system: ModuleDef, lookup: ModuleLookup): Map<string, str
   return out;
 }
 
+/** The route manifest a harness's generator wrote (loaded with the other manifests). */
+interface RouteManifest {
+  length_mm: number;
+  route_length_mm: number;
+  conductor_lengths_mm: number[];
+  bundle: { kind: string; conductors: number; conductor_od_mm: number; bundle_od_mm: number; twist_pitch_mm: number | null };
+  bend_radius_mm: { target: number; minimum: number; centreline: number; conductors: number };
+  clearance_mm: { min_conductor_surface: number | null };
+  length_fit: { method: string; slack_mm?: number };
+  route: [number, number, number][];
+  status: string;
+  notes: string[];
+  step: string;
+}
+
+function routeManifest(model: CadModel, hp: HarnessPlacement): RouteManifest | undefined {
+  const m = [...model.manifests.entries()].find(([k]) => k.startsWith(`${hp.def.id}:`))?.[1] as unknown as RouteManifest | undefined;
+  return m && Array.isArray(m.route) ? m : undefined;
+}
+
+function cableTrait(hp: HarnessPlacement): { length_mm?: number; wire_gauge_awg?: number; conductors?: number } {
+  return (hp.def.traits?.find((t) => t.type === "performance" && t.params?.kind === "cable")?.params ?? {}) as { length_mm?: number; wire_gauge_awg?: number; conductors?: number };
+}
+
+/** "3 × 20 AWG · 78 mm · twisted" */
+function cableSummary(hp: HarnessPlacement, m?: RouteManifest): string {
+  const c = cableTrait(hp);
+  const n = c.conductors ?? m?.bundle.conductors;
+  const gauge = c.wire_gauge_awg ? `${c.wire_gauge_awg} AWG` : m ? `ø${m.bundle.conductor_od_mm} mm` : "";
+  return [n ? `${n} × ${gauge}`.trim() : "", c.length_mm ? `${c.length_mm} mm` : "", m?.bundle.kind ?? ""].filter(Boolean).join(" · ");
+}
+
+/**
+ * Surface for a node of a harness artifact: the generator names every node
+ * (conductor_*, *_housing, *_joint_*, *_tip_*) and gives it a base colour;
+ * the viewer only sets how each kind of surface reflects light.
+ */
+function harnessMaterial(src: THREE.MeshStandardMaterial, name: string): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: src.color.clone(), metalness: src.metalness, roughness: src.roughness });
+  if (/^conductor_/.test(name) && src.metalness < 0.5) {
+    // silicone insulation: soft satin
+    m.roughness = 0.48;
+    m.metalness = 0.0;
+  } else if (/_joint_|_tip_/.test(name) || src.metalness >= 0.5) {
+    m.metalness = 0.9;
+    m.roughness = 0.28;
+  } else if (/_housing/.test(name)) {
+    m.roughness = 0.42;
+    m.metalness = 0.0;
+  }
+  return m;
+}
+
 export interface CadSelection {
   body?: string;
   iface?: string;
   mate?: string;
+  /** A routed wire harness, by instance path. */
+  harness?: string;
 }
 
 interface BodyRec {
@@ -86,7 +140,8 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
   const labelsRef = useRef<LabelLayer | null>(null);
   const bodies = useRef(new Map<string, BodyRec>());
   const hardware = useRef<HardwareRec[]>([]);
-  const wiresGroup = useRef(new THREE.Group());
+  const harnessGroup = useRef(new THREE.Group());
+  const harnessObjs = useRef(new Map<string, THREE.Group>());
   const explode = useRef({ value: Number(params.get("explode") ?? 0) > 0 ? 1 : 0, target: Number(params.get("explode") ?? 0) > 0 ? 1 : 0 });
   const [manifests, setManifests] = useState<Map<string, GeometryManifest> | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -103,6 +158,7 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
     body: params.get("body") ?? undefined,
     iface: params.get("iface") ?? undefined,
     mate: params.get("mate") ?? undefined,
+    harness: params.get("harness") ?? undefined,
   });
   const [notes, setNotes] = useState<string[]>([]);
   const [caption, setCaption] = useState<[string, string] | null>(null);
@@ -136,7 +192,7 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
     if (!host.current) return;
     const h = createScene(host.current);
     handle.current = h;
-    h.scene.add(wiresGroup.current);
+    h.scene.add(harnessGroup.current);
     labelsRef.current = new LabelLayer(host.current);
     return () => {
       labelsRef.current?.dispose();
@@ -197,6 +253,34 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
         obj.add(w);
         rec.centre.copy(box.getCenter(new THREE.Vector3()));
         rec.top.set(rec.centre.x, rec.centre.y, box.max.z);
+        bump();
+      });
+    }
+    // routed wire harnesses: each harness's own GLB, placed by the part its first end lands on
+    harnessGroup.current.clear();
+    harnessObjs.current.clear();
+    harnessMaterials.current = [];
+    for (const hp of model.assembly.harnesses) {
+      const obj = new THREE.Group();
+      obj.matrixAutoUpdate = false;
+      obj.matrix.copy(toMatrix4(hp.matrix));
+      obj.userData.harness = hp.key;
+      harnessGroup.current.add(obj);
+      harnessObjs.current.set(hp.key, obj);
+      const glb = hp.def.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
+      const url = glb && resolve(hp.def.id, glb);
+      if (!url) continue;
+      loadGlb(url).then((gltf) => {
+        if (cancelled || !gltf) return;
+        const s = gltf.scene.clone(true);
+        s.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          mesh.material = harnessMaterial(mesh.material as THREE.MeshStandardMaterial, o.name);
+          harnessMaterials.current.push(mesh.material as THREE.MeshStandardMaterial);
+          mesh.userData.harness = hp.key;
+        });
+        obj.add(cadWrapper(s));
         bump();
       });
     }
@@ -270,16 +354,19 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
         hw.obj.matrix.copy(new THREE.Matrix4().makeTranslation(off).multiply(hw.base));
         hw.obj.matrixWorldNeedsUpdate = true;
       }
-      wiresGroup.current.visible = showWiresRef.current && e < 0.02;
-      for (const m of wireMaterials.current) {
-        m.opacity = Math.max(0, 1 - e * 30);
+      // cables are routed for the assembled model: they fade out as it comes apart
+      harnessGroup.current.visible = showWiresRef.current && e < 0.35;
+      for (const m of harnessMaterials.current) {
+        m.opacity = Math.max(0, 1 - e * 3);
+        m.transparent = m.opacity < 1;
+        m.depthWrite = m.opacity > 0.5;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
   const showWiresRef = useRef(showWires);
   showWiresRef.current = showWires;
-  const wireMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
+  const harnessMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
 
   // per-frame: tween explode, lay out labels
   useEffect(() => {
@@ -307,76 +394,9 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
     applyExplode(eased);
   }, [applyExplode, loaded, showWires]);
 
-  // ---- wire harnesses: ropes from ESC pads, tied along the arm, to the motor leads
   useEffect(() => {
-    const g = wiresGroup.current;
-    g.clear();
-    wireMaterials.current = [];
-    if (!model || !showWires) return;
-    const at = (key: string, p: [number, number, number]) => {
-      const rec = bodies.current.get(key);
-      return rec ? new THREE.Vector3(...p).applyMatrix4(rec.base) : new THREE.Vector3(...p);
-    };
-    const R = 0.75; // conductor radius (≈ 18 AWG with insulation)
-    // Surfaces a wire can rest on: the world bounds of each mesh of the structure modules
-    // (their definitions say "structure"). A wire only rests on surfaces below where it starts.
-    const surfaces: THREE.Box3[] = [];
-    for (const rec of bodies.current.values()) {
-      if (!(rec.body.def.categories ?? []).includes("structure")) continue;
-      rec.obj.updateMatrixWorld(true);
-      rec.obj.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.visible) return;
-        surfaces.push(new THREE.Box3().setFromObject(mesh));
-      });
-    }
-    const floorBelow = (zCap: number) => (x: number, y: number) => {
-      let top = -Infinity;
-      for (const b of surfaces) if (x >= b.min.x && x <= b.max.x && y >= b.min.y && y <= b.max.y && b.max.z <= zCap && b.max.z > top) top = b.max.z;
-      return top === -Infinity ? -1e6 : top + R * 2.2;
-    };
-    const colors = [0xd9363e, 0xe5b62a, 0x2f7fd6];
-    for (const r of model.assembly.routes) {
-      const aKey = r.a.path.join("/");
-      const bKey = r.b.path.join("/");
-      const pad = r.a.frames[0].frame;
-      const padC = at(aKey, pad.origin as [number, number, number]);
-      const ends = r.b.frames.map((f) => at(bKey, f.frame.origin as [number, number, number]));
-      const endC = ends.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(ends.length);
-      const out = new THREE.Vector3(endC.x - padC.x, endC.y - padC.y, 0).normalize();
-      const side = new THREE.Vector3(-out.y, out.x, 0);
-      const starts = [0, 1, 2].map((k) => padC.clone().addScaledVector(side, (k - 1) * 3.2).setZ(padC.z + 0.3));
-      // tie points: along the run from the pads to the lead ends, resting on whatever structure is under them
-      const floor = floorBelow(Math.max(padC.z, endC.z) + 1);
-      const tieAt = (f: number) => {
-        const p = padC.clone().lerp(endC, f);
-        const z = floor(p.x, p.y);
-        return z > -1e5 ? p.setZ(z) : undefined;
-      };
-      const ties = [0.5, 0.78].map(tieAt).filter((p): p is THREE.Vector3 => !!p);
-      const pins = [padC.clone().setZ(padC.z + 0.8), padC.clone().addScaledVector(out, 9).setZ(padC.z + 1.5), ...ties, endC.clone()];
-      const centre = rope(pins, { slack: 0.05, floor, segment: 2 });
-      const lines = strands(centre, starts, ends, R * 1.25, 24, 8);
-      lines.forEach((pts, k) => {
-        const mat = new THREE.MeshStandardMaterial({ color: colors[k % 3], roughness: 0.55, metalness: 0.05, transparent: true });
-        wireMaterials.current.push(mat);
-        const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, R, 10), mat);
-        tube.userData.link = r.linkId;
-        g.add(tube);
-      });
-      // zip ties at the tie points
-      for (const p of ties) {
-        const tieMesh = new THREE.Mesh(new THREE.TorusGeometry(R * 2.9, 0.55, 8, 24), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
-        const z = p.z - R * 0.4;
-        tieMesh.position.copy(p).setZ(z);
-        tieMesh.lookAt(p.clone().add(out).setZ(z));
-        tieMesh.scale.set(1, 0.72, 1);
-        g.add(tieMesh);
-      }
-      g.userData[r.linkId] = centre[Math.floor(centre.length * 0.62)];
-    }
-    applyExplode(explode.current.value);
-  }, [model, showWires, loaded, applyExplode]);
+    harnessGroup.current.visible = showWires && explode.current.value < 0.35;
+  }, [showWires, loaded]);
 
   useEffect(() => {
     for (const hw of hardware.current) hw.obj.visible = showHardware;
@@ -433,17 +453,21 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
         const sub = h?.sub ?? [...counts].map(([n, c]) => `${c}× ${n.replace(/ x /g, "×")}`).join(" · ");
         items.push({ id: `h:${harness}`, kind: "harness", title: h?.title ?? nameOf(harness), sub, anchor: hwAnchor(harness), onClick: () => setSel({ mate: list[0].linkId }) });
       }
-      for (const r of model.assembly.routes) {
-        const h = hintsL.routes?.[r.linkId];
+      for (const hp of model.assembly.harnesses) {
+        const h = hintsL.harnesses?.[hp.key];
         if (h?.hide) continue;
-        const link = system.links?.find((l) => l.id === r.linkId);
+        const m = routeManifest(model, hp);
         items.push({
-          id: `r:${r.linkId}`,
+          id: `w:${hp.key}`,
           kind: "harness",
-          title: h?.title ?? link?.name ?? r.linkId,
-          sub: h?.sub ?? `${r.b.frames.length} conductor(s): ${r.a.path.join("/")} → ${r.b.path.join("/")}`,
-          anchor: () => (wiresGroup.current.visible ? (wiresGroup.current.userData[r.linkId] as THREE.Vector3 | undefined)?.clone() ?? null : null),
-          onClick: () => setSel({ mate: r.linkId }),
+          title: h?.title ?? nameOf(hp.key),
+          sub: h?.sub ?? cableSummary(hp, m),
+          anchor: () => {
+            if (!harnessGroup.current.visible || !m?.route?.length) return null;
+            const p = m.route[Math.floor(m.route.length * 0.55)];
+            return new THREE.Vector3(...p).applyMatrix4(toMatrix4(hp.matrix));
+          },
+          onClick: () => setSel({ harness: hp.key }),
         });
       }
     }
@@ -615,6 +639,16 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
         }
       }
     }
+    if (sel.harness) {
+      const obj = harnessObjs.current.get(sel.harness);
+      obj?.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+        if (!m || !("emissive" in m)) return;
+        const was = m.emissive.getHex();
+        m.emissive.setHex(0x3a1600);
+        restore.push(() => m.emissive.setHex(was));
+      });
+    }
     if (showFrames) {
       for (const b of model.bodies) {
         for (const i of b.def.interfaces) {
@@ -643,9 +677,9 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
       const r = el.getBoundingClientRect();
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
-      const hit = ray.intersectObjects([h.root, wiresGroup.current], true).find((x) => x.object.visible && (x.object.userData.bodyKey || x.object.userData.link));
+      const hit = ray.intersectObjects([h.root, harnessGroup.current], true).find((x) => x.object.visible && harnessGroup.current.visible !== false && (x.object.userData.bodyKey || x.object.userData.harness));
       if (!hit) setSel({});
-      else if (hit.object.userData.link) setSel({ mate: hit.object.userData.link });
+      else if (hit.object.userData.harness) setSel({ harness: hit.object.userData.harness });
       else {
         const k = hit.object.userData.bodyKey as string;
         const hwMate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
@@ -688,7 +722,7 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
     // Deterministic control for video capture: scripts/capture-cad-video.mjs
     (window as unknown as Record<string, unknown>).__cad = {
       ready: () => loaded,
-      set: (s: { azimuth?: number; elevation?: number; distance?: number; explode?: number; labels?: boolean; caption?: [string, string] }) => {
+      set: (s: { azimuth?: number; elevation?: number; distance?: number; target?: [number, number, number]; explode?: number; labels?: boolean; snap?: boolean; caption?: [string, string] }) => {
         h.manual.on = true;
         if (s.caption) setCaption(s.caption);
         if (s.explode !== undefined) {
@@ -696,8 +730,12 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
           const e = s.explode;
           applyExplode(e < 0.5 ? 4 * e ** 3 : 1 - (-2 * e + 2) ** 3 / 2);
         }
-        if (s.labels !== undefined && labelsRef.current) labelsRef.current.target = s.labels ? 1 : 0;
-        if (s.azimuth !== undefined) orbit(s.azimuth, s.elevation ?? 28, s.distance ?? 520);
+        if (s.labels !== undefined && labelsRef.current) {
+          labelsRef.current.target = s.labels ? 1 : 0;
+          // stills: no fade between shots
+          if (s.snap) labelsRef.current.opacity = labelsRef.current.target;
+        }
+        if (s.azimuth !== undefined) orbit(s.azimuth, s.elevation ?? 28, s.distance ?? 520, s.target ? new THREE.Vector3(...s.target) : undefined);
         h.renderOnce();
       },
     };
@@ -759,8 +797,8 @@ export function CadView({ system, lookup, source }: { system: ModuleDef; lookup:
             <button className={`chip-toggle${showHardware ? " on" : ""}`} onClick={() => setShowHardware(!showHardware)} title="Mounting hardware from the harnesses' fastener stacks">
               <Icon name="wrench" size={16} /> Hardware
             </button>
-            <button className={`chip-toggle${showWires ? " on" : ""}`} onClick={() => setShowWires(!showWires)} title="Wire harnesses">
-              <Icon name="cable" size={16} /> Wires
+            <button className={`chip-toggle${showWires ? " on" : ""}`} onClick={() => setShowWires(!showWires)} title="Routed wire harnesses (each harness's own CAD artifact)">
+              <Icon name="cable" size={16} /> Cables
             </button>
             <button className={`chip-toggle${showFrames ? " on" : ""}`} onClick={() => setShowFrames(!showFrames)} title="Every interface frame">
               <Icon name="move-3d" size={16} /> Frames
@@ -869,6 +907,8 @@ function CadInspector({ model, sel, onSel, direction }: { model: CadModel; sel: 
   const row = rows.find((r) => r.iface.id === sel.iface);
   const mate = sel.mate ? model.assembly.mates.find((m) => m.linkId === sel.mate) : undefined;
   const route = sel.mate ? model.assembly.routes.find((m) => m.linkId === sel.mate) : undefined;
+  const harness = sel.harness ? model.assembly.harnesses.find((h) => h.key === sel.harness) : undefined;
+  const hm = harness && routeManifest(model, harness);
   const nameOf = (path: string[]) => {
     const def = model.defs.get(path.join("/"));
     return def?.name ?? path.join("/");
@@ -877,8 +917,8 @@ function CadInspector({ model, sel, onSel, direction }: { model: CadModel; sel: 
   return (
     <aside className="inspector cad-inspector">
       <div className="inspector-header">
-        <span className="section-title">{body ? "MODULE" : mate || route ? "LINK" : "ASSEMBLY"}</span>
-        {(body || mate || route) && (
+        <span className="section-title">{body ? "MODULE" : harness ? "HARNESS" : mate || route ? "LINK" : "ASSEMBLY"}</span>
+        {(body || mate || route || harness) && (
           <button className="mini" onClick={() => onSel({})}>
             ASSEMBLY
           </button>
@@ -923,6 +963,56 @@ function CadInspector({ model, sel, onSel, direction }: { model: CadModel; sel: 
                     <span className="cad-artifact-name">{a.id}</span>
                     <span className="cad-artifact-fmt">{a.format}</span>
                     {a.interfaceId && <span className="cad-artifact-if">→ {a.interfaceId}</span>}
+                  </div>
+                ))}
+            </div>
+          </>
+        ) : harness ? (
+          <>
+            <h3 className="cad-title">{harness.def.name}</h3>
+            <div className="cad-sub">{harness.key} · placed by link {harness.via}</div>
+            <div className="kv-grid">
+              <span className="k">cable</span>
+              <span className="v">{cableSummary(harness, hm)}</span>
+              {hm && (
+                <>
+                  <span className="k">routed</span>
+                  <span className="v">
+                    {hm.route_length_mm} mm · {hm.length_fit.method ?? "shortest"}
+                    {hm.length_fit.slack_mm && hm.length_fit.slack_mm > 0.5 ? ` (${hm.length_fit.slack_mm} mm slack)` : ""}
+                  </span>
+                  <span className="k">bend</span>
+                  <span className="v">
+                    min {hm.bend_radius_mm.centreline} mm (target {hm.bend_radius_mm.target})
+                  </span>
+                  <span className="k">clearance</span>
+                  <span className="v">{hm.clearance_mm.min_conductor_surface ?? "—"} mm</span>
+                </>
+              )}
+            </div>
+            <div className="section-title">ENDS</div>
+            {harness.ends.map((e) => (
+              <div key={e.interfaceId} className="cad-row">
+                <span className="cad-row-name">
+                  {e.interfaceId} → {e.counterpart}
+                </span>
+                <span className={`gchip ${e.status === "stale" ? "stale" : e.status === "matches" || e.status === "anchor" ? "bound" : "unchecked"}`}>{e.status.toUpperCase()}</span>
+              </div>
+            ))}
+            {hm?.notes.map((n, i) => (
+              <div key={i} className="cad-issue warning">
+                {n}
+              </div>
+            ))}
+            <div className="section-title">ARTIFACTS</div>
+            <div className="cad-artifacts">
+              {(harness.def.artifacts ?? [])
+                .filter((a) => a.role)
+                .map((a) => (
+                  <div key={a.id} className="cad-artifact" title={a.filePath ?? a.url}>
+                    <span className={`gchip role-${a.role}`}>{a.role?.toUpperCase()}</span>
+                    <span className="cad-artifact-name">{a.id}</span>
+                    <span className="cad-artifact-fmt">{a.format}</span>
                   </div>
                 ))}
             </div>
@@ -981,7 +1071,14 @@ function CadInspector({ model, sel, onSel, direction }: { model: CadModel; sel: 
                   <b>{i.subject}</b> — {i.message}
                 </div>
               ))}
-            <div className="section-title">WIRES · {model.assembly.routes.length} ROUTED</div>
+            <div className="section-title">HARNESSES · {model.assembly.harnesses.length} ROUTED</div>
+            {model.assembly.harnesses.map((hp) => (
+              <button key={hp.key} className="cad-row" onClick={() => onSel({ harness: hp.key })}>
+                <span className="cad-row-name">{hp.key}</span>
+                <span className="cad-row-via">{hp.ends.some((e) => e.status === "stale") ? "stale" : cableTrait(hp).length_mm ? `${cableTrait(hp).length_mm} mm` : ""}</span>
+              </button>
+            ))}
+            {model.assembly.routes.length > 0 && <div className="section-title">DIRECT WIRES · {model.assembly.routes.length}</div>}
             {model.assembly.routes.map((r) => (
               <button key={r.linkId} className="cad-row" onClick={() => onSel({ mate: r.linkId })}>
                 <span className="cad-row-name">{r.linkId}</span>

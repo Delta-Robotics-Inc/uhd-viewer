@@ -50,8 +50,8 @@ export interface DisplayConfig {
     placements?: Record<string, { matrix: number[]; note?: string }>;
     labels?: {
       modules?: Record<string, LabelHint>;
+      /** Fastener harnesses and routed wire harnesses, by instance path. */
       harnesses?: Record<string, LabelHint>;
-      routes?: Record<string, LabelHint>;
     };
     /** By definition id. */
     appearance?: Record<string, Appearance>;

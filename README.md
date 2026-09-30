@@ -105,14 +105,29 @@ Click a module to see each interface's frame and binding status; selecting an
 interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
 ASSEMBLED / EXPLODED animates every module along the normal of the mate that placed it (hardware comes apart along its fastener stack);
 LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which);
-FRAMES shows every interface frame; WIRES draws electrical links that have
-geometry on both ends (motor phases); HARDWARE places the stack harness's
-fasteners and checks the screw stack-up; FOCUS looks along the selected
-interface's normal.
+FRAMES shows every interface frame; CABLES shows the routed wire harnesses;
+HARDWARE places the stack harness's fasteners and checks the screw stack-up;
+FOCUS looks along the selected interface's normal.
+
+**Cables are harness artifacts.** A wire harness whose end interfaces carry
+frames has its own routed body (a GLB in assembly-root coordinates, one node
+per conductor, plug housing, solder joint and tinned tip, written by
+ProtoBoard's `@protoboard/ext-harness-cad`). UHD `assemble` places it from the
+part its first end lands on (`assembly.harnesses`) and checks every other end;
+the viewer draws that GLB at that placement, keeps the generator's colours and
+sets the surface per node kind (satin insulation, metal solder). Selecting a
+cable shows its length, route, bend radius, clearance and each end's state
+(ANCHOR / MATCHES / STALE). Cables fade out when the model explodes: they are
+routed for the assembled model. Nothing about a cable is drawn from outside
+the bundle.
 
 URL: `view=3d&body=arm_fl/motor&iface=base_mount&dir=feature&explode=14&focus=1`
-(also `mate=<link>`, `frames=1`, `wires=0`, `hardware=0`). The vendor GNSS GLB
+(also `mate=<link>`, `harness=<path>`, `frames=1`, `wires=0`, `hardware=0`). The vendor GNSS GLB
 is generated locally by `library/cad/py/gnss_vendor.py` in the UHD repo.
+
+Stills for review: `node scripts/capture-cad-stills.mjs <out-dir>` renders a
+fixed set of shots (assembled from four sides, exploded, labels, stack and
+arm close-ups) through `window.__cad.set(...)`; `SHOTS=<regex>` picks some.
 
 Screenshots: `docs/screenshots/cad/`.
 
