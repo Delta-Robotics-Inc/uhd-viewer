@@ -1,0 +1,59 @@
+# Type-check and build the viewer against UHD checked out beside it
+# (vite.config.ts and tsconfig.json resolve @uhd/* to ../uhd/src).
+# UHD is public, so no token is needed. Its branch is the one with this
+# branch's name when it exists, otherwise main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["mark/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  viewer:
+    name: Type-check, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: uhd-viewer
+      - name: Pick the UHD branch
+        id: uhd
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          # bash -e: keep the status (2 means no such branch)
+          status=0
+          git ls-remote --exit-code --heads https://github.com/Delta-Robotics-Inc/uhd.git "$BRANCH" >/dev/null || status=$?
+          case $status in
+            0) ref="$BRANCH" ;;
+            2) ref=main ;;
+            *) echo "::error::cannot list Delta-Robotics-Inc/uhd branches"; exit 1 ;;
+          esac
+          echo "UHD at $ref"
+          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          repository: Delta-Robotics-Inc/uhd
+          ref: ${{ steps.uhd.outputs.ref }}
+          path: uhd
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: uhd-viewer/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: uhd-viewer
+      - run: npm run type-check
+        working-directory: uhd-viewer
+      - run: npm run build
+        working-directory: uhd-viewer
