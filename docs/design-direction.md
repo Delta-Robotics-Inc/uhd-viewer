@@ -353,10 +353,13 @@ never shown; their names are ("I2C 0 ↔ Primary I2C (target)").
   while sectioning.
 - **X-ray:** bodies whose bounds hold another body's centre (an enclosure
   round its board) become see-through; nothing is named to decide it.
-- **Explode separates named bodies.** A body artifact whose manifest lists
-  several named `bodies` (an enclosure's `back` and `lid`) comes apart: the
-  largest stays, each other moves away along the line between their centres,
-  2.2 × a mate's step, so a lid clears what sits inside. Small assemblies
+- **Explode separates a cad output's named bodies.** A cad standard output
+  (`body.glb` with a `body.manifest.json` generated from it) whose manifest
+  lists several named `bodies` (an enclosure's `back` and `lid`) comes apart:
+  the largest stays, each other moves away along the line between their
+  centres, 2.2 × a mate's step, so a lid clears what sits inside. Vendor and
+  library part GLBs stay rigid even when their manifests name several bodies
+  (a motor's bell and stator, a prop's hub and blades). Small assemblies
   (under 120 mm across) explode in proportion to their size and are framed
   to fit when they load.
 - Controls that do nothing for a model are not shown (*Hardware* without
@@ -374,7 +377,11 @@ assembly inspector. What a finding names decides where it sits: an
 interface's frame (`enclosure:swd_window`), a component inside a body by its
 manifest feature (`board/l1`), a mate's frame (`link:<id>`), else the body's
 centre. Clicking one selects what it names. Both the viewer's own checks
-and a host's (a cad provider's fit and route findings) are pinned.
+and a host's (a cad provider's fit and route findings) are pinned. The
+*Findings* toggle starts on only when the host sent findings that land on
+the model, so a model whose only findings are the viewer's own checks (the
+quadcopter's propulsion current warning) opens as before; `findings=1|0`
+overrides it.
 
 ## Visual foundations
 

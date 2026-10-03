@@ -34,6 +34,8 @@ export interface FindingAnchor {
   body: string;
   local?: Vec3;
   select: CadTarget;
+  /** From the host (a provider's fit or route check) rather than the viewer's own checks. */
+  host?: boolean;
 }
 
 /** Where a canonical path is on the model, if any placed body holds it. */
@@ -80,7 +82,7 @@ export function findingAnchors(model: CadModel, system: ScopedDiagnostic[], host
     if (d.severity === "info" || !d.entity) return;
     const ref = d.entity.kind === "link" ? `link:${d.entity.id}` : d.entity.id;
     const a = anchorOf(model, ref);
-    if (a) out.push({ id: `h:${d.code}:${d.entity.id}:${i}`, severity: d.severity as "error" | "warning", title: d.code.replace(/_/g, " "), message: d.message, ...a });
+    if (a) out.push({ id: `h:${d.code}:${d.entity.id}:${i}`, severity: d.severity as "error" | "warning", title: d.code.replace(/_/g, " "), message: d.message, host: true, ...a });
   });
   return out;
 }

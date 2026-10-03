@@ -381,6 +381,26 @@ function Drawing({ url, side, fps, highlight, onPick }: { url?: string; side?: "
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marked?.instance, vb]);
 
+  // wheel zoom about the pointer; a native non-passive listener, so the inspector does not scroll as well
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const cx = e.clientX - r.left;
+      const cy = e.clientY - r.top;
+      const k = Math.exp(-e.deltaY * 0.0015);
+      setView((v) => {
+        const s = Math.min(24, Math.max(0.5, v.s * k));
+        const f = s / v.s;
+        return { s, x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f };
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [url]);
+
   const toDrawingPoint = (e: { clientX: number; clientY: number }) => {
     const svg = overlay.current;
     const ctm = svg?.getScreenCTM();
@@ -400,17 +420,6 @@ function Drawing({ url, side, fps, highlight, onPick }: { url?: string; side?: "
       <div
         ref={host}
         className="board-drawing-view"
-        onWheel={(e) => {
-          const r = host.current!.getBoundingClientRect();
-          const cx = e.clientX - r.left;
-          const cy = e.clientY - r.top;
-          const k = Math.exp(-e.deltaY * 0.0015);
-          setView((v) => {
-            const s = Math.min(24, Math.max(0.5, v.s * k));
-            const f = s / v.s;
-            return { s, x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f };
-          });
-        }}
         onPointerDown={(e) => {
           drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
           (e.target as Element).setPointerCapture?.(e.pointerId);

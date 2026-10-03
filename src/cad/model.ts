@@ -22,6 +22,7 @@ import {
   type Placement,
 } from "@uhd/system/geometry.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
+import { cadOutputs } from "../model/outputs";
 
 /** Artifact URL for a definition's (relative) file path: supplied by the viewer's source. */
 import type { ArtifactResolver } from "../api";
@@ -149,6 +150,22 @@ export function buildCadModel(
     if (holder) within.set(bodyKey(inst.path), holder.key);
   }
   return { assembly, bodies, defs, manifests, within };
+}
+
+/**
+ * The named bodies a GLB comes apart into when exploded (D17): the largest
+ * stays, the rest move away from it. Only a cad standard output does this:
+ * `body.glb` with a `body.manifest.json` generated from it, whose `bodies`
+ * lists two or more (an enclosure's back and lid). A vendor or library part's
+ * GLB stays rigid even when its manifest names several bodies (a motor's bell
+ * and stator, a prop's hub and blades).
+ */
+export function explodeParts(def: ModuleDef, glb: ArtifactDef | undefined, manifest: GeometryManifest | undefined): { fixed: string; moving: string[] } | undefined {
+  const cad = cadOutputs(def);
+  if (!glb || !cad?.glb || cad.glb.id !== glb.id || cad.manifest?.provenance?.generatedFrom !== glb.id) return undefined;
+  const named = Object.entries(manifest?.bodies ?? {}).sort((a, b) => b[1] - a[1]);
+  if (named.length < 2) return undefined;
+  return { fixed: named[0][0], moving: named.slice(1).map(([n]) => n) };
 }
 
 export function interfaceRows(def: ModuleDef, manifests: Map<string, GeometryManifest>): InterfaceRow[] {

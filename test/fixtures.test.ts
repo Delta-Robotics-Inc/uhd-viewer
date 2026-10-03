@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { checkSystem } from "@uhd/system/checks.js";
 import { bundleSystem } from "@uhd/system/bundle.js";
@@ -7,7 +7,8 @@ import type { GeometryManifest } from "@uhd/system/geometry.js";
 import { buildFixtures } from "../fixtures/src/imu-pod";
 import { sourceFromBundle } from "../src/source/source";
 import { cadOutputs, circuitOutputs, drawingFits, footprintAt, footprints, parseCsv, parsePnp } from "../src/model/outputs";
-import { buildCadModel } from "../src/cad/model";
+import { buildCadModel, explodeParts, glbFor } from "../src/cad/model";
+import type { UhdBundle } from "@uhd/types/bundle.js";
 import { anchorOf, findingAnchors } from "../src/cad/findings";
 import { systemDiagnostics } from "../src/model/diagnostics";
 
@@ -139,5 +140,33 @@ describe("boards and enclosures in 3D", () => {
     expect(anchorOf(model, "nowhere")).toBeUndefined();
     const all = findingAnchors(model, [], fx.bundles.pod.diagnostics!);
     expect(all.map((f) => f.body)).toEqual(["enclosure", "board", "board"]);
+    // host findings start the Findings toggle on (D18)
+    expect(all.every((f) => f.host)).toBe(true);
+  });
+
+  it("explodes a cad standard output's named bodies, and nothing else", () => {
+    expect(explodeParts(fx.enclosure, glbFor(fx.enclosure), enclosureManifest)).toEqual({ fixed: "back", moving: ["lid"] });
+    expect(explodeParts(fx.board, glbFor(fx.board), boardManifest)).toBeUndefined();
+    // a body.glb without a body.manifest.json generated from it stays rigid
+    const bare = { ...fx.enclosure, artifacts: fx.enclosure.artifacts!.filter((a) => a.id !== "enclosure_manifest") };
+    expect(explodeParts(bare, glbFor(bare), enclosureManifest)).toBeUndefined();
+  });
+
+  // the quadcopter reference project, when its build is next to this checkout (as for the dev server)
+  const quad = new URL("../../protoboard-cli/examples/quadcopter-5in/.protoboard/build/uhd-bundle.json", import.meta.url);
+  it.skipIf(!existsSync(quad))("keeps the quadcopter's multi-body vendor and library parts rigid", () => {
+    const bundle = JSON.parse(readFileSync(quad, "utf8")) as UhdBundle;
+    const multi: string[] = [];
+    for (const def of bundle.definitions) {
+      const glb = glbFor(def);
+      const from = glb?.provenance?.generatedFrom ?? glb?.id;
+      const art = def.artifacts?.find((a) => a.format === "json" && a.filePath && a.provenance?.generatedFrom === from);
+      const base = bundle.artifactBases?.[def.id];
+      if (!glb || !art || !base || !existsSync(`${base}/${art.filePath}`)) continue;
+      const manifest = JSON.parse(readFileSync(`${base}/${art.filePath}`, "utf8")) as GeometryManifest;
+      if (Object.keys(manifest.bodies ?? {}).length > 1) multi.push(def.id);
+      expect(explodeParts(def, glb, manifest), def.id).toBeUndefined();
+    }
+    expect(multi).toEqual(expect.arrayContaining(["meps-neon-2207-v2-1950kv", "hqprop-ethix-s5", "quadcopter-5in-frame", "dolphinrc-f405-v3-flight-controller"]));
   });
 });

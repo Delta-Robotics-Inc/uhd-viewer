@@ -18,6 +18,7 @@ import { findingAnchors, type FindingAnchor } from "./findings";
 import {
   DIRECTIONS,
   buildCadModel,
+  explodeParts,
   interfaceRows,
   loadManifests,
   type BindingStatus,
@@ -193,7 +194,8 @@ export function CadView({
   const [showFrames, setShowFrames] = useState(params.get("frames") === "1");
   const [showWires, setShowWires] = useState(params.get("wires") !== "0");
   const [showHardware, setShowHardware] = useState(params.get("hardware") !== "0");
-  const [showFindings, setShowFindings] = useState(params.get("findings") !== "0");
+  // findings are pinned by default only when a host sent some that land on the model (D18); `findings=1|0` overrides
+  const [findingsChoice, setShowFindings] = useState<boolean | undefined>(params.has("findings") ? params.get("findings") !== "0" : undefined);
   const [xray, setXray] = useState(params.get("xray") === "1");
   const [section, setSection] = useState<Section | null>(
     params.get("section") ? { axis: Math.max(0, ["x", "y", "z"].indexOf(params.get("section")!)) as 0 | 1 | 2, at: Number(params.get("at") ?? 0.5), ...(params.get("flip") ? { flip: params.get("flip") === "1" } : {}) } : null,
@@ -235,6 +237,7 @@ export function CadView({
   );
 
   const findings = useMemo(() => (model ? findingAnchors(model, diagnostics, hostDiagnostics) : []), [model, diagnostics, hostDiagnostics]);
+  const showFindings = findingsChoice ?? findings.some((f) => f.host);
 
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
@@ -308,16 +311,16 @@ export function CadView({
         // local bounds for label anchors (before parenting, so world = CAD coordinates)
         w.updateMatrixWorld(true);
         const box = new THREE.Box3().setFromObject(w);
-        // named bodies that come apart when exploded: each moves away from the largest
-        const named = Object.entries(manifest?.bodies ?? {}).filter(([n]) => top.children.some((c) => c.name === n));
-        if (named.length > 1) {
-          const [largest] = [...named].sort((a, b) => b[1] - a[1])[0];
-          const centreOf = (n: string) => new THREE.Box3().setFromObject(top.children.find((c) => c.name === n)!).getCenter(new THREE.Vector3());
-          const c0 = centreOf(largest);
-          for (const [n] of named) {
-            if (n === largest) continue;
-            const part = top.children.find((c) => c.name === n)!;
-            const d = centreOf(n).sub(c0).normalize();
+        // a cad standard output's named bodies come apart when exploded: each moves away from the largest
+        const parts = explodeParts(body.def, body.glb, manifest);
+        const node = (n: string) => top.children.find((c) => c.name === n);
+        if (parts && node(parts.fixed)) {
+          const centreOf = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+          const c0 = centreOf(node(parts.fixed)!);
+          for (const n of parts.moving) {
+            const part = node(n);
+            if (!part) continue;
+            const d = centreOf(part).sub(c0).normalize();
             // CAD (x, y, z) mm → the node's glTF space (x, z, −y) m
             rec.parts.push({ obj: part, base: part.position.clone(), dir: new THREE.Vector3(d.x, d.z, -d.y).divideScalar(1000) });
           }
@@ -1314,7 +1317,7 @@ function CadInspector({
             <div className="section-title">NOT PLACED</div>
             {model.within.size > 0 && (
               <div className="cad-issue">
-                {model.within.size} components are drawn in their board's own body ({[...new Set(model.within.values())].map((k) => k || model.bodies.find((b) => b.key === k)?.def.name).join(", ")}), not placed one by one.
+                {model.within.size} components are drawn in their board's own body ({[...new Set(model.within.values())].map((k) => model.bodies.find((b) => b.key === k)?.def.name ?? (k || "root")).join(", ")}), not placed one by one.
               </div>
             )}
             {model.assembly.issues

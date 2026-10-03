@@ -185,10 +185,11 @@ Samples to try it on: [fixtures/](fixtures/README.md).
   `body.glb` with named bodies (`back`, `lid`) comes apart when exploded.
   *Section* cuts the model across X, Y or Z; *X-ray* makes bodies that hold
   others see-through; *Findings* pins errors and warnings (the viewer's own
-  and the host's fit and route findings) where they are.
+  and the host's fit and route findings) where they are. It is on by default
+  only when the host sent findings that land on the model.
 
 URL: `view=3d&section=y&at=0.4` (`flip=1` keeps the other side), `xray=1`,
-`findings=0`, `body=board&component=u1`.
+`findings=1` or `findings=0`, `body=board&component=u1`.
 
 Screenshots: `node scripts/capture-board-shots.mjs <dev-server-url> <out-dir>`
 renders the board and enclosure views of the fixtures.

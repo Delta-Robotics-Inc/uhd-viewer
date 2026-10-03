@@ -2084,6 +2084,7 @@ body {
   background: #141414;
   cursor: grab;
   touch-action: none;
+  overscroll-behavior: contain;
 }
 .board-drawing-view:active {
   cursor: grabbing;

@@ -37,6 +37,20 @@ const click = (selector, text) => (page) =>
     selector,
     text,
   );
+/**
+ * Wheel-zooms the PCB drawing; a problem if the inspector scrolled as well
+ * (the drawing's wheel listener must not be passive).
+ */
+const wheelZoom = async (page) => {
+  const box = await (await page.$(".board-drawing-view")).boundingBox();
+  const before = await page.$eval(".inspector-body", (el) => el.scrollTop);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel({ deltaY: -300 });
+  await settle(300);
+  const after = await page.$eval(".inspector-body", (el) => el.scrollTop);
+  return after !== before ? `inspector scrolled ${before} → ${after} on a drawing wheel zoom` : undefined;
+};
+
 // readiness checks run in the page, so they take their argument from waitForFunction
 const bodies = (n) => /** @type {any} */ (window).__cad?.ready() >= n;
 const nodes = () => document.querySelectorAll(".react-flow__node").length > 3;
@@ -59,6 +73,7 @@ const SHOTS = [
   { name: "15-pod-3d-exploded", bundle: POD, query: "view=3d&explode=1&findings=0", ready: bodies, arg: 2, wait: 4000 },
   { name: "16-pod-3d-component", bundle: POD, query: "view=3d&xray=1&labels=0&findings=0&body=board&component=u1", ready: bodies, arg: 2, wait: 4000 },
   { name: "17-board-3d", bundle: BOARD, query: "view=3d&labels=0", ready: bodies, arg: 1, wait: 4000 },
+  { name: "18-board-pcb-wheel-zoom", bundle: BOARD, query: "select=node:u2", ready: nodes, then: wheelZoom },
 ];
 
 mkdirSync(out, { recursive: true });
@@ -87,7 +102,8 @@ try {
     await page.waitForFunction(shot.ready, { timeout: 120000 }, shot.arg);
     await settle(shot.wait ?? 1500);
     if (shot.then) {
-      await shot.then(page);
+      const problem = await shot.then(page);
+      if (problem) problems.push(problem);
       await settle(1500);
     }
     await page.screenshot({ path: join(out, `${shot.name}.png`) });
