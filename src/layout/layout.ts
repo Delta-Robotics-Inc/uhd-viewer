@@ -8,7 +8,7 @@ import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
 import { at, clearOfBends, lengths } from "../canvas/geometry";
 import type { LinkLayout } from "../api";
-import { graphLayout } from "./graph-layout";
+import { boardLayout, freeSpot, hits } from "./board-layout";
 
 /** Distance kept between a corner and anything placed on a link (handles, toggles). */
 export const BEND_CLEAR = 28;
@@ -139,22 +139,37 @@ function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: numb
 }
 
 /**
- * A level with nets (a board): components and junctions in a block by the
- * force layout (graph-layout.ts), and each sheet port on the left or right
- * edge level with the child it exposes.
+ * A level with nets (a board): components grouped by function and junctions
+ * beside what they join (board-layout.ts), and each sheet port on the left
+ * or right edge level with the child it exposes.
  */
 function netPositions(vm: ViewModel, top: ViewNode[], sheets: ViewNode[], sizes: Record<string, { w: number; h: number }>): Record<string, Box> {
   const ids = new Set(top.map((n) => n.id));
   const edges = vm.links
-    .filter((l) => !l.passThrough && ids.has(l.source.node) && ids.has(l.target.node))
+    .filter((l) => !l.passThrough && !l.ground && ids.has(l.source.node) && ids.has(l.target.node))
     .map((l) => [l.source.node, l.target.node] as [string, string]);
-  const at = graphLayout(top.map((n) => ({ id: n.id, ...sizes[n.id] })), edges);
+  const degree = new Map<string, number>();
+  for (const [a, b] of edges) for (const id of [a, b]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  // a junction grows to fit its ports once they have sides: lay it out at the size it will likely have
+  const planned = (n: ViewNode) => (n.kind === "net" ? { w: sizes[n.id].w, h: Math.max(sizes[n.id].h, (Math.ceil((degree.get(n.id) ?? 0) / 2) + 1) * GRID) } : sizes[n.id]);
+  const at = boardLayout(
+    top.map((n) => ({ id: n.id, ...planned(n), net: n.kind === "net", category: n.category, label: n.label })),
+    edges,
+  );
   const x0 = sheets.length ? 400 : 60;
   const y0 = 100;
   const boxes: Record<string, Box> = {};
   for (const n of top) boxes[n.id] = { x: at[n.id].x + x0, y: at[n.id].y + y0, ...sizes[n.id] };
-  const minX = Math.min(...top.map((n) => boxes[n.id].x));
-  const maxX = Math.max(...top.map((n) => boxes[n.id].x + boxes[n.id].w));
+  placeSheets(boxes, sheets, sizes, y0);
+  return boxes;
+}
+
+/** Sheet ports (the drilled-into module's boundary) in a column on the left or right edge, level with the child each exposes. */
+function placeSheets(boxes: Record<string, Box>, sheets: ViewNode[], sizes: Record<string, { w: number; h: number }>, y0: number) {
+  const placed = Object.values(boxes);
+  if (!sheets.length || !placed.length) return;
+  const minX = Math.min(...placed.map((b) => b.x));
+  const maxX = Math.max(...placed.map((b) => b.x + b.w));
   const mid = (minX + maxX) / 2;
   const columns: Record<"left" | "right", { node: ViewNode; y: number }[]> = { left: [], right: [] };
   for (const sheet of sheets) {
@@ -171,7 +186,48 @@ function netPositions(vm: ViewModel, top: ViewNode[], sheets: ViewNode[], sizes:
       last = top;
     }
   }
-  return boxes;
+}
+
+/**
+ * Positions for the nodes a hand layout does not name (a part added since
+ * the layout was saved, or the junctions of a layout that placed only the
+ * components): each at the free spot nearest the nodes it is linked to,
+ * sheet ports on the edges. Top-level nodes only; absolute.
+ */
+function fillMissing(vm: ViewModel, hand: LevelLayout, sizes: Record<string, { w: number; h: number }>): Record<string, Box> {
+  const top = vm.nodes.filter((n) => !n.parent);
+  const missing = top.filter((n) => !hand.nodes[n.id] || hand.nodes[n.id].x === undefined || hand.nodes[n.id].y === undefined);
+  if (!missing.length) return {};
+  const boxes: Record<string, Box> = {};
+  for (const n of top) if (!missing.includes(n)) boxes[n.id] = { x: hand.nodes[n.id].x!, y: hand.nodes[n.id].y!, ...sizes[n.id] };
+  const known = Object.values(boxes);
+  const right = known.length ? Math.max(...known.map((b) => b.x + b.w)) : 60;
+  const bottom = known.length ? Math.max(...known.map((b) => b.y + b.h)) : 60;
+  const neighbours = (id: string) =>
+    vm.links
+      .filter((l) => !l.passThrough && !l.ground && (l.source.node === id || l.target.node === id))
+      .map((l) => (l.source.node === id ? l.target.node : l.source.node))
+      .map((o) => o.split("/")[0])
+      .filter((o) => boxes[o]);
+  const out: Record<string, Box> = {};
+  // most-connected first, so a junction lands among its members before a lone part takes the spot
+  const order = missing.filter((n) => !n.sheetPort).sort((a, b) => neighbours(b.id).length - neighbours(a.id).length || a.id.localeCompare(b.id));
+  for (const n of order) {
+    const ns = neighbours(n.id);
+    const s = sizes[n.id];
+    const ideal: [number, number] = ns.length
+      ? [ns.reduce((t, o) => t + boxes[o].x + boxes[o].w / 2, 0) / ns.length, ns.reduce((t, o) => t + boxes[o].y + boxes[o].h / 2, 0) / ns.length]
+      : [right + 120 + s.w / 2, bottom + 80];
+    const at = freeSpot(ideal, s.w, s.h, Object.values(boxes), { x: 40, y: 24 });
+    boxes[n.id] = out[n.id] = { ...at, ...s };
+  }
+  const sheets = missing.filter((n) => n.sheetPort);
+  if (sheets.length) {
+    const withSheets: Record<string, Box> = { ...boxes };
+    placeSheets(withSheets, sheets, sizes, 100);
+    for (const n of sheets) out[n.id] = withSheets[n.id];
+  }
+  return out;
 }
 
 /** Nearest free grid position between lo and hi (exclusive) on one side of a card. */
@@ -230,7 +286,7 @@ export function computeLayout(
   }
 
   // positions (absolute)
-  const auto = hand ? {} : autoPositions(vm, sizes);
+  const auto = hand ? fillMissing(vm, hand, sizes) : autoPositions(vm, sizes);
   const boxes: Record<string, Box> = {};
   const place = (node: ViewNode) => {
     if (boxes[node.id]) return;
@@ -333,6 +389,18 @@ export function computeLayout(
     const need = (entries.length + 1) * GRID;
     if (side === "left" || side === "right") boxes[nodeId].h = Math.max(boxes[nodeId].h, need);
     else boxes[nodeId].w = Math.max(boxes[nodeId].w, need + 32);
+  }
+
+  // a grown junction placed automatically moves to the nearest spot where it overlaps nothing
+  for (const node of vm.nodes) {
+    if (node.kind !== "net" || node.parent || hand?.nodes[node.id]?.x !== undefined || overrides[node.id]) continue;
+    const b = boxes[node.id];
+    const others = vm.nodes.filter((n) => n !== node && !n.expanded && !n.parent).map((n) => boxes[n.id]);
+    if (!others.some((o) => hits(b, o, 8))) continue;
+    // ports get their positions below, from the box
+    const at = freeSpot([b.x + b.w / 2, b.y + b.h / 2], b.w, b.h, others, { x: 24, y: 12 });
+    b.x = at.x;
+    b.y = at.y;
   }
 
   const counterpartOf = (key: string): Pt | undefined => {
