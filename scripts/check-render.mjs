@@ -26,11 +26,11 @@ import { viewerHandler } from "../bin/serve.mjs";
 const W = 1600;
 const H = 1000;
 
-const launch = () =>
+const launch = (extra = []) =>
   puppeteer.launch({
     executablePath: process.env.CHROME ?? "/usr/bin/google-chrome",
     headless: true,
-    args: ["--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", `--window-size=${W},${H}`],
+    args: ["--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", `--window-size=${W},${H}`, ...extra],
     defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
   });
 
@@ -334,26 +334,33 @@ const OUTER_PAGE = (src) => `<!doctype html>
 /**
  * Host messages through postMessage, as a host frames the viewer (a VS Code
  * webview, a web app): the built app on one origin (localhost), in a frame of
- * a page on another (127.0.0.1) that it allows with ?hostOrigin=. Checks that
+ * a page on another (127.0.0.1) that its server allows (the injected config,
+ * as `uhd-viewer serve --host-origin` writes it). Checks that
  * the frame says it is ready; that focus drills to a module's level, selects
  * it and brings it into view, and the frame reports the selection; that drill,
  * select and setView apply; that OPEN SOURCE and an artifact row reach the
  * host (and no tab opens); that a frame which does not allow the page's
- * origin ignores it and sends nothing.
+ * origin ignores it and sends nothing, even when the frame's URL names it
+ * (?hostOrigin= is for the Vite dev server only).
  */
 async function checkMessages(bundleFile, out) {
   mkdirSync(out, { recursive: true });
-  const app = createServer(viewerHandler({ bundleFile }));
   const outer = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     res.writeHead(200, { "content-type": "text/html" }).end(OUTER_PAGE(url.searchParams.get("src") ?? ""));
   });
   const listen = (server) => new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(/** @type {any} */ (server.address()).port)));
-  const appPort = await listen(app);
   const outerPort = await listen(outer);
   const hostOrigin = `http://127.0.0.1:${outerPort}`;
-  const outerUrl = (query) => `${hostOrigin}/?src=${encodeURIComponent(`http://localhost:${appPort}/?${query}`)}`;
-  const browser = await launch();
+  // one server allows the host's origin; the other allows nothing
+  const app = createServer(viewerHandler({ bundleFile, hostOrigins: [hostOrigin] }));
+  const closedApp = createServer(viewerHandler({ bundleFile }));
+  const appPort = await listen(app);
+  const closedPort = await listen(closedApp);
+  const outerUrl = (port, query = "") => `${hostOrigin}/?src=${encodeURIComponent(`http://localhost:${port}/${query}`)}`;
+  // rasterized on the CPU: with swiftshader, a frame on another origin otherwise keeps stale
+  // tiles in its screenshots (nodes of earlier levels and zooms that are not in the DOM)
+  const browser = await launch(["--disable-gpu-rasterization", "--disable-partial-raster"]);
   const results = [];
   const expect = (name, ok, detail) => {
     results.push({ name, ok: Boolean(ok), detail });
@@ -365,7 +372,7 @@ async function checkMessages(bundleFile, out) {
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-    await page.goto(outerUrl(`hostOrigin=${encodeURIComponent(hostOrigin)}`), { waitUntil: "load", timeout: 120000 });
+    await page.goto(outerUrl(appPort), { waitUntil: "load", timeout: 120000 });
     const events = () => page.evaluate(() => /** @type {any} */ (window).events);
     const waitEvent = (pred, timeout = 30000, ...args) => page.waitForFunction(pred, { timeout }, ...args).then(() => true, () => false);
     expect("ready posted to the host's origin", await waitEvent(() => /** @type {any} */ (window).events.some((e) => e.type === "uhd-viewer:ready"), 120000), await events());
@@ -456,26 +463,31 @@ async function checkMessages(bundleFile, out) {
     const cadSel = await lastSelection();
     expect("setView shows the 3D view; focus there selects the body", cad.view === "3d" && cadSel?.id === "gnss", { view: cad.view, cadSel });
     await page.screenshot({ path: join(out, "09-messages-3d.png") });
+    // select applies in the 3D view too (a full instance path off the diagram's level), and is reported
+    await send({ type: "uhd-viewer:select", ids: ["arm_fl/motor"] });
+    const cadSelected = await selected("arm_fl/motor");
+    expect("select in the 3D view selects the body and reports it", cadSelected && (await lastSelection())?.defId, await lastSelection());
     await send({ type: "uhd-viewer:setView", view: "diagram" });
     await frame.waitForFunction(() => !document.querySelector(".cad-view") && document.querySelectorAll(".react-flow__node").length > 5, { timeout: 15000 }).catch(() => undefined);
     expect("setView returns to the diagram", (await state()).view === "diagram", await state());
     failures.push(...pageErrors(errors));
     await page.close();
 
-    // a frame that does not allow this page's origin: nothing in, nothing out
+    // a frame whose server does not allow this page's origin: nothing in,
+    // nothing out, though the frame's URL asks for it
     const closed = await browser.newPage();
-    await closed.goto(outerUrl(""), { waitUntil: "load", timeout: 120000 });
-    const closedFrame = closed.frames().find((f) => f.url().startsWith(`http://localhost:${appPort}`));
+    await closed.goto(outerUrl(closedPort, `?hostOrigin=${encodeURIComponent(hostOrigin)}`), { waitUntil: "load", timeout: 120000 });
+    const closedFrame = closed.frames().find((f) => f.url().startsWith(`http://localhost:${closedPort}`));
     await closedFrame?.waitForFunction(() => document.querySelectorAll(".react-flow__node").length > 5, { timeout: 60000 });
     await closed.evaluate(() => /** @type {any} */ (window).send({ type: "uhd-viewer:focus", path: "video" }));
     await settle(1500);
     const ignored = { events: await closed.evaluate(() => /** @type {any} */ (window).events.length), selected: await closedFrame?.evaluate(() => document.querySelector(".react-flow__node.selected")?.getAttribute("data-id") ?? null) };
-    expect("a frame that does not allow the host ignores it and sends nothing", ignored.events === 0 && ignored.selected === null, ignored);
+    expect("a frame not allowed by its server ignores the host and sends nothing, ?hostOrigin= or not", ignored.events === 0 && ignored.selected === null, ignored);
     await closed.close();
     expect("no page errors", failures.length === 0, failures);
   } finally {
     await browser.close();
-    for (const s of [app, outer]) {
+    for (const s of [app, closedApp, outer]) {
       s.closeAllConnections();
       s.close();
     }

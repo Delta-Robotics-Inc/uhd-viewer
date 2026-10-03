@@ -10,7 +10,7 @@ import { buildView } from "../src/model/from-uhd";
 import { systemDiagnostics } from "../src/model/diagnostics";
 import { commandBus, connectParent, deliver, type ChannelWindow } from "../src/host/channel";
 import { isViewerEvent, originAllowed, originList, parseHostMessage } from "../src/host/protocol";
-import { cadHostSelection, drillTarget, focusTarget, hostSelection, selectTarget, selectionKey } from "../src/host/targets";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, hostSelection, selectTarget, selectionKey } from "../src/host/targets";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
 
 const defs = new Map((bundle.definitions as unknown as ModuleDef[]).map((d) => [d.id, d]));
@@ -230,7 +230,23 @@ describe("focus, select and drill on the model", () => {
     const defAt = (path: string[]) => (path.join("/") === "board/u2" ? lookup("bosch-bmi270") : path.length === 0 ? root : lookup("sample-imu-board"));
     expect(cadHostSelection({ body: "board#board_glb", component: "board/u2" }, defAt)).toEqual({ kind: "node", id: "board/u2", defId: "bosch-bmi270" });
     expect(cadHostSelection({ body: "board#board_glb" }, defAt)).toEqual({ kind: "node", id: "board", defId: "sample-imu-board" });
-    expect(cadHostSelection({ mate: "board_mount" }, defAt)).toEqual({ kind: "link", id: "board_mount" });
+    // a mate carries its owner's definition, as the same link does in the diagram
+    const mate = cadHostSelection({ mate: "board_mount" }, defAt);
+    expect(mate).toEqual({ kind: "link", id: "board_mount", defId: root.id });
+    expect(mate).toEqual(hostSelection(view([]), [], { kind: "link", id: "board_mount" }, root.id));
+    expect(cadHostSelection({ mate: "board/inner" }, defAt)).toEqual({ kind: "link", id: "board/inner", defId: "sample-imu-board" });
     expect(cadHostSelection({}, defAt)).toBeNull();
+  });
+
+  it("select in the 3D view: the level's pick by full path, else a full instance path", () => {
+    const board = ["board"];
+    expect(cadSelectTarget(root, lookup, board, { kind: "node", id: "u2" }, ["u2"])).toEqual({ kind: "node", path: "board/u2" });
+    expect(cadSelectTarget(root, lookup, [], { kind: "link", id: "board_mount" }, ["board_mount"])).toEqual({ kind: "link", path: "board_mount" });
+    // nets are not drawn in 3D
+    expect(cadSelectTarget(root, lookup, board, { kind: "node", id: ":v3v3" }, ["board:v3v3"])).toBeUndefined();
+    expect(cadSelectTarget(root, lookup, board, null, [])).toEqual({ kind: "none", path: "" });
+    // not on the diagram's level: the first full instance path
+    expect(cadSelectTarget(root, lookup, board, undefined, ["link:enclosure", "nothing", "node:enclosure"])).toEqual({ kind: "node", path: "enclosure" });
+    expect(cadSelectTarget(root, lookup, board, undefined, ["board/nothing"])).toBeUndefined();
   });
 });

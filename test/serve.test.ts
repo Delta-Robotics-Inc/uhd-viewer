@@ -107,6 +107,17 @@ describe("the server", () => {
     expect((await get("/assets/index.js")).body).toBe("console.log(1)");
   });
 
+  it("injects the host origins it is given, and none by default", async () => {
+    expect((await get("/")).body).not.toContain("hostOrigins");
+    const other = await startServer({ bundleFile, port: 0, appDir: join(dir, "app"), hostOrigins: ["vscode-webview://*", "http://localhost:3000"] });
+    try {
+      const page = await fetch(other.url).then((r) => r.text());
+      expect(page).toContain('{"bundleUrl":"uhd-bundle.json","hostOrigins":["vscode-webview://*","http://localhost:3000"]}');
+    } finally {
+      await other.close();
+    }
+  });
+
   it("serves the bundle with its bases as URLs on this server", async () => {
     const res = await get("/uhd-bundle.json");
     expect(res.type).toMatch(/application\/json/);

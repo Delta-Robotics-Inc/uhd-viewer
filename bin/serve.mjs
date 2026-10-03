@@ -108,7 +108,11 @@ export function planBundle(bundle, bundleFile) {
   return { mounts, files, bases, rewrite };
 }
 
-/** The app's index.html with the bundle URL injected (read by src/main.tsx). */
+/**
+ * The app's index.html with its config injected (read by src/main.tsx): the
+ * bundle URL and the parent origins it may talk to when framed. The page that
+ * frames the app writes its URL, so the origins come from here, not the query.
+ */
 export function injectConfig(html, config) {
   const json = JSON.stringify(config).replace(/</g, "\\u003c");
   return html.replace("</head>", `  <script type="application/json" id="uhd-viewer-config">${json}</script>\n  </head>`);
@@ -145,9 +149,10 @@ async function sendFile(res, file, cache) {
  * serve more (their own pages) can call it for the rest: it answers every
  * request it is given.
  *
- * @param {{ bundleFile: string, appDir?: string, allowHost?: (hostname: string) => boolean }} options
+ * @param {{ bundleFile: string, appDir?: string, allowHost?: (hostname: string) => boolean, hostOrigins?: string[] }} options
+ *   hostOrigins: parent origins the app takes host messages from when framed (exact, `scheme://*` or `*`)
  */
-export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (h) => LOOPBACK.has(h) }) {
+export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (h) => LOOPBACK.has(h), hostOrigins = [] }) {
   const appDir = resolve(app);
   const plan = bundleState(resolve(bundleFile));
   const realBase = new Map();
@@ -173,7 +178,7 @@ export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (
       }
       if (path === "/" || path === "/index.html") {
         const html = await readFile(join(appDir, "index.html"), "utf8");
-        return send(res, 200, injectConfig(html, { bundleUrl: BUNDLE_URL }), TYPES[".html"]);
+        return send(res, 200, injectConfig(html, hostOrigins.length ? { bundleUrl: BUNDLE_URL, hostOrigins } : { bundleUrl: BUNDLE_URL }), TYPES[".html"]);
       }
       if (path === `/${BUNDLE_URL}`) {
         const p = await plan();
@@ -203,17 +208,17 @@ export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (
 /**
  * Starts the server. Fails before listening if the bundle or the built app is missing.
  *
- * @param {{ bundleFile: string, port?: number, host?: string, appDir?: string }} options
+ * @param {{ bundleFile: string, port?: number, host?: string, appDir?: string, hostOrigins?: string[] }} options
  * @returns {Promise<{ url: string, server: import("node:http").Server, close: () => Promise<void> }>}
  */
-export async function startServer({ bundleFile, port = DEFAULT_PORT, host = "127.0.0.1", appDir = APP_DIR }) {
+export async function startServer({ bundleFile, port = DEFAULT_PORT, host = "127.0.0.1", appDir = APP_DIR, hostOrigins = [] }) {
   planBundle(JSON.parse(await readFile(bundleFile, "utf8")), bundleFile);
   await stat(join(appDir, "index.html")).catch(() => {
     throw new Error(`no built viewer at ${appDir}: run \`npm run build\` first`);
   });
   const loopback = LOOPBACK.has(host);
   // exposed on purpose (--host 0.0.0.0): any Host header is accepted
-  const server = createServer(viewerHandler({ bundleFile, appDir, allowHost: loopback ? (h) => LOOPBACK.has(h) : () => true }));
+  const server = createServer(viewerHandler({ bundleFile, appDir, hostOrigins, allowHost: loopback ? (h) => LOOPBACK.has(h) : () => true }));
   await new Promise((ok, fail) => {
     server.once("error", fail);
     server.listen(port, host, () => ok(undefined));

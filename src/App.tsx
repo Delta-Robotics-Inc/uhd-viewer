@@ -18,7 +18,7 @@ import { CadView, type CadSelection } from "./cad/CadView";
 import { defAt } from "./cad/model";
 import type { CommandBus } from "./host/channel";
 import { HostContext, type HostActions } from "./host/context";
-import { cadHostSelection, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "./host/targets";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "./host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -274,17 +274,17 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
 
   // ---- the host channel: messages in, events out (README, "Host messages")
   const [centre, setCentre] = useState<{ id: string; seq: number }>();
-  const [cadFocus, setCadFocus] = useState<{ path: string; seq: number }>();
+  const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const seq = useRef(0);
   // what a message applies to: the state of the latest render
-  const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm });
-  latest.current = { system, lookup: scenario.lookup, drill, expanded, vm };
+  const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm, view });
+  latest.current = { system, lookup: scenario.lookup, drill, expanded, vm, view };
   useEffect(() => {
     if (!host) return;
     return host.bus.subscribe((m) => {
-      const { system: sys, lookup, drill: d, expanded: ex, vm: v } = latest.current;
+      const { system: sys, lookup, drill: d, expanded: ex, vm: v, view: shownView } = latest.current;
       const sameDrill = (next: string[]) => (cur: string[]) => (cur.join("/") === next.join("/") ? cur : next);
       setMenu(null);
       switch (m.type) {
@@ -305,8 +305,14 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
         case "uhd-viewer:select": {
           const sel = selectTarget(v, d, m.ids);
           if (sel !== undefined) setSelection(sel);
+          // the 3D view selects too (a module's body or a mate), without moving the camera
+          if (shownView === "3d") {
+            const t = cadSelectTarget(sys, lookup, d, sel, m.ids);
+            if (t) setCadFocus({ ...t, seq: ++seq.current, look: false });
+          }
           return;
         }
+        // the diagram's level (the 3D view shows the whole assembly at any level)
         case "uhd-viewer:drill":
           setDrill(sameDrill(drillTarget(sys, lookup, m.path)));
           setSelection(null);

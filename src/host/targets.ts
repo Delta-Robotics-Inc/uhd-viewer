@@ -69,11 +69,38 @@ export function cadHostSelection(
   sel: { body?: string; component?: string; harness?: string; mate?: string },
   defAt: (path: string[]) => ModuleDef | undefined,
 ): ViewerSelection | null {
-  if (sel.mate) return { kind: "link", id: sel.mate };
+  // a mate is named `owner/link`: its definition is the owner's, as for a link in the diagram
+  if (sel.mate) return { kind: "link", id: sel.mate, ...withDef(defAt(sel.mate.split("/").slice(0, -1))?.id) };
   const path = sel.component ?? sel.harness ?? sel.body?.split("#")[0];
   if (path === undefined) return null;
   const def = defAt(path ? path.split("/") : []);
   return { kind: "node", id: path, ...withDef(def?.id) };
+}
+
+/**
+ * What a host's select picks in the 3D view, by path from the root: the
+ * selection it made on the diagram's level (a module or a link; nets are not
+ * drawn in 3D), else the first id naming a module instance in full. `none`
+ * for no ids; undefined when nothing applies.
+ */
+export function cadSelectTarget(
+  root: ModuleDef,
+  lookup: ModuleLookup,
+  drill: string[],
+  onLevel: LevelSelection | undefined,
+  ids: string[],
+): { kind: "node" | "link" | "none"; path: string } | undefined {
+  if (onLevel === null) return { kind: "none", path: "" };
+  if (onLevel) {
+    const path = fullId(drill, onLevel.id);
+    return onLevel.kind === "node" && path.includes(":") ? undefined : { kind: onLevel.kind, path };
+  }
+  for (const raw of ids) {
+    if (raw.startsWith("link:")) continue;
+    const parts = (raw.startsWith("node:") ? raw.slice(5) : raw).split("/").filter(Boolean);
+    if (parts.length && instancePrefix(root, lookup, parts).length === parts.length) return { kind: "node", path: parts.join("/") };
+  }
+  return undefined;
 }
 
 /** A stored or derived link id as the view selects it: the line that draws it, or the derived link itself. */

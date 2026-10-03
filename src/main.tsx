@@ -5,8 +5,10 @@
  *
  * In a frame, the app talks to its parent window over postMessage (README,
  * "Host messages") when the parent is on the app's own origin, or on an
- * origin the page allows: `?hostOrigin=<origin>[,<origin>…]` (or `*`, or
- * `scheme://*`), or `hostOrigins` in the injected config.
+ * origin the server allows: `hostOrigins` in the injected config
+ * (`uhd-viewer serve --host-origin`). Not from the query: the framing page
+ * writes the frame's URL, so it could allow itself. The Vite dev server alone
+ * also takes `?hostOrigin=<origin>[,<origin>…]`, for trying a host locally.
  */
 import { registerEvidenceFiles } from "./model/evidence";
 import { pickBundleUrl } from "./source/source";
@@ -35,10 +37,11 @@ async function start() {
   });
 }
 
-/** The parent channel: in a frame whose parent is allowed (its own origin, or one the page lists). */
+/** The parent channel: in a frame whose parent is allowed (its own origin, or one the server lists). */
 function parentWindow(injected?: string[]): { origins: string[] } | undefined {
   if (window.parent === window) return undefined;
-  const listed = [...originList(new URLSearchParams(window.location.search).get("hostOrigin")), ...(Array.isArray(injected) ? injected : [])];
+  const fromQuery = import.meta.env.DEV ? originList(new URLSearchParams(window.location.search).get("hostOrigin")) : [];
+  const listed = [...fromQuery, ...(Array.isArray(injected) ? injected.filter((o) => typeof o === "string") : [])];
   if (listed.length) return { origins: listed };
   try {
     // readable only when the parent is on this origin

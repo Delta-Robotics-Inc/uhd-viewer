@@ -55,7 +55,7 @@ export function originAllowed(origin: string, allowed: readonly string[]): boole
   });
 }
 
-/** Origins from a comma-separated list (`?hostOrigin=a,b`), blanks dropped. */
+/** Origins from a comma-separated list (`a,b`), blanks dropped. */
 export const originList = (value: string | null | undefined): string[] =>
   (value ?? "")
     .split(",")

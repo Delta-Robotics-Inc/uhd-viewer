@@ -170,8 +170,12 @@ export function CadView({
   /** The viewer's own checks (root and boards) and the host's findings, pinned to the model where they name something placed. */
   diagnostics?: ScopedDiagnostic[];
   hostDiagnostics?: UhdBundleDiagnostic[];
-  /** A module to select and look at (a host's focus), by instance path; `seq` tells repeats apart. */
-  focusOn?: { path: string; seq: number };
+  /**
+   * A host's focus or select, by instance path; `seq` tells repeats apart. A
+   * node selects the module's body and (with `look`, the default) looks at it;
+   * a link selects the mate of that path (`owner/link`); `none` clears.
+   */
+  focusOn?: { path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean };
   /** Every selection change (for the host). */
   onSelect?: (sel: CadSelection) => void;
 }) {
@@ -929,6 +933,11 @@ export function CadView({
     if (!focusOn || !model || focused.current === focusOn.seq) return;
     focused.current = focusOn.seq;
     const key = focusOn.path;
+    if (focusOn.kind === "none") return setSel({});
+    if (focusOn.kind === "link") {
+      if (model.assembly.mates.some((m) => m.linkId === key)) setSel({ mate: key });
+      return;
+    }
     const has = (k: string) => model.bodies.some((b) => b.key === k);
     const holder = model.within.get(key);
     const parts = key.split("/");
@@ -936,7 +945,7 @@ export function CadView({
     const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : above ? { body: above } : undefined;
     if (!next) return;
     setSel(next);
-    look.current = true;
+    look.current = focusOn.look !== false;
   }, [focusOn, model]);
   useEffect(() => {
     if (!look.current || !sel.body || !bodies.current.has(sel.body)) return;

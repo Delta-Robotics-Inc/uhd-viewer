@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- *   uhd-viewer serve <bundle.json> [--port 5179] [--host 127.0.0.1] [--open]
+ *   uhd-viewer serve <bundle.json> [--port 5179] [--host 127.0.0.1] [--host-origin <origin>]… [--open]
  *
  * Serves the built viewer with one UHD bundle and its artifacts (bin/serve.mjs).
  */
@@ -8,12 +8,14 @@ import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
 import { DEFAULT_PORT, startServer } from "./serve.mjs";
 
-const USAGE = `usage: uhd-viewer serve <bundle.json> [--port ${DEFAULT_PORT}] [--host 127.0.0.1] [--open]
+const USAGE = `usage: uhd-viewer serve <bundle.json> [--port ${DEFAULT_PORT}] [--host 127.0.0.1] [--host-origin <origin>]… [--open]
 
 Serves the viewer, the bundle and the artifact files it references.
-  --port   port to listen on (0: any free port)
-  --host   address to bind; anything but a loopback address exposes the files to the network
-  --open   open the viewer in the default browser`;
+  --port         port to listen on (0: any free port)
+  --host         address to bind; anything but a loopback address exposes the files to the network
+  --host-origin  an origin that may frame the viewer and drive it with host messages
+                 (exact, scheme://* or *; repeat or separate with commas)
+  --open         open the viewer in the default browser`;
 
 /** The platform's "open this URL" command. */
 function openBrowser(url) {
@@ -32,6 +34,7 @@ async function main() {
       options: {
         port: { type: "string" },
         host: { type: "string" },
+        "host-origin": { type: "string", multiple: true },
         open: { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
@@ -56,7 +59,8 @@ async function main() {
     return 2;
   }
   try {
-    const { url } = await startServer({ bundleFile, port, host: values.host });
+    const hostOrigins = (values["host-origin"] ?? []).flatMap((v) => v.split(",").map((s) => s.trim()).filter(Boolean));
+    const { url } = await startServer({ bundleFile, port, host: values.host, hostOrigins });
     console.log(`uhd-viewer: serving ${bundleFile} at ${url}`);
     if (values.open) openBrowser(url);
   } catch (e) {
