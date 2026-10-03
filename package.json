@@ -4,11 +4,45 @@
   "private": true,
   "type": "module",
   "description": "Standalone viewer for UHD systems: modules, interfaces, interface links, and harnesses.",
+  "bin": {
+    "uhd-viewer": "bin/uhd-viewer.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/lib/uhd-viewer.d.ts",
+      "import": "./dist/lib/uhd-viewer.js"
+    },
+    "./style.css": "./dist/lib/uhd-viewer.css",
+    "./app/*": "./dist/app/*",
+    "./serve": "./bin/serve.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/app",
+    "dist/lib",
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "type-check": "tsc --noEmit",
+    "build": "npm run type-check && npm run build:app && npm run build:lib",
+    "build:app": "vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && node scripts/build-types.mjs",
+    "serve": "node bin/uhd-viewer.mjs serve",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview"
+  },
+  "peerDependencies": {
+    "@deltarobotics/uhd": ">=0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deltarobotics/uhd": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@types/three": "^0.180.0",
@@ -25,6 +59,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "puppeteer-core": "^24.43.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
   }
 }

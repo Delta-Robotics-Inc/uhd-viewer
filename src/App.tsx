@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
+import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import { checkSystem } from "@uhd/system/checks.js";
 import { buildView, withOverrides } from "./model/from-uhd";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
 import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
 import type { Pt } from "./canvas/routing";
-import { bundleUrlFromLocation, loadBundle, type LoadedSource } from "./source/source";
+import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source";
+import type { ViewerLayout, ViewerOptions } from "./api";
 import { Canvas, type Selection } from "./canvas/Canvas";
 import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
@@ -35,12 +37,28 @@ function save(key: string, value: unknown) {
 }
 
 /** Save once things settle, not on every frame of a drag. */
-function useSaved(key: string, value: unknown) {
+function useSaved(key: string, value: unknown, enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     const t = setTimeout(() => save(key, value), 250);
     return () => clearTimeout(t);
-  }, [key, value]);
+  }, [key, value, enabled]);
 }
+
+/** Hand layout edits to a host, debounced like local saves; nothing on mount. */
+function useHostLayout(layout: ViewerLayout, onChange?: (layout: ViewerLayout) => void) {
+  const handler = useRef(onChange);
+  handler.current = onChange;
+  const initial = useRef(layout);
+  useEffect(() => {
+    if (layout === initial.current || !handler.current) return;
+    const t = setTimeout(() => handler.current?.(layout), 250);
+    return () => clearTimeout(t);
+  }, [layout]);
+}
+
+/** Findings the viewer computes itself for every scenario: left out of the producer's list. */
+const ownChecks = (d: UhdBundleDiagnostic) => d.validator === "uhd/checkSystem";
 
 /** What is being dragged right now (see LiveLayout). */
 export interface Live {
@@ -52,19 +70,45 @@ export interface Live {
 const params = new URLSearchParams(window.location.search);
 const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
 
+export interface AppProps extends ViewerOptions {
+  /** Development only: absolute artifact bases are served through Vite's /@fs route. */
+  fsRoute?: boolean;
+}
+
 /** Loads the UHD bundle (the viewer's only input), then shows it. */
-export default function App() {
+export default function App(props: AppProps) {
+  const { bundle, bundleUrl, resolveArtifact, fsRoute } = props;
   const [source, setSource] = useState<LoadedSource | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    loadBundle(bundleUrlFromLocation()).then(setSource, (e: Error) => setError(e.message));
-  }, []);
+    const options = { fsRoute, resolveArtifact };
+    let cancelled = false;
+    const loaded = (s: LoadedSource) => !cancelled && (setSource(s), setError(null));
+    const failed = (e: Error) => !cancelled && setError(e.message);
+    if (bundle) {
+      try {
+        loaded(sourceFromBundle(bundle, bundleUrl ?? window.location.href, options));
+      } catch (e) {
+        failed(e as Error);
+      }
+    } else if (bundleUrl) loadBundle(bundleUrl, options).then(loaded, failed);
+    return () => {
+      cancelled = true;
+    };
+  }, [bundle, bundleUrl, resolveArtifact, fsRoute]);
   if (error) return <div className="load-state error">{error}</div>;
+  if (!bundle && !bundleUrl)
+    return (
+      <div className="load-state">
+        No UHD bundle. Open this page with ?bundle=&lt;url&gt;, or serve one with uhd-viewer serve &lt;bundle.json&gt;.
+      </div>
+    );
   if (!source) return <div className="load-state">Loading UHD bundle…</div>;
-  return <Viewer source={source} />;
+  return <Viewer source={source} options={props} />;
 }
 
-function Viewer({ source }: { source: LoadedSource }) {
+function Viewer({ source, options }: { source: LoadedSource; options: ViewerOptions }) {
+  const hosted = Boolean(options.onLayoutChange);
   const SCENARIOS = source.scenarios;
   const HAND_LAYOUTS: Record<string, LevelLayout> = source.display.diagram?.layouts ?? {};
   const DEFAULT_EXPANDED = source.display.diagram?.expanded ?? [];
@@ -81,9 +125,10 @@ function Viewer({ source }: { source: LoadedSource }) {
   const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? "hierarchy");
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
   const [view, setView] = useState<"diagram" | "3d">(params.get("view") === "3d" ? "3d" : "diagram");
-  const [positions, setPositions] = useState<Positions>(() => load("uhd-viewer:positions", {}));
+  // layout edits: local storage by default, the host's when it takes them (onLayoutChange)
+  const [positions, setPositions] = useState<Positions>(() => (hosted ? options.layout?.positions ?? {} : load("uhd-viewer:positions", {})));
   const [overrides, setOverrides] = useState<Overrides>(() => load("uhd-viewer:overrides", {}));
-  const [linkEdits, setLinkEdits] = useState<LinkEdits>(() => load("uhd-viewer:links", {}));
+  const [linkEdits, setLinkEdits] = useState<LinkEdits>(() => (hosted ? options.layout?.links ?? {} : load("uhd-viewer:links", {})));
 
   const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0];
   const system = useMemo(() => withOverrides(scenario.system, overrides), [scenario, overrides]);
@@ -105,9 +150,10 @@ function Viewer({ source }: { source: LoadedSource }) {
     return next;
   }, [vm, hand, positions, levelKey, showGrounds, linkEdits, live]);
 
-  useSaved("uhd-viewer:positions", positions);
+  useSaved("uhd-viewer:positions", positions, !hosted);
   useSaved("uhd-viewer:overrides", overrides);
-  useSaved("uhd-viewer:links", linkEdits);
+  useSaved("uhd-viewer:links", linkEdits, !hosted);
+  useHostLayout(useMemo(() => ({ positions, links: linkEdits }), [positions, linkEdits]), options.onLayoutChange);
   const editLink = useCallback(
     (linkId: string, patch: LinkLayout) =>
       setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
@@ -176,7 +222,12 @@ function Viewer({ source }: { source: LoadedSource }) {
   const defFor = useCallback((id?: string) => (id ? scenario.lookup(id) : undefined), [scenario]);
   const onPair = useCallback((l: ViewLink) => setPairLink(l.linkId), []);
 
-  const errors = diagnostics.filter((d) => d.severity === "error").length;
+  // the producer's findings describe the nominal build
+  const hostDiagnostics = useMemo(
+    () => (scenario.id === "nominal" ? [...source.hostDiagnostics, ...(options.diagnostics ?? [])].filter((d) => !ownChecks(d)) : []),
+    [scenario, source, options.diagnostics],
+  );
+  const errors = diagnostics.filter((d) => d.severity === "error").length + hostDiagnostics.filter((d) => d.severity === "error").length;
   const pair = pairLink ? vm.links.find((l) => l.linkId === pairLink) : undefined;
 
   return (
@@ -246,6 +297,7 @@ function Viewer({ source }: { source: LoadedSource }) {
               mode={mode}
               openLinks={openLinks}
               diagnostics={diagnostics}
+              hostDiagnostics={hostDiagnostics}
               defFor={defFor}
               resolveArtifact={source.resolveArtifact}
               appearance={source.display.spatial?.appearance}

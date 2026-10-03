@@ -12,7 +12,8 @@ import { cadWrapper, createScene, loadGlb, materialFor } from "../cad/scene";
 import type { Appearance } from "../source/source";
 import { Icon } from "../canvas/Icon";
 
-export type ArtifactResolver = (definitionId: string, filePath: string) => string | undefined;
+import type { ArtifactResolver } from "../api";
+export type { ArtifactResolver };
 
 const IMAGE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
 

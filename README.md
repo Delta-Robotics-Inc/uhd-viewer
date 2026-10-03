@@ -19,7 +19,9 @@ The viewer imports UHD source and library parts from a sibling checkout
 # ../uhd on branch mark/pb-793-child-link-integrity (or later)
 npm install
 npm run dev          # http://localhost:5178
-npm run build        # type-check + production bundle
+npm run build        # type-check, the app (dist/app) and the library (dist/lib)
+npm test             # vitest: bundle loading and the serve entrypoint
+npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
 ```
 
 To open a particular view, pass URL parameters:
@@ -66,8 +68,7 @@ To open a particular view, pass URL parameters:
 - **Pair view (board 08):** every stored link between two modules, left to right, with crossovers drawn as crossings and each side's unlinked interfaces listed.
 - **Remapping child links (D4):** *REMAP* on a link swaps child slots (for example motor phases). The override is stored as `childLinks`, re-validated by UHD (a slot used twice is rejected), locked on the canvas, and kept in local storage.
 
-Not yet built: dragging conductors on the canvas to remap, the `serve`
-entrypoint, and the 3D/CAD view.
+Not yet built: dragging conductors on the canvas to remap.
 
 ## Design
 
@@ -87,6 +88,10 @@ entrypoint, and the 3D/CAD view.
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
 | `src/chrome/Chrome.tsx` | Header, activity bar, inspector, toolbar, and legend. |
+| `src/api.ts` | The host contract: `ViewerOptions`, `ViewerLayout`, `ViewerHandle`. |
+| `src/source/source.ts` | Bundle loading and the default artifact resolver. |
+| `src/main.tsx`, `src/lib.tsx` | The standalone app's entry and the library entry (`mountViewer`). |
+| `bin/` | `uhd-viewer serve` (`serve.mjs` holds the server). |
 
 ## 3D view (PB-775)
 
@@ -146,13 +151,107 @@ and nothing else: a root, its definitions, scenarios, per-definition artifact
 bases, producer diagnostics and display hints (layout, labels, placement
 hints, appearance, keyed by instance path). It never imports a project.
 
-- `?bundle=<url>` picks the bundle. The development default is the ProtoBoard
-  quadcopter project's build output (`protoboard build` writes
+- `?bundle=<url>` picks the bundle; failing that, the bundle URL a server
+  injected into the page (`uhd-viewer serve`). The development default is the
+  ProtoBoard quadcopter project's build output (`protoboard build` writes
   `.protoboard/build/uhd-bundle.json`); override it with `UHD_BUNDLE=<path>`.
-- Absolute artifact bases are served through Vite's `/@fs` route in
-  development; URL bases are used as they are.
+  A production build has no default.
+- Absolute filesystem artifact bases are served through Vite's `/@fs` route in
+  development only. A production build cannot fetch them: serve the bundle
+  with `uhd-viewer serve`, or give `mountViewer` a resolver. URL bases are used
+  as they are.
+- Producer diagnostics (the bundle's `diagnostics`) and a host's are listed in
+  the checks panel under FROM THE PRODUCER, for the nominal build. Findings
+  from `uhd/checkSystem` are left out there, since the viewer runs those checks
+  itself for every scenario.
+- Part evidence: the inspector shows a part's evidence traits from the bundle.
+  The audit result and source list come from the part's `sources.json` and
+  `verification.json`, which bundles do not carry yet. In development they are
+  read from the sibling UHD checkout's part library
+  (`src/model/library-evidence.ts`); production builds do not contain the
+  library and show the traits only.
 - Without display hints, the diagram lays itself out and 3D labels are derived
   from instance names, harness children and mates; the assembly is placed from
   the top-level module with the most interface frames.
 
 Boundary: `protoboard-cli/docs/specs/uhd-boundary.md`.
+
+## Serving and embedding (PB-814)
+
+`npm run build` writes two things:
+
+- `dist/app`: the standalone viewer, with relative asset URLs so it can be
+  served from any path. It loads `?bundle=<url>` or the bundle URL a server
+  injects, and resolves artifacts over HTTP.
+- `dist/lib`: `uhd-viewer.js` (one ES module that includes React, Three and
+  React Flow), `uhd-viewer.css`, and type declarations.
+
+### `uhd-viewer serve`
+
+```bash
+uhd-viewer serve <bundle.json> [--port 5179] [--host 127.0.0.1] [--open]
+# from this checkout: npm run build && npm run serve -- <bundle.json>
+```
+
+A small Node server (`bin/serve.mjs`, no dependencies) for the built app, the
+bundle and its artifacts:
+
+- `/` is the app, with the bundle URL injected as
+  `<script type="application/json" id="uhd-viewer-config">`.
+- `/uhd-bundle.json` is the bundle with every filesystem artifact base
+  rewritten to a URL on this server, `/artifacts/<name>/` (named after the
+  base's folder: `quadcopter-5in`, `uhd`). URL bases are left alone, and no
+  local path is sent to the browser.
+- `/artifacts/<name>/<path>` answers only for files the bundle references as
+  artifacts, and only if the file's real path stays inside its base. Anything
+  else in the folder (`.env`, sources) is a 404; a symlink pointing out of the
+  base is a 403.
+- The bundle file is re-read when it changes, so a rebuild shows on reload.
+- It binds to 127.0.0.1 and only answers requests addressed to a loopback
+  name, so a web page elsewhere cannot read the files through DNS rebinding.
+  `--host 0.0.0.0` exposes the artifacts to the network and accepts any host.
+
+Hosts with their own server can use the same handler for the viewer's routes:
+`viewerHandler({ bundleFile })` from `@deltarobotics/uhd-viewer/serve`.
+
+### `mountViewer`
+
+```ts
+import { mountViewer } from "@deltarobotics/uhd-viewer";
+import "@deltarobotics/uhd-viewer/style.css";
+
+const viewer = mountViewer(document.getElementById("viewer")!, {
+  bundleUrl: "/uhd-bundle.json",          // or bundle: <a parsed UhdBundle>
+  resolveArtifact: (definitionId, filePath, fallback) => fallback(definitionId, filePath),
+  diagnostics: hostFindings,              // UhdBundleDiagnostic[], listed with the producer's
+  layout: savedEdits,                     // ViewerLayout to start from
+  onLayoutChange: (layout) => save(layout),
+});
+viewer.update({ bundle: rebuilt });       // e.g. after a rebuild
+viewer.unmount();
+```
+
+- The element needs a height; the viewer fills it.
+- `resolveArtifact` replaces or extends the default resolver (the bundle's
+  artifact bases); `fallback` is the default.
+- `onLayoutChange` receives, debounced, every layout edit the user makes:
+  dragged node positions and link waypoints / label positions, per drill level
+  (`ViewerLayout`). With a handler the host owns the layout: the viewer neither
+  reads nor writes it in local storage. Without one, local storage is used as
+  before. Child-link remaps (*REMAP*) stay in local storage either way.
+- View state still comes from the page's URL parameters (the table under
+  "Run").
+- The stylesheet is not scoped yet: it sets `html`, `body`, `button` and the
+  fonts, so the viewer is best given a page of its own (as `protoboard dev`
+  will).
+
+### Checking a build
+
+`node scripts/check-render.mjs <viewer-url> <out-dir>` opens the diagram, two
+inspector artifact previews, the checks panel and the 3D view in headless
+Chrome, saves a PNG of each with `summary.json`, and exits 1 if any request
+failed (a missing favicon aside). `node scripts/check-render.mjs compare
+<dir-a> <dir-b>` compares two runs pixel by pixel, for example the dev server
+against `uhd-viewer serve` on the same bundle. On the quadcopter bundle the
+two match except for the evidence audit line, which only development shows
+(see "Input").
