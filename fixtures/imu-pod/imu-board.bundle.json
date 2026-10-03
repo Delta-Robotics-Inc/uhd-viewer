@@ -11214,7 +11214,7 @@
    "id": "fixture-l-1u5",
    "name": "Inductor 1.5 µH",
    "categories": [
-    "passive.inductor"
+    "component.passive.inductor"
    ],
    "interfaces": [
     {
@@ -11266,7 +11266,7 @@
    "id": "fixture-r-1m-0402",
    "name": "Resistor 1 MΩ 1 % 0402",
    "categories": [
-    "passive.resistor"
+    "component.passive.resistor"
    ],
    "interfaces": [
     {
@@ -11331,7 +11331,7 @@
    "id": "fixture-r-180k-0402",
    "name": "Resistor 180 kΩ 1 % 0402",
    "categories": [
-    "passive.resistor"
+    "component.passive.resistor"
    ],
    "interfaces": [
     {
@@ -11396,7 +11396,7 @@
    "id": "fixture-r-4k7-0402",
    "name": "Resistor 4.7 kΩ 1 % 0402",
    "categories": [
-    "passive.resistor"
+    "component.passive.resistor"
    ],
    "interfaces": [
     {
