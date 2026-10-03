@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
@@ -12,6 +12,8 @@ import { CLASSIFICATIONS, colorFor, legendFor, type Classification } from "../mo
 import { evidenceFor } from "../model/evidence";
 import { Icon } from "../canvas/Icon";
 import { fitPadding, type Selection } from "../canvas/Canvas";
+import { fullId, linkOwner, selectableLink } from "../host/targets";
+import { useHost } from "../host/context";
 
 // ---------------------------------------------------------------------------
 // Header: breadcrumb (D9), scenario, classification (D7), detail (D5)
@@ -244,6 +246,7 @@ function NodeDetails({
   onSelect,
   artifacts,
   board,
+  onOpenSource,
 }: {
   node: ViewNode;
   vm: ViewModel;
@@ -256,6 +259,8 @@ function NodeDetails({
   artifacts?: React.ReactNode;
   /** The board's drawings: this node's own, or those of the board it sits on, with it marked. */
   board?: React.ReactNode;
+  /** Ask the host to open the module's source (only when a host takes it). */
+  onOpenSource?: () => void;
 }) {
   if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} />;
   const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
@@ -271,10 +276,15 @@ function NodeDetails({
       <Row k="PART NUMBER" v={node.partNumber} />
       <Row k="PATH" v={node.id} />
       {node.description && <p className="description">{node.description}</p>}
-      {node.childCount > 0 && (
+      {(node.childCount > 0 || onOpenSource) && (
         <div className="actions">
-          <button onClick={() => onToggleExpand(node.id)}>{node.expanded ? "COLLAPSE" : "EXPAND IN PLACE"}</button>
-          <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>
+          {node.childCount > 0 && <button onClick={() => onToggleExpand(node.id)}>{node.expanded ? "COLLAPSE" : "EXPAND IN PLACE"}</button>}
+          {node.childCount > 0 && <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>}
+          {onOpenSource && (
+            <button className="open-source" onClick={onOpenSource}>
+              OPEN SOURCE
+            </button>
+          )}
         </div>
       )}
       {board}
@@ -324,7 +334,10 @@ function LinkDetails({
   onOverride,
   harness,
   derived,
+  onOpenSource,
 }: {
+  /** Ask the host to open the source that declares the link (only when a host takes it). */
+  onOpenSource?: () => void;
   /** The harness carrying the link: its artifacts (thumbnail, CAD). */
   harness?: React.ReactNode;
   /** Functional links that run over this line (a grouped net membership). */
@@ -364,6 +377,11 @@ function LinkDetails({
       <div className="actions">
         {!link.net && <button onClick={onPair}>PAIR VIEW</button>}
         {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
+        {onOpenSource && (
+          <button className="open-source" onClick={onOpenSource}>
+            OPEN SOURCE
+          </button>
+        )}
       </div>
       {harness}
       {link.children.length > 0 && (
@@ -432,7 +450,20 @@ function LinkDetails({
   );
 }
 
-function Hierarchy({ vm, selection, onSelect, board }: { vm: ViewModel; selection: Selection; onSelect: (s: Selection) => void; board?: React.ReactNode }) {
+function Hierarchy({
+  vm,
+  selection,
+  onSelect,
+  board,
+  onContext,
+}: {
+  vm: ViewModel;
+  selection: Selection;
+  onSelect: (s: Selection) => void;
+  board?: React.ReactNode;
+  /** Right-click on a module: its context menu at the pointer. */
+  onContext?: (id: string, x: number, y: number) => void;
+}) {
   const roots = vm.nodes.filter((n) => !n.parent && !n.sheetPort && n.kind !== "net");
   const kids = (id: string) => vm.nodes.filter((n) => n.parent === id && n.kind !== "net");
   const nets = vm.nodes.filter((n) => n.kind === "net");
@@ -443,6 +474,14 @@ function Hierarchy({ vm, selection, onSelect, board }: { vm: ViewModel; selectio
         className={`tree-item${selection?.kind === "node" && selection.id === n.id ? " on" : ""}`}
         style={{ paddingLeft: 10 + depth * 14 }}
         onClick={() => onSelect({ kind: "node", id: n.id })}
+        onContextMenu={
+          onContext &&
+          ((e) => {
+            e.preventDefault();
+            onSelect({ kind: "node", id: n.id });
+            onContext(n.id, e.clientX, e.clientY);
+          })
+        }
       >
         <Icon name={n.icon} size={12} />
         <span>{n.label}</span>
@@ -493,12 +532,6 @@ export interface Goto {
   selection: Selection;
 }
 
-/** A stored or derived link id as the view selects it: the line that draws it, or the derived link itself. */
-export function selectableLink(vm: ViewModel, id: string): Selection {
-  if (vm.derived.some((d) => d.id === id)) return { kind: "link", id };
-  const line = vm.links.find((l) => l.linkId === id || l.alsoIds?.includes(id));
-  return line ? { kind: "link", id: line.linkId } : null;
-}
 
 /**
  * What a canonical path (`u2:pin_14`, `board/u2`, `:sda`) is on this level:
@@ -634,8 +667,12 @@ function InspectorView(props: {
   levelDef: ModuleDef;
   drill: string[];
   onGoto: (g: Goto) => void;
+  /** A module's context menu (when a host takes open actions). */
+  onNodeContext?: (id: string, x: number, y: number) => void;
 }) {
   const { vm, selection } = props;
+  const host = useHost();
+  const levelDefId = props.levelDef.id;
   const node = selection?.kind === "node" ? vm.nodes.find((n) => n.id === selection.id) : undefined;
   const link = selection?.kind === "link" ? vm.links.find((l) => l.linkId === selection.id) : undefined;
   const derived = selection?.kind === "link" && !link ? vm.derived.find((d) => d.id === selection.id) : undefined;
@@ -687,6 +724,7 @@ function InspectorView(props: {
             onToggleExpand={props.onToggleExpand}
             onSelect={props.onSelect}
             board={boardFor(node)}
+            onOpenSource={host.openSource && node.defId ? () => host.openSource!(node.defId!, fullId(props.drill, node.id)) : undefined}
             artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} />}
           />
         ) : link ? (
@@ -697,6 +735,12 @@ function InspectorView(props: {
             onToggle={props.onToggleLink}
             onPair={() => props.onPair(link)}
             bSlots={props.bSlotsFor(link)}
+            onOpenSource={(() => {
+              const owner = linkOwner(vm, link.linkId, levelDefId);
+              const slash = link.linkId.lastIndexOf("/");
+              const at = slash < 0 ? props.drill.join("/") : fullId(props.drill, link.linkId.slice(0, slash));
+              return host.openSource && owner ? () => host.openSource!(owner, at || undefined) : undefined;
+            })()}
             override={props.overrides[link.linkId]}
             onOverride={props.topLevel ? (c) => props.onOverride(link.linkId, c) : undefined}
             harness={
@@ -715,6 +759,7 @@ function InspectorView(props: {
             vm={vm}
             selection={selection}
             onSelect={props.onSelect}
+            onContext={props.onNodeContext}
             board={
               circuitOutputs(props.levelDef) && (
                 <BoardViews def={props.levelDef} lookup={lookup} resolve={props.resolveArtifact} onPick={(instance) => props.onSelect({ kind: "node", id: instance })} />
@@ -724,6 +769,52 @@ function InspectorView(props: {
         )}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A module's context menu (canvas and hierarchy), when a host takes open actions
+// ---------------------------------------------------------------------------
+
+export interface NodeMenuItem {
+  label: string;
+  run: () => void;
+}
+
+/** A small menu at the pointer; any click elsewhere, Escape, or a choice closes it. */
+export function NodeMenu({ x, y, items, onClose }: { x: number; y: number; items: NodeMenuItem[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("keydown", key);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+  if (!items.length) return null;
+  // kept inside the window
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - 12 - items.length * 30);
+  return (
+    <div ref={ref} className="context-menu" style={{ left, top }} role="menu">
+      {items.map((it) => (
+        <button
+          key={it.label}
+          role="menuitem"
+          onClick={() => {
+            onClose();
+            it.run();
+          }}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

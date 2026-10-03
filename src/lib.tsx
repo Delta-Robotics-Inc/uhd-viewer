@@ -10,7 +10,7 @@
 import type { ViewerHandle, ViewerOptions } from "./api";
 import { render } from "./mount";
 
-export type { ArtifactResolver, LinkLayout, ViewerHandle, ViewerLayout, ViewerOptions } from "./api";
+export type { ArtifactResolver, LinkLayout, ViewerEvent, ViewerHandle, ViewerHostMessage, ViewerLayout, ViewerOptions, ViewerSelection, ViewerView } from "./api";
 
 export function mountViewer(element: HTMLElement, options: ViewerOptions): ViewerHandle {
   if (!options.bundle && !options.bundleUrl) throw new Error("mountViewer: give a bundle or a bundleUrl");

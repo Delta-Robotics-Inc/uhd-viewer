@@ -22,7 +22,7 @@ writeFileSync(join(out, "api.d.ts"), api.replaceAll('"@uhd/types/bundle.js"', '"
 writeFileSync(
   join(out, "uhd-viewer.d.ts"),
   `import type { ViewerHandle, ViewerOptions } from "./api.js";
-export type { ArtifactResolver, LinkLayout, ViewerHandle, ViewerLayout, ViewerOptions } from "./api.js";
+export type { ArtifactResolver, LinkLayout, ViewerEvent, ViewerHandle, ViewerHostMessage, ViewerLayout, ViewerOptions, ViewerSelection, ViewerView } from "./api.js";
 /** Mounts the viewer into an element (it fills the element; give it a height). */
 export declare function mountViewer(element: HTMLElement, options: ViewerOptions): ViewerHandle;
 `,
