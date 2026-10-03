@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.5 -19.5 31 21" width="310" height="210" font-family="monospace">
+<title>IMU board (fixture): PCB top (SAMPLE, hand-made placement, not routed)</title>
+<rect x="0" y="-18" width="28" height="18" rx="0.6" fill="#0f3a22" stroke="#d4b25a" stroke-width="0.15"/>
+<circle cx="2.5" cy="-9" r="1.7000000000000002" fill="#c9a24a"/><circle cx="2.5" cy="-9" r="1.1" fill="#111"/>
+<circle cx="25.5" cy="-9" r="1.7000000000000002" fill="#c9a24a"/><circle cx="25.5" cy="-9" r="1.1" fill="#111"/>
+<rect x="0.8" y="-16.1" width="1.6" height="1.2" fill="#d4b25a"/>
+<text x="2.9" y="-15.15" font-size="0.9" fill="#e7e5e4" text-anchor="start">VIN</text>
+<rect x="0.8" y="-14.1" width="1.6" height="1.2" fill="#d4b25a"/>
+<text x="2.9" y="-13.15" font-size="0.9" fill="#e7e5e4" text-anchor="start">GND</text>
+<rect x="7.73" y="-2.2" width="1" height="1.6" fill="#d4b25a"/>
+<rect x="9" y="-2.2" width="1" height="1.6" fill="#d4b25a"/>
+<rect x="10.27" y="-2.2" width="1" height="1.6" fill="#d4b25a"/>
+<text x="9.5" y="-3.1" font-size="0.9" fill="#e7e5e4" text-anchor="middle">SWD</text>
+<line x1="9.5" y1="-9" x2="14.5" y2="-14" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="14.5" y1="-14" x2="15.5" y2="-14" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="15.5" y1="-14" x2="16.5" y2="-8.8" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="16.5" y1="-8.8" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="19" y1="-13" x2="19.5" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="9.5" y1="-9" x2="18" y2="-8.8" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="18" y1="-8.8" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="19" y1="-13" x2="19.5" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="18" y1="-8.8" x2="19.5" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="19.5" y1="-5" x2="24" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="19.5" y1="-5" x2="24" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="9.5" y1="-9" x2="14.5" y2="-14" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="14.5" y1="-14" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="9.5" y1="-9" x2="15.5" y2="-14" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="15.5" y1="-14" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="9.5" y1="-9" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<rect x="6" y="-12.5" width="7" height="7" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="9.5" y="-12.75" font-size="1.1" fill="#e7e5e4" text-anchor="middle">U1</text>
+<rect x="17.75" y="-14.5" width="2.5" height="3" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="19" y="-14.75" font-size="0.8" fill="#e7e5e4" text-anchor="middle">U2</text>
+<rect x="17.5" y="-6.5" width="4" height="3" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="19.5" y="-6.75" font-size="1.1" fill="#e7e5e4" text-anchor="middle">U3</text>
+<rect x="23" y="-6.25" width="2" height="2.5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="24" y="-6.5" font-size="0.64" fill="#e7e5e4" text-anchor="middle">L1</text>
+<rect x="14.25" y="-14.5" width="0.5" height="1" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="14.5" y="-14.75" font-size="0.55" fill="#e7e5e4" text-anchor="middle">R3</text>
+<rect x="15.25" y="-14.5" width="0.5" height="1" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="15.5" y="-14.75" font-size="0.55" fill="#e7e5e4" text-anchor="middle">R4</text>
+<text x="14" y="0.45" font-size="0.8" fill="#ff5c00" text-anchor="middle">SAMPLE · TOP · hand-made placement, ratsnest only</text>
+</svg>

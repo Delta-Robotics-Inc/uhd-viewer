@@ -13,7 +13,8 @@ Priority order for design work:
 Each sample in the Pencil file carries a **UHD model** note: supported, partial,
 gap, or viewer layout (not UHD). The notes are collected in
 [uhd-model-support.md](uhd-model-support.md). The design is locked first; the
-UHD model gaps are addressed afterwards (Track A / PB-778).
+UHD model gaps are addressed afterwards (Track A / PB-778). Boards, nets and
+enclosures (D14–D18) were added with PB-823 and await the owner's review.
 
 ## Vocabulary
 
@@ -261,6 +262,127 @@ aligned text).
 - Implemented in `src/canvas/LinkEdge.tsx`: only `rotate(-90deg)` is ever
   applied to text.
 
+### D14. Board nets are junctions; memberships are grouped (PB-823)
+
+A board is a module like any other: it drills in (replace canvas) and
+expands in place. Its nets are `Net` interfaces on the board itself (UHD
+`docs/boards-and-nets.md`), so they are drawn as nodes of their own, not as
+lines between every pair of pins.
+
+- **A net is a junction:** a small rounded card with the net's name, in the
+  net's colour (power, ground, or the bus it carries in signal mode), with
+  one port per component on it. It grows only as much as its ports need.
+- **One line per component and net.** A component gets one port per net it
+  touches, named for the net, and one line to the junction. The line's
+  children are the component's pins on that net (designator and name); it
+  opens like any multi-child link, one lane per pin. Its label is the pin's
+  name, two names joined (`VDD/VDDIO`), or the first and a count
+  (`IOVDD +3`).
+- **Ground nets follow the ground convention.** A net with a ground pin and
+  no supply pin is drawn as ground symbols at its members' ports; *GND
+  wires* draws it as a dashed junction with lines.
+- **Layout.** A level with nets is laid out by a deterministic force layout
+  (`src/layout/graph-layout.ts`): each junction settles among the components
+  it joins, then cards are pulled apart to a margin. Sheet ports sit on the
+  left or right edge, level with the child they expose. Hand layouts and
+  drags override it as on any level.
+- **Fit.** The diagram fits clear of the floating chrome: the header, the
+  toolbar and, when it is open, the inspector, with a zoom cap so a level of
+  two modules is not blown up.
+
+### D15. Links derived over nets are named, not drawn (PB-823)
+
+UHD derives functional links over a board's nets (an I2C bus, a regulator
+to its loads). Their ids name every membership they run over, so they are
+never shown; their names are ("I2C 0 ↔ Primary I2C (target)").
+
+- They are not lines of their own: the grouped lines they run over carry
+  their state. A line also carries every pin of either end, wherever it
+  landed, so a bus with SDx on the INT1 net marks the INT1 line too.
+- `bus_incomplete` and `harness_wiring` therefore read the same way on a
+  board as on a cable: the lines turn incompatible, the finding is in their
+  diagnostics and on the derived link.
+- The inspector lists them by name: all of them in the hierarchy (*FUNCTIONAL
+  LINKS (DERIVED)*), those of a component, those over a net, those over a
+  line. Selecting one lights the lines it runs over and shows its ends,
+  nets, conductors and findings.
+- **Checks per board.** Derivation stops at a module boundary, so the viewer
+  checks every module that declares nets on its own, as well as the root.
+  A board's findings carry its path; the checks panel tags them `IN BOARD`
+  and clicking one opens the board and selects what it names.
+
+### D16. A board's inspector: package, pins and its drawings (PB-823)
+
+- **Package facts** (UHD `partPackage`): name, code, pin count and exposed
+  pad, pitch, body size, the source and any stated assumption.
+- **Pin table:** every pin with a designator in package order, its type as a
+  datasheet's pin table names it, and the net it is on at this level.
+- **Board drawings:** the circuit standard outputs `pcb-top.svg`,
+  `pcb-bottom.svg` and `schematic.svg` in tabs, with scroll to zoom, drag to
+  pan and double-click to reset. A drawing is shown as an image: its markup
+  never enters the page. A selected component is marked on the PCB views
+  and brought into view, on the side it is placed (the tab follows it); a
+  click on a component selects it, and from the parent level opens the
+  board with it selected.
+- **How marks are placed:** from `pnp.csv` (instance, position, rotation,
+  side), sized by the part's package (length × width, turned), else by the
+  manifest feature named by the instance path. PCB drawings are taken to be
+  in board millimetres: the top view draws board (x, y) at (x, −y), the
+  bottom view, seen from below, at (−x, −y). A drawing whose viewBox does not
+  hold its side's components is shown without marks and says so. The
+  schematic has no marks: nothing ties its coordinates to the board yet.
+- Outputs are found by their fixed file names, never by the tool that wrote
+  them. Files tagged `sample` carry a SAMPLE tag. Board drawings are never a
+  module's thumbnail.
+
+### D17. Boards and enclosures in 3D (PB-823)
+
+- **A board is one body.** A module with children and a body GLB of its own
+  (`board.glb`) is placed by its own mates and drawn whole; its components
+  are drawn inside it, not placed one by one. Nodes named by a component's
+  instance path are bodies (the circuit manifest names them so), not
+  feature pads; selecting a component (from the body's component list or by
+  clicking it) lights it. A bundle whose root has a body is placed from it.
+- **Outputs keep their colours.** A body GLB that defines materials keeps
+  them unless the display hints give its definition an appearance (vendor
+  models already did); our own uncoloured CAD still takes the part's
+  appearance.
+- **Section:** a plane across X, Y or Z of the assembled bounds, moved with
+  a slider; by default it keeps the side away from the camera, so the cut
+  faces the viewer. Cut faces are left open (no caps); the floor grid hides
+  while sectioning.
+- **X-ray:** bodies whose bounds hold another body's centre (an enclosure
+  round its board) become see-through; nothing is named to decide it.
+- **Explode separates a cad output's named bodies.** A cad standard output
+  (`body.glb` with a `body.manifest.json` generated from it) whose manifest
+  lists several named `bodies` (an enclosure's `back` and `lid`) comes apart:
+  the largest stays, each other moves away along the line between their
+  centres, 2.2 × a mate's step, so a lid clears what sits inside. Vendor and
+  library part GLBs stay rigid even when their manifests name several bodies
+  (a motor's bell and stator, a prop's hub and blades). Small assemblies
+  (under 120 mm across) explode in proportion to their size and are framed
+  to fit when they load.
+- Controls that do nothing for a model are not shown (*Hardware* without
+  fastener stacks, *Cables* without routed harnesses, *Findings* without
+  findings). The new ones (section, x-ray) are icon-only to keep the toolbar
+  on one line, centred on the area the inspector leaves visible.
+
+### D18. Findings on the model (PB-823)
+
+Errors and warnings that name something placed are pinned to it as callouts
+in the label layer (D13 upright cards), with a leader to a dot in the
+severity colour; the card's edge is the severity colour too. They show with
+or without the other labels (*Findings* toggle) and are listed in the
+assembly inspector. What a finding names decides where it sits: an
+interface's frame (`enclosure:swd_window`), a component inside a body by its
+manifest feature (`board/l1`), a mate's frame (`link:<id>`), else the body's
+centre. Clicking one selects what it names. Both the viewer's own checks
+and a host's (a cad provider's fit and route findings) are pinned. The
+*Findings* toggle starts on only when the host sent findings that land on
+the model, so a model whose only findings are the viewer's own checks (the
+quadcopter's propulsion current warning) opens as before; `findings=1|0`
+overrides it.
+
 ## Visual foundations
 
 These are defined as Pencil variables in the design file:
@@ -285,3 +407,7 @@ These are defined as Pencil variables in the design file:
 - Should the pair view and the website's /validate share one renderer package?
 - How do we visualise interface dependencies (interfaces filling other
   interfaces' slots)? Intentionally deferred.
+- Should PCB drawings state their board-millimetre mapping explicitly (an
+  agreed attribute or a manifest field) rather than by convention, and should
+  a schematic carry instance paths so a component can be marked on it?
+- Section caps (filled cut faces) for the 3D section plane.

@@ -1,0 +1,53 @@
+{
+  "artifact": "enclosure_glb",
+  "units": "mm",
+  "volume_mm3": 4204,
+  "bodies": {
+    "back": 2839,
+    "lid": 1365
+  },
+  "features": {
+    "board_mount": {
+      "area_mm2": 25.133,
+      "centroid": [
+        17,
+        12,
+        4.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 2
+    },
+    "cable_entry": {
+      "area_mm2": 9,
+      "centroid": [
+        0,
+        18.5,
+        6.5
+      ],
+      "normal": [
+        -1,
+        0,
+        0
+      ],
+      "faces": 1
+    },
+    "swd_window": {
+      "area_mm2": 12,
+      "centroid": [
+        13.3,
+        4.4,
+        11.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    }
+  }
+}

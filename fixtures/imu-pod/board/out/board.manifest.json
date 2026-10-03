@@ -1,0 +1,188 @@
+{
+  "artifact": "board_glb",
+  "units": "mm",
+  "features": {
+    "outline": {
+      "area_mm2": 504,
+      "centroid": [
+        14,
+        9,
+        1.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "u1": {
+      "area_mm2": 49,
+      "centroid": [
+        9.5,
+        9,
+        2.5
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "u2": {
+      "area_mm2": 7.5,
+      "centroid": [
+        19,
+        13,
+        2.43
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "u3": {
+      "area_mm2": 12,
+      "centroid": [
+        19.5,
+        5,
+        2.5
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "l1": {
+      "area_mm2": 5,
+      "centroid": [
+        24,
+        5,
+        2.8
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "r1": {
+      "area_mm2": 0.5,
+      "centroid": [
+        16.5,
+        8.8,
+        -0.35
+      ],
+      "normal": [
+        0,
+        0,
+        -1
+      ],
+      "faces": 1
+    },
+    "r2": {
+      "area_mm2": 0.5,
+      "centroid": [
+        18,
+        8.8,
+        -0.35
+      ],
+      "normal": [
+        0,
+        0,
+        -1
+      ],
+      "faces": 1
+    },
+    "r3": {
+      "area_mm2": 0.5,
+      "centroid": [
+        14.5,
+        14,
+        1.95
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "r4": {
+      "area_mm2": 0.5,
+      "centroid": [
+        15.5,
+        14,
+        1.95
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "mount": {
+      "area_mm2": 10.556,
+      "centroid": [
+        14,
+        9,
+        0
+      ],
+      "normal": [
+        0,
+        0,
+        -1
+      ],
+      "faces": 2
+    },
+    "power_in": {
+      "area_mm2": 1.92,
+      "centroid": [
+        1.6,
+        15.5,
+        1.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "power_gnd": {
+      "area_mm2": 1.92,
+      "centroid": [
+        1.6,
+        13.5,
+        1.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 1
+    },
+    "swd": {
+      "area_mm2": 4.8,
+      "centroid": [
+        9.5,
+        1.4,
+        1.6
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "faces": 3
+    }
+  }
+}

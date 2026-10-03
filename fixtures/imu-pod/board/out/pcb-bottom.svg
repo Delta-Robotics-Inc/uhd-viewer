@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-29.5 -19.5 31 21" width="310" height="210" font-family="monospace">
+<title>IMU board (fixture): PCB bottom (SAMPLE, hand-made placement, not routed)</title>
+<rect x="-28" y="-18" width="28" height="18" rx="0.6" fill="#0f3a22" stroke="#d4b25a" stroke-width="0.15"/>
+<circle cx="-2.5" cy="-9" r="1.7000000000000002" fill="#c9a24a"/><circle cx="-2.5" cy="-9" r="1.1" fill="#111"/>
+<circle cx="-25.5" cy="-9" r="1.7000000000000002" fill="#c9a24a"/><circle cx="-25.5" cy="-9" r="1.1" fill="#111"/>
+<line x1="-15.5" y1="-14" x2="-16.5" y2="-8.8" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="-16.5" y1="-8.8" x2="-19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="-9.5" y1="-9" x2="-18" y2="-8.8" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="-18" y1="-8.8" x2="-19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="-16.5" y1="-8.8" x2="-18" y2="-8.8" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<line x1="-18" y1="-8.8" x2="-19.5" y2="-5" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
+<rect x="-17" y="-9.05" width="1" height="0.5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="-16.5" y="-9.3" font-size="0.55" fill="#e7e5e4" text-anchor="middle">R1</text>
+<rect x="-18.5" y="-9.05" width="1" height="0.5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="-18" y="-9.3" font-size="0.55" fill="#e7e5e4" text-anchor="middle">R2</text>
+<text x="-14" y="0.45" font-size="0.8" fill="#ff5c00" text-anchor="middle">SAMPLE · BOTTOM · hand-made placement, ratsnest only</text>
+</svg>

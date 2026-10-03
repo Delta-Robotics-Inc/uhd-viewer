@@ -21,6 +21,7 @@ export type ModuleNodeType = Node<NodeData, "module">;
 export type ContainerNodeType = Node<NodeData, "container">;
 export type SheetNodeType = Node<NodeData, "sheet">;
 export type HarnessNodeType = Node<NodeData, "harness">;
+export type NetNodeType = Node<NodeData, "net">;
 
 const STATUS: Record<string, string> = {
   configured: "var(--drc-configured)",
@@ -150,4 +151,28 @@ export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
   );
 }
 
-export const nodeTypes = { module: ModuleNode, container: ContainerNode, sheet: SheetNode, harness: HarnessNode };
+/**
+ * A board net (PB-823): a junction that its members' grouped lines meet at.
+ * Its colour is the net's own (power, ground, the bus it carries), its status
+ * the worst of its lines.
+ */
+export function NetNode({ data, selected }: NodeProps<NetNodeType>) {
+  const { node, box } = data;
+  const net = node.net!;
+  const color = colorFor({ domain: "electrical", protocol: net.signal, state: node.status }, data.mode);
+  return (
+    <div
+      className={`net-node${selected ? " selected" : ""}${net.ground ? " ground" : ""}`}
+      style={{ width: box.w, height: box.h, borderColor: color, ["--status" as string]: STATUS[node.status] }}
+      title={node.description}
+    >
+      <span className="net-name" style={{ color }}>
+        {node.label}
+      </span>
+      {node.status === "incompatible" || node.status === "partial" ? <span className="status-dot" style={{ background: STATUS[node.status] }} /> : null}
+      <Ports data={data} labels={false} border={1.5} />
+    </div>
+  );
+}
+
+export const nodeTypes = { module: ModuleNode, container: ContainerNode, sheet: SheetNode, harness: HarnessNode, net: NetNode };

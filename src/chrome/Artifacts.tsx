@@ -11,6 +11,7 @@ import { glbFor } from "../cad/model";
 import { cadWrapper, createScene, loadGlb, materialFor } from "../cad/scene";
 import type { Appearance } from "../source/source";
 import { Icon } from "../canvas/Icon";
+import { isBoardDrawing } from "../model/outputs";
 
 import type { ArtifactResolver } from "../api";
 export type { ArtifactResolver };
@@ -22,7 +23,8 @@ const IMAGE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
  * any image (by MIME type or extension), a datasheet's pages last.
  */
 export function thumbnailOf(def: ModuleDef): ArtifactDef | undefined {
-  const images = (def.artifacts ?? []).filter((a) => a.mimeType?.startsWith("image/") || IMAGE.test(a.filePath ?? a.url ?? ""));
+  // a board's PCB and schematic drawings are views of the design (shown with the board), not pictures of it
+  const images = (def.artifacts ?? []).filter((a) => !isBoardDrawing(a) && (a.mimeType?.startsWith("image/") || IMAGE.test(a.filePath ?? a.url ?? "")));
   return images.find((a) => a.tags?.includes("thumbnail")) ?? images.find((a) => a.type !== "datasheet") ?? images[0];
 }
 
@@ -82,7 +84,7 @@ export function ArtifactsSection({ def, resolve, appearance, titled = true }: { 
   if (!def) return null;
   const thumb = thumbnailOf(def);
   const glb = glbFor(def);
-  const files = (def.artifacts ?? []).filter((a) => a !== glb && a !== thumb && (a.role === "body" || a.role === "drawing") && (a.filePath || a.url));
+  const files = (def.artifacts ?? []).filter((a) => a !== glb && a !== thumb && !isBoardDrawing(a) && (a.role === "body" || a.role === "drawing") && (a.filePath || a.url));
   if (!thumb && !glb && !files.length) return null;
   return (
     <>
@@ -137,7 +139,8 @@ function CadPreview({ def, url, appearance }: { def: ModuleDef; url?: string; ap
       if (cancelled) return;
       if (!gltf) return setState("missing");
       const scene = gltf.scene.clone(true);
-      const vendor = /vendor/.test(url);
+      // like the 3D view: vendor models, and outputs with colours of their own (a board), keep them
+      const vendor = /vendor/.test(url) || ((gltf.parser.json.materials?.length ?? 0) > 0 && !appearance);
       scene.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;

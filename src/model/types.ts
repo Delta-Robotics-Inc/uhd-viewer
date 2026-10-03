@@ -5,7 +5,7 @@
  */
 
 export type LinkState = "configured" | "partial" | "incompatible" | "unconfigured";
-export type NodeKind = "module" | "group" | "harness";
+export type NodeKind = "module" | "group" | "harness" | "net";
 export type Shape = "rect" | "circle" | "pill";
 
 /** A child interface revealed when a link is opened (a slot and the leaf bound to it). */
@@ -53,6 +53,23 @@ export interface ViewNode {
   childCount: number;
   /** A boundary port of the drilled-into module, drawn at the canvas edge. */
   sheetPort?: boolean;
+  /** A board net (PB-823): drawn as a junction its members' grouped membership links meet at. */
+  net?: ViewNet;
+}
+
+/** A net on a board (UHD `Net` interface, exposed: false), as a junction node. */
+export interface ViewNet {
+  /** Net interface id on the board, e.g. "v3v3". */
+  id: string;
+  name: string;
+  /** What the net carries, for the signal classification: "power", "ground", "i2c", "digital"… */
+  signal: string;
+  /** Design voltage as stated on the net ("3.3 V", "2.5–5.5 V"). */
+  voltage?: string;
+  /** A ground net: drawn as ground symbols at its members unless GND wires are on. */
+  ground: boolean;
+  /** Pins on the net. */
+  pins: number;
 }
 
 export interface ViewEndpoint {
@@ -143,6 +160,31 @@ export interface ViewLink {
   run?: ViewHarnessRun;
   /** Child links are a stored override (remapped by the user). */
   manual?: boolean;
+  /** Grouped net membership (PB-823): one line from a component to a net, its pins as children. */
+  net?: { id: string; name: string };
+  diagnostics: string[];
+}
+
+/**
+ * A functional link UHD derives over a board's nets (an I2C bus, a supply to
+ * a load). It is not drawn as a line of its own: the membership lines it runs
+ * over (`via`) carry its state, and the inspector lists it by name.
+ */
+export interface ViewDerived {
+  /** Derived link id (long: the membership links it runs over), prefixed like stored link ids. */
+  id: string;
+  /** Its name, "I2C0 ↔ I2C": what the viewer shows instead of the id. */
+  name: string;
+  protocol: string;
+  state: LinkState;
+  a: { node: string; iface: string };
+  b: { node: string; iface: string };
+  /** Net node ids it runs over. */
+  nets: string[];
+  /** View link ids (grouped memberships) it runs over. */
+  via: string[];
+  /** Conductors: each slot (or pin) and the one it is wired to. */
+  children: { a: string; aPin?: string; b: string; bPin?: string }[];
   diagnostics: string[];
 }
 
@@ -151,4 +193,6 @@ export interface ViewModel {
   path: { id: string; label: string }[];
   nodes: ViewNode[];
   links: ViewLink[];
+  /** Functional links derived over the level's nets (and nets of modules expanded in place). */
+  derived: ViewDerived[];
 }

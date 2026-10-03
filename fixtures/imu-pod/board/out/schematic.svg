@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 502" width="920" height="502" font-family="monospace">
+<title>IMU board (fixture): schematic (SAMPLE, drawn from the UHD nets with net labels)</title>
+<rect width="100%" height="100%" fill="#161616"/>
+<text x="20" y="28" font-size="14" fill="#e7e5e4">IMU BOARD (FIXTURE)</text>
+<text x="20" y="44" font-size="10" fill="#ff5c00">SAMPLE · drawn from the UHD nets (net labels, no wires) · not a provider's schematic</text>
+<rect x="110" y="60" width="120" height="192" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="170" y="54" font-size="12" fill="#ff5c00" text-anchor="middle">U1 · MCU</text>
+<line x1="110" y1="84" x2="80" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="88" font-size="9" fill="#d6d3d1" text-anchor="start">1 IOVDD</text>
+<text x="76" y="88" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="110" y1="102" x2="80" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="106" font-size="9" fill="#d6d3d1" text-anchor="start">2 GPIO0</text>
+<text x="76" y="106" font-size="10" fill="#f5a524" text-anchor="end">SDA</text>
+<line x1="110" y1="120" x2="80" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="124" font-size="9" fill="#d6d3d1" text-anchor="start">3 GPIO1</text>
+<text x="76" y="124" font-size="10" fill="#f5a524" text-anchor="end">SCL</text>
+<line x1="110" y1="138" x2="80" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="142" font-size="9" fill="#d6d3d1" text-anchor="start">4 GPIO2</text>
+<text x="76" y="142" font-size="10" fill="#f5a524" text-anchor="end">IMU_INT1</text>
+<line x1="110" y1="156" x2="80" y2="156" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="160" font-size="9" fill="#d6d3d1" text-anchor="start">10 IOVDD</text>
+<text x="76" y="160" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="110" y1="174" x2="80" y2="174" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="178" font-size="9" fill="#d6d3d1" text-anchor="start">19 TESTEN</text>
+<text x="76" y="178" font-size="10" fill="#f5a524" text-anchor="end">GND</text>
+<line x1="110" y1="192" x2="80" y2="192" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="196" font-size="9" fill="#d6d3d1" text-anchor="start">22 IOVDD</text>
+<text x="76" y="196" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="110" y1="210" x2="80" y2="210" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="214" font-size="9" fill="#d6d3d1" text-anchor="start">23 DVDD</text>
+<text x="76" y="214" font-size="10" fill="#f5a524" text-anchor="end">1V1</text>
+<line x1="110" y1="228" x2="80" y2="228" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="232" font-size="9" fill="#d6d3d1" text-anchor="start">33 IOVDD</text>
+<text x="76" y="232" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="230" y1="84" x2="260" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="88" font-size="9" fill="#d6d3d1" text-anchor="end">42 IOVDD</text>
+<text x="264" y="88" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="230" y1="102" x2="260" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="106" font-size="9" fill="#d6d3d1" text-anchor="end">43 ADC_AVDD</text>
+<text x="264" y="106" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="230" y1="120" x2="260" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="124" font-size="9" fill="#d6d3d1" text-anchor="end">44 VREG_VIN</text>
+<text x="264" y="124" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="230" y1="138" x2="260" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="142" font-size="9" fill="#d6d3d1" text-anchor="end">45 VREG_VOUT</text>
+<text x="264" y="142" font-size="10" fill="#f5a524" text-anchor="start">1V1</text>
+<line x1="230" y1="156" x2="260" y2="156" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="160" font-size="9" fill="#d6d3d1" text-anchor="end">48 USB_VDD</text>
+<text x="264" y="160" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="230" y1="174" x2="260" y2="174" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="178" font-size="9" fill="#d6d3d1" text-anchor="end">49 IOVDD</text>
+<text x="264" y="178" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="230" y1="192" x2="260" y2="192" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="196" font-size="9" fill="#d6d3d1" text-anchor="end">50 DVDD</text>
+<text x="264" y="196" font-size="10" fill="#f5a524" text-anchor="start">1V1</text>
+<line x1="230" y1="210" x2="260" y2="210" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="214" font-size="9" fill="#d6d3d1" text-anchor="end">57 GND (Exposed Pad)</text>
+<text x="264" y="214" font-size="10" fill="#f5a524" text-anchor="start">GND</text>
+<rect x="410" y="60" width="120" height="120" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="470" y="54" font-size="12" fill="#ff5c00" text-anchor="middle">U2 · IMU</text>
+<line x1="410" y1="84" x2="380" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="88" font-size="9" fill="#d6d3d1" text-anchor="start">1 SDO</text>
+<text x="376" y="88" font-size="10" fill="#f5a524" text-anchor="end">GND</text>
+<line x1="410" y1="102" x2="380" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="106" font-size="9" fill="#d6d3d1" text-anchor="start">4 INT1</text>
+<text x="376" y="106" font-size="10" fill="#f5a524" text-anchor="end">IMU_INT1</text>
+<line x1="410" y1="120" x2="380" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="124" font-size="9" fill="#d6d3d1" text-anchor="start">5 VDDIO</text>
+<text x="376" y="124" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="410" y1="138" x2="380" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="142" font-size="9" fill="#d6d3d1" text-anchor="start">6 GNDIO</text>
+<text x="376" y="142" font-size="10" fill="#f5a524" text-anchor="end">GND</text>
+<line x1="410" y1="156" x2="380" y2="156" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="160" font-size="9" fill="#d6d3d1" text-anchor="start">7 GND</text>
+<text x="376" y="160" font-size="10" fill="#f5a524" text-anchor="end">GND</text>
+<line x1="530" y1="84" x2="560" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="88" font-size="9" fill="#d6d3d1" text-anchor="end">8 VDD</text>
+<text x="564" y="88" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="530" y1="102" x2="560" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="106" font-size="9" fill="#d6d3d1" text-anchor="end">12 CSB</text>
+<text x="564" y="106" font-size="10" fill="#f5a524" text-anchor="start">3V3</text>
+<line x1="530" y1="120" x2="560" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="124" font-size="9" fill="#d6d3d1" text-anchor="end">13 SCx</text>
+<text x="564" y="124" font-size="10" fill="#f5a524" text-anchor="start">SCL</text>
+<line x1="530" y1="138" x2="560" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="142" font-size="9" fill="#d6d3d1" text-anchor="end">14 SDx</text>
+<text x="564" y="142" font-size="10" fill="#f5a524" text-anchor="start">SDA</text>
+<rect x="710" y="60" width="120" height="156" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="770" y="54" font-size="12" fill="#ff5c00" text-anchor="middle">U3 · 3V3 buck-boost</text>
+<line x1="710" y1="84" x2="680" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="88" font-size="9" fill="#d6d3d1" text-anchor="start">1 VINA</text>
+<text x="676" y="88" font-size="10" fill="#f5a524" text-anchor="end">VIN</text>
+<line x1="710" y1="102" x2="680" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="106" font-size="9" fill="#d6d3d1" text-anchor="start">2 GND</text>
+<text x="676" y="106" font-size="10" fill="#f5a524" text-anchor="end">GND</text>
+<line x1="710" y1="120" x2="680" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="124" font-size="9" fill="#d6d3d1" text-anchor="start">3 FB</text>
+<text x="676" y="124" font-size="10" fill="#f5a524" text-anchor="end">FB</text>
+<line x1="710" y1="138" x2="680" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="142" font-size="9" fill="#d6d3d1" text-anchor="start">4 VOUT</text>
+<text x="676" y="142" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="710" y1="156" x2="680" y2="156" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="160" font-size="9" fill="#d6d3d1" text-anchor="start">5 VOUT</text>
+<text x="676" y="160" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="710" y1="174" x2="680" y2="174" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="178" font-size="9" fill="#d6d3d1" text-anchor="start">6 L2</text>
+<text x="676" y="178" font-size="10" fill="#f5a524" text-anchor="end">SW2</text>
+<line x1="710" y1="192" x2="680" y2="192" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="196" font-size="9" fill="#d6d3d1" text-anchor="start">7 L2</text>
+<text x="676" y="196" font-size="10" fill="#f5a524" text-anchor="end">SW2</text>
+<line x1="830" y1="84" x2="860" y2="84" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="88" font-size="9" fill="#d6d3d1" text-anchor="end">8 L1</text>
+<text x="864" y="88" font-size="10" fill="#f5a524" text-anchor="start">SW1</text>
+<line x1="830" y1="102" x2="860" y2="102" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="106" font-size="9" fill="#d6d3d1" text-anchor="end">9 L1</text>
+<text x="864" y="106" font-size="10" fill="#f5a524" text-anchor="start">SW1</text>
+<line x1="830" y1="120" x2="860" y2="120" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="124" font-size="9" fill="#d6d3d1" text-anchor="end">10 VIN</text>
+<text x="864" y="124" font-size="10" fill="#f5a524" text-anchor="start">VIN</text>
+<line x1="830" y1="138" x2="860" y2="138" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="142" font-size="9" fill="#d6d3d1" text-anchor="end">11 VIN</text>
+<text x="864" y="142" font-size="10" fill="#f5a524" text-anchor="start">VIN</text>
+<line x1="830" y1="156" x2="860" y2="156" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="160" font-size="9" fill="#d6d3d1" text-anchor="end">12 EN</text>
+<text x="864" y="160" font-size="10" fill="#f5a524" text-anchor="start">VIN</text>
+<line x1="830" y1="174" x2="860" y2="174" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="178" font-size="9" fill="#d6d3d1" text-anchor="end">13 PS/SYNC</text>
+<text x="864" y="178" font-size="10" fill="#f5a524" text-anchor="start">VIN</text>
+<line x1="830" y1="192" x2="860" y2="192" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="196" font-size="9" fill="#d6d3d1" text-anchor="end">EP PGND (exposed thermal pad)</text>
+<text x="864" y="196" font-size="10" fill="#f5a524" text-anchor="start">GND</text>
+<rect x="110" y="292" width="120" height="60" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="170" y="286" font-size="12" fill="#ff5c00" text-anchor="middle">L1 · Inductor 1.5 µH</text>
+<line x1="110" y1="316" x2="80" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="320" font-size="9" fill="#d6d3d1" text-anchor="start">1 1</text>
+<text x="76" y="320" font-size="10" fill="#f5a524" text-anchor="end">SW1</text>
+<line x1="230" y1="316" x2="260" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="320" font-size="9" fill="#d6d3d1" text-anchor="end">2 2</text>
+<text x="264" y="320" font-size="10" fill="#f5a524" text-anchor="start">SW2</text>
+<rect x="410" y="292" width="120" height="60" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="470" y="286" font-size="12" fill="#ff5c00" text-anchor="middle">R1 · FB upper</text>
+<line x1="410" y1="316" x2="380" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="320" font-size="9" fill="#d6d3d1" text-anchor="start">1 1</text>
+<text x="376" y="320" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="530" y1="316" x2="560" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="320" font-size="9" fill="#d6d3d1" text-anchor="end">2 2</text>
+<text x="564" y="320" font-size="10" fill="#f5a524" text-anchor="start">FB</text>
+<rect x="710" y="292" width="120" height="60" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="770" y="286" font-size="12" fill="#ff5c00" text-anchor="middle">R2 · FB lower</text>
+<line x1="710" y1="316" x2="680" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="714" y="320" font-size="9" fill="#d6d3d1" text-anchor="start">1 1</text>
+<text x="676" y="320" font-size="10" fill="#f5a524" text-anchor="end">FB</text>
+<line x1="830" y1="316" x2="860" y2="316" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="826" y="320" font-size="9" fill="#d6d3d1" text-anchor="end">2 2</text>
+<text x="864" y="320" font-size="10" fill="#f5a524" text-anchor="start">GND</text>
+<rect x="110" y="392" width="120" height="60" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="170" y="386" font-size="12" fill="#ff5c00" text-anchor="middle">R3 · SDA pull-up</text>
+<line x1="110" y1="416" x2="80" y2="416" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="114" y="420" font-size="9" fill="#d6d3d1" text-anchor="start">1 1</text>
+<text x="76" y="420" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="230" y1="416" x2="260" y2="416" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="226" y="420" font-size="9" fill="#d6d3d1" text-anchor="end">2 2</text>
+<text x="264" y="420" font-size="10" fill="#f5a524" text-anchor="start">SDA</text>
+<rect x="410" y="392" width="120" height="60" fill="#1f1f1f" stroke="#e7e5e4" stroke-width="1.5"/>
+<text x="470" y="386" font-size="12" fill="#ff5c00" text-anchor="middle">R4 · SCL pull-up</text>
+<line x1="410" y1="416" x2="380" y2="416" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="414" y="420" font-size="9" fill="#d6d3d1" text-anchor="start">1 1</text>
+<text x="376" y="420" font-size="10" fill="#f5a524" text-anchor="end">3V3</text>
+<line x1="530" y1="416" x2="560" y2="416" stroke="#a8a29e" stroke-width="1.2"/>
+<text x="526" y="420" font-size="9" fill="#d6d3d1" text-anchor="end">2 2</text>
+<text x="564" y="420" font-size="10" fill="#f5a524" text-anchor="start">SCL</text>
+</svg>

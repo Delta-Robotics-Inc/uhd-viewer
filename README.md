@@ -20,7 +20,7 @@ The viewer imports UHD source and library parts from a sibling checkout
 npm install
 npm run dev          # http://localhost:5178
 npm run build        # type-check, the app (dist/app) and the library (dist/lib)
-npm test             # vitest: bundle loading, the serve entrypoint, host options
+npm test             # vitest: bundle loading, nets and boards, sample fixtures, the serve entrypoint, host options
 npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
 ```
 
@@ -42,6 +42,7 @@ To open a particular view, pass URL parameters:
 | `panel` | `checks` | Opens the system checks panel. |
 | `select` | `node:gnss`, `link:m1_phases` | Selects a module or link. |
 | `pair` | `gnss_uart` | Opens the pair view for a link. |
+| `select` | `node::sda` | A board net is selected by its path (`:<net>`). |
 
 ## What the MVP covers
 
@@ -88,6 +89,13 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/model/types.ts` | The neutral view contract (PB-784). |
 | `src/model/from-uhd.ts` | Adapter from a UHD system `ModuleDef` to the view model. |
 | `src/model/classification.ts` | Classification colours and legends. |
+| `src/model/nets.ts` | Board nets: junction nodes, grouped membership lines, links derived over nets (PB-823). |
+| `src/model/diagnostics.ts` | The viewer's own checks: the root, and each board on its own, re-based onto the root. |
+| `src/model/outputs.ts` | Standard outputs by file name, pick-and-place parsing, component rectangles on PCB drawings. |
+| `src/layout/graph-layout.ts` | Force layout for levels with nets. |
+| `src/chrome/BoardInspector.tsx` | Package facts, pin table, net and derived-link details, board drawings with pan and zoom. |
+| `src/cad/findings.ts` | Where a finding is on the 3D model. |
+| `fixtures/` | Hand-made sample bundles and standard outputs for boards and enclosures (see its README). |
 | `src/layout/layout.ts` | Node boxes, port placement, routing, segment separation, and label placement. |
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
@@ -147,6 +155,44 @@ Screenshots: `docs/screenshots/cad/`.
 `window.__cad.set(...)` in presentation mode (`?view=3d&present=1`). Needs
 the dev server, Google Chrome and an ffmpeg binary (`FFMPEG=...`; e.g. the one
 bundled by the `imageio-ffmpeg` Python package). The mp4 is not committed.
+
+## Boards, nets and enclosures (PB-823)
+
+The viewer shows custom boards and enclosures from UHD and the standard
+outputs their providers export (protoboard-cli
+`docs/specs/tool-integrations.md` §8), read as ordinary artifacts and found by
+their fixed file names. It never reads a tool's native files. Design
+decisions: D14–D18 in [docs/design-direction.md](docs/design-direction.md).
+Samples to try it on: [fixtures/](fixtures/README.md).
+
+- **Diagram.** A board drills in like any module. Each net (UHD `Net`
+  interface) is a junction; each component on it has one port and one line
+  to it, whose children are its pins. Ground nets are ground symbols unless
+  *GND wires* is on. Links UHD derives over the nets are listed by name and
+  carried by the lines they run over, so `bus_incomplete` shows as
+  `harness_wiring` does on a cable. Every board is checked on its own as
+  well as the root; its findings are tagged `IN BOARD` in the checks panel
+  and open the board when clicked.
+- **Inspector.** A component shows its package facts (`partPackage`) and a
+  pin table with each pin's net. A board, or a component on one, shows the
+  board's drawings (`pcb-top.svg`, `pcb-bottom.svg`, `schematic.svg`) with
+  pan and zoom: the selected component is marked from `pnp.csv`, and a
+  click on a component selects it. PCB drawings are taken to be in board
+  millimetres (top: board (x, y) at (x, −y); bottom, seen from below:
+  (−x, −y)); a drawing that is not is shown without marks.
+- **3D.** A board's `board.glb` is its body, placed by its own mates, with
+  its components inside it (selectable by instance path). An enclosure's
+  `body.glb` with named bodies (`back`, `lid`) comes apart when exploded.
+  *Section* cuts the model across X, Y or Z; *X-ray* makes bodies that hold
+  others see-through; *Findings* pins errors and warnings (the viewer's own
+  and the host's fit and route findings) where they are. It is on by default
+  only when the host sent findings that land on the model.
+
+URL: `view=3d&section=y&at=0.4` (`flip=1` keeps the other side), `xray=1`,
+`findings=1` or `findings=0`, `body=board&component=u1`.
+
+Screenshots: `node scripts/capture-board-shots.mjs <dev-server-url> <out-dir>`
+renders the board and enclosure views of the fixtures.
 
 ## Input: a UHD bundle (PB-800)
 
