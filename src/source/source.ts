@@ -9,6 +9,7 @@ import { UHD_BUNDLE_SCHEMA, type UhdBundle, type UhdBundleDiagnostic } from "@uh
 import type { ModuleDef } from "@uhd/types/index.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
 import type { LevelLayout } from "../layout/layout";
+import type { ArtifactResolver, ViewerOptions } from "../api";
 
 export interface ViewerScenario {
   id: string;
@@ -63,47 +64,78 @@ export interface LoadedSource {
   bundleUrl: string;
   scenarios: ViewerScenario[];
   /** URL for a definition's artifact file path, or undefined if it cannot be resolved. */
-  resolveArtifact: (definitionId: string, filePath: string) => string | undefined;
+  resolveArtifact: ArtifactResolver;
   /** Findings from the bundle's producer (e.g. ProtoBoard's aggregated check). */
   hostDiagnostics: UhdBundleDiagnostic[];
   display: DisplayConfig;
 }
 
-declare const __DEFAULT_BUNDLE__: string;
-
-/** `?bundle=<url>` or the dev default (the ProtoBoard quadcopter project's build output). */
-export function bundleUrlFromLocation(): string {
-  return new URLSearchParams(window.location.search).get("bundle") ?? __DEFAULT_BUNDLE__;
+export interface SourceOptions {
+  /** Development only: absolute filesystem bases are served through Vite's /@fs route. */
+  fsRoute?: boolean;
+  /** A host's resolver; it receives the default one as `fallback`. */
+  resolveArtifact?: ViewerOptions["resolveArtifact"];
 }
 
-/** Absolute filesystem bases are served through Vite's /@fs route in development. */
-function baseToUrl(base: string): string {
-  if (/^https?:\/\//.test(base) || base.startsWith("/@fs/")) return base.replace(/\/$/, "");
-  if (base.startsWith("/")) return `/@fs${base}`.replace(/\/$/, "");
-  return base.replace(/\/$/, "");
+/**
+ * The bundle URL for the standalone app: `?bundle=<url>`, then the URL a
+ * server injected into the page, then the development default (none in a
+ * production build).
+ */
+export function pickBundleUrl(search: string, injected?: string | null, fallback?: string | null): string | undefined {
+  return new URLSearchParams(search).get("bundle") ?? injected ?? fallback ?? undefined;
 }
 
-export async function loadBundle(url: string): Promise<LoadedSource> {
+/**
+ * URL prefix for an artifact base (`UhdBundle.artifactBases`: an absolute
+ * path or a URL prefix), or undefined when it cannot be fetched over HTTP.
+ * Absolute filesystem paths only resolve in development, through /@fs.
+ */
+export function baseToUrl(base: string, options: Pick<SourceOptions, "fsRoute"> = {}): string | undefined {
+  if (!base.startsWith("/")) return base.replace(/\/$/, "");
+  // compiled out of production builds
+  if (import.meta.env.DEV && options.fsRoute) return (base.startsWith("/@fs/") ? base : `/@fs${base}`).replace(/\/$/, "");
+  return undefined;
+}
+
+/** The default resolver: a definition's artifact base, or the bundle's own location. */
+export function bundleResolver(bundle: UhdBundle, bundleUrl: string, options: Pick<SourceOptions, "fsRoute"> = {}): ArtifactResolver {
+  const here = bundleUrl.replace(/[^/]*$/, "").replace(/\/$/, "");
+  const warned = new Set<string>();
+  return (definitionId, filePath) => {
+    if (/^https?:\/\//.test(filePath)) return filePath;
+    const base = bundle.artifactBases?.[definitionId];
+    const prefix = base ? baseToUrl(base, options) : here;
+    if (prefix !== undefined) return `${prefix}/${filePath}`;
+    if (base && !warned.has(base)) {
+      warned.add(base);
+      console.warn(`uhd-viewer: artifact base ${base} is a filesystem path; serve the bundle with \`uhd-viewer serve\` or give the viewer a resolver`);
+    }
+    return undefined;
+  };
+}
+
+export async function loadBundle(url: string, options: SourceOptions = {}): Promise<LoadedSource> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`could not load UHD bundle ${url} (${res.status})`);
-  const bundle = (await res.json()) as UhdBundle;
+  return sourceFromBundle((await res.json()) as UhdBundle, url, options);
+}
+
+export function sourceFromBundle(bundle: UhdBundle, url: string, options: SourceOptions = {}): LoadedSource {
   if (bundle.schema !== UHD_BUNDLE_SCHEMA) throw new Error(`${url} is not a UHD bundle (schema ${String(bundle.schema)})`);
-  const here = url.replace(/[^/]*$/, "");
   const scenarios: ViewerScenario[] = [
     { id: "nominal", label: "Nominal", description: "", ...sys(bundle) },
     ...(bundle.scenarios ?? []).filter((s) => s.id !== "nominal").map((s) => ({ id: s.id, label: s.label, description: s.description ?? "", ...sys(bundle, s.id) })),
   ];
   const nominal = bundle.scenarios?.find((s) => s.id === "nominal");
   if (nominal) scenarios[0].label = nominal.label;
+  const fallback = bundleResolver(bundle, url, options);
+  const host = options.resolveArtifact;
   return {
     name: bundle.meta?.name ?? bundle.root,
     bundleUrl: url,
     scenarios,
-    resolveArtifact: (definitionId, filePath) => {
-      if (/^https?:\/\//.test(filePath)) return filePath;
-      const base = bundle.artifactBases?.[definitionId];
-      return `${base ? baseToUrl(base) : here.replace(/\/$/, "")}/${filePath}`;
-    },
+    resolveArtifact: host ? (definitionId, filePath) => host(definitionId, filePath, fallback) : fallback,
     hostDiagnostics: bundle.diagnostics ?? [],
     display: (bundle.display ?? {}) as DisplayConfig,
   };

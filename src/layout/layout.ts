@@ -7,6 +7,7 @@ import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
 import { at, clearOfBends, lengths } from "../canvas/geometry";
+import type { LinkLayout } from "../api";
 
 /** Distance kept between a corner and anything placed on a link (handles, toggles). */
 export const BEND_CLEAR = 28;
@@ -18,18 +19,8 @@ export interface Box {
   h: number;
 }
 
-export interface LinkLayout {
-  /** Pinned waypoints in absolute canvas coordinates (the router passes through them in order). */
-  waypoints?: Pt[];
-  /** Label + toggle position as a fraction along the route (0..1). */
-  labelT?: number;
-  /** Label on the other side of the line (below a horizontal stretch, left of a vertical one). */
-  labelFlip?: boolean;
-  /** Harness name tab position as a fraction along the route (absent: placed automatically). */
-  tabT?: number;
-  /** Tab on the same side as the label (it defaults to the opposite side). */
-  tabFlip?: boolean;
-}
+/** A link's hand layout: part of the host contract (src/api.ts). */
+export type { LinkLayout };
 
 export interface LevelLayout {
   /** Top-level nodes: absolute. Nodes inside a container: relative to it. */

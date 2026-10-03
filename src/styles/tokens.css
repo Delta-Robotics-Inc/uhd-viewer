@@ -2,25 +2,25 @@
  * chrome surfaces taken from ProtoBoard's dark theme (next-alpha index.css). */
 @font-face {
   font-family: "Kode Mono";
-  src: url("/fonts/KodeMono-Regular.woff2") format("woff2");
+  src: url("./fonts/KodeMono-Regular.woff2") format("woff2");
   font-weight: 400;
   size-adjust: 90%;
 }
 @font-face {
   font-family: "Kode Mono";
-  src: url("/fonts/KodeMono-Medium.ttf") format("truetype");
+  src: url("./fonts/KodeMono-Medium.ttf") format("truetype");
   font-weight: 500;
   size-adjust: 90%;
 }
 @font-face {
   font-family: "Kode Mono";
-  src: url("/fonts/KodeMono-SemiBold.ttf") format("truetype");
+  src: url("./fonts/KodeMono-SemiBold.ttf") format("truetype");
   font-weight: 600;
   size-adjust: 90%;
 }
 @font-face {
   font-family: "ProtoMono";
-  src: url("/fonts/proto-mono-regular.woff2") format("woff2");
+  src: url("./fonts/proto-mono-regular.woff2") format("woff2");
 }
 
 :root {

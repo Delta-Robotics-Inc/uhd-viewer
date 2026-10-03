@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
+import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
@@ -165,7 +166,7 @@ function EvidenceSection({ def }: { def?: ModuleDef }) {
     <>
       <div className="section-title">EVIDENCE</div>
       <div className="evidence">
-        {v?.audit ? (
+        {!ev.filesKnown ? null : v?.audit ? (
           <div className={`audit ${v.audit.wrong + v.audit.unsupported > 0 ? "repaired" : "ok"}`}>
             <Icon name="badge-check" size={13} />
             <span>
@@ -446,9 +447,28 @@ function Hierarchy({ vm, selection, onSelect }: { vm: ViewModel; selection: Sele
 
 const SEVERITY_ICON = { error: "octagon-x", warning: "triangle-alert", info: "info" } as const;
 
-function Checks({ diagnostics, vm, onSelect }: { diagnostics: SystemDiagnostic[]; vm: ViewModel; onSelect: (s: Selection) => void }) {
+/** What a producer finding is about, if it is on this canvas: a link, an instance, or an instance of a definition. */
+function hostTarget(d: UhdBundleDiagnostic, vm: ViewModel): Selection {
+  const e = d.entity;
+  if (!e) return null;
+  if (e.kind === "link") return vm.links.some((l) => l.linkId === e.id) ? { kind: "link", id: e.id } : null;
+  const node = e.kind === "definition" ? vm.nodes.find((n) => n.defId === e.id) : vm.nodes.find((n) => n.id === e.id || e.id.startsWith(`${n.id}/`));
+  return node ? { kind: "node", id: node.id } : null;
+}
+
+function Checks({
+  diagnostics,
+  host,
+  vm,
+  onSelect,
+}: {
+  diagnostics: SystemDiagnostic[];
+  host: UhdBundleDiagnostic[];
+  vm: ViewModel;
+  onSelect: (s: Selection) => void;
+}) {
   const counts = { error: 0, warning: 0, info: 0 };
-  for (const d of diagnostics) counts[d.severity]++;
+  for (const d of [...diagnostics, ...host]) counts[d.severity]++;
   const target = (d: SystemDiagnostic): Selection => {
     const link = d.refs.find((r) => r.startsWith("link:"))?.slice(5);
     if (link && vm.links.some((l) => l.linkId === link)) return { kind: "link", id: link };
@@ -471,6 +491,20 @@ function Checks({ diagnostics, vm, onSelect }: { diagnostics: SystemDiagnostic[]
           </span>
         </button>
       ))}
+      {host.length > 0 && <div className="section-title">FROM THE PRODUCER · {host.length}</div>}
+      {host.map((d, i) => (
+        <button key={`${d.code}:${d.entity?.id ?? i}`} className={`check ${d.severity}`} onClick={() => onSelect(hostTarget(d, vm))}>
+          <Icon name={SEVERITY_ICON[d.severity]} size={13} />
+          <span className="check-body">
+            <span className="check-rule">
+              {d.code.replace(/_/g, " ")}
+              {d.entity ? ` · ${d.entity.id}` : ""}
+            </span>
+            <span className="check-msg">{d.message}</span>
+            {d.validator && <span className="check-rule muted">{d.validator}</span>}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -483,6 +517,8 @@ function InspectorView(props: {
   mode: Classification;
   openLinks: Set<string>;
   diagnostics: SystemDiagnostic[];
+  /** Findings from the bundle's producer and the host (UHD's own checks excluded: the viewer runs them). */
+  hostDiagnostics: UhdBundleDiagnostic[];
   defFor: (defId?: string) => ModuleDef | undefined;
   /** Artifact URLs (from the bundle source) and per-definition appearance hints, for the previews. */
   resolveArtifact: ArtifactResolver;
@@ -541,7 +577,7 @@ function InspectorView(props: {
             }
           />
         ) : props.panel === "checks" ? (
-          <Checks diagnostics={props.diagnostics} vm={vm} onSelect={props.onSelect} />
+          <Checks diagnostics={props.diagnostics} host={props.hostDiagnostics} vm={vm} onSelect={props.onSelect} />
         ) : (
           <Hierarchy vm={vm} selection={selection} onSelect={props.onSelect} />
         )}

@@ -24,7 +24,8 @@ import {
 import type { ModuleLookup } from "@uhd/system/index.js";
 
 /** Artifact URL for a definition's (relative) file path: supplied by the viewer's source. */
-export type ArtifactResolver = (definitionId: string, filePath: string) => string | undefined;
+import type { ArtifactResolver } from "../api";
+export type { ArtifactResolver };
 
 export type Direction = "feature" | "artifact" | "procedural";
 export const DIRECTIONS: { id: Direction; label: string; hint: string }[] = [

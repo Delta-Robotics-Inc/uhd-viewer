@@ -1,10 +1,15 @@
 /**
  * Evidence for a part: its committed sources.json and verification.json
  * (UHD skills/uhd-part-verify) plus the evidence traits on its definition.
+ *
+ * The traits come with the bundle. The two files do not (yet): in
+ * development they are read from the sibling UHD checkout's part library
+ * (library-evidence.ts, registered by main.tsx); a production build ships
+ * without them and shows the traits only.
  */
 import type { ModuleDef, TraitDef } from "@uhd/types/index.js";
 
-interface SourceRow {
+export interface SourceRow {
   id: string;
   title: string;
   url: string;
@@ -13,7 +18,7 @@ interface SourceRow {
   supports?: string[];
 }
 
-interface Verification {
+export interface Verification {
   audit: { checked: number; confirmed: number; wrong: number; unsupported: number } | null;
   repairs: string | null;
   assumptions: unknown[];
@@ -22,16 +27,20 @@ interface Verification {
   recorded_at: string;
 }
 
-const SOURCES = import.meta.glob<SourceRow[]>("../../../uhd/library/parts/*/sources.json", { eager: true, import: "default" });
-const VERIFICATION = import.meta.glob<Verification>("../../../uhd/library/parts/*/verification.json", { eager: true, import: "default" });
+let SOURCES_BY_PART: Record<string, SourceRow[]> = {};
+let VERIFICATION_BY_PART: Record<string, Verification> = {};
+let filesKnown = false;
 
-const byPart = <T,>(files: Record<string, T>) =>
-  Object.fromEntries(Object.entries(files).map(([path, value]) => [path.split("/").slice(-2)[0], value]));
-
-const SOURCES_BY_PART = byPart(SOURCES);
-const VERIFICATION_BY_PART = byPart(VERIFICATION);
+/** Evidence files by part id (definition id). */
+export function registerEvidenceFiles(files: { sources: Record<string, SourceRow[]>; verification: Record<string, Verification> }) {
+  SOURCES_BY_PART = files.sources;
+  VERIFICATION_BY_PART = files.verification;
+  filesKnown = true;
+}
 
 export interface Evidence {
+  /** Whether sources.json / verification.json were available at all (false: the audit state is unknown). */
+  filesKnown: boolean;
   sources: SourceRow[];
   verification?: Verification;
   performance: { kind: string; facts: [string, string][] }[];
@@ -49,6 +58,7 @@ export function evidenceFor(def: ModuleDef | undefined): Evidence | undefined {
   const params = (t: TraitDef) => (t.params ?? {}) as Record<string, unknown>;
   const verification = VERIFICATION_BY_PART[def.id];
   return {
+    filesKnown,
     sources: SOURCES_BY_PART[def.id] ?? [],
     verification,
     performance: traits
