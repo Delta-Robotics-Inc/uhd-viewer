@@ -24,6 +24,11 @@ npm test             # vitest: bundle loading, nets and boards, sample fixtures,
 npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
 ```
 
+The package is private: it is published only to the stack's local registry
+(`publishConfig`, guarded by `scripts/guard-publish.mjs`; `prepack` runs
+`npm run build`, so the tarball's `dist/` matches the source). See
+protoboard-cli's `docs/guides/local-registry.md`.
+
 Building and testing need `../uhd` only. The dev server's default bundle is the
 quadcopter example in a sibling `../protoboard-cli` checkout (or `UHD_BUNDLE`);
 without one, open the dev server with `?bundle=<url>`.
