@@ -56,7 +56,21 @@ export interface DisplayConfig {
     };
     /** By definition id. */
     appearance?: Record<string, Appearance>;
+    /** How the 3D view opens (PB-873). */
+    view?: SpatialView;
   };
+}
+
+/**
+ * The 3D view's opening camera, in the root's coordinates. Presentation only:
+ * a watch modelled display-down (its case's frame has the display at −z)
+ * says `up: [0, 0, -1]` and opens display-up, without changing the model.
+ */
+export interface SpatialView {
+  /** The direction drawn up (default [0, 0, 1]): the camera's up, the orbit axis and the ground grid follow it. */
+  up?: [number, number, number];
+  /** A saved camera: azimuth and elevation (degrees, about `up`), distance (mm) and target. Without a distance the model is fitted. */
+  camera?: { azimuth?: number; elevation?: number; distance?: number; target?: [number, number, number] };
 }
 
 export interface LoadedSource {

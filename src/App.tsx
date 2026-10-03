@@ -7,6 +7,7 @@ import { systemDiagnostics } from "./model/diagnostics";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
 import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
+import { tapRails } from "./layout/taps";
 import type { Pt } from "./canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source";
 import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "./api";
@@ -175,16 +176,18 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
     () => buildView(system, scenario.lookup, drill, { expanded, overrides, diagnostics, grounds: showGrounds }),
     [system, scenario, drill, expanded, overrides, diagnostics, showGrounds],
   );
+  // what the canvas draws: the level, with each supply rail as taps beside the parts it feeds
+  const drawn = useMemo(() => tapRails(vm), [vm]);
   const hand = HAND_LAYOUTS[levelKey];
   // while something is dragged only the links it touches are rerouted; all of them once it is dropped
   const [live, setLive] = useState<Live | null>(null);
   const previous = useRef<ComputedLayout | null>(null);
   const layout = useMemo(() => {
     const prev = previous.current;
-    const next = computeLayout(vm, hand, positions[levelKey] ?? {}, showGrounds, linkEdits[levelKey], live && prev ? { previous: prev, ...live } : undefined);
+    const next = computeLayout(drawn, hand, positions[levelKey] ?? {}, showGrounds, linkEdits[levelKey], live && prev ? { previous: prev, ...live } : undefined);
     previous.current = next;
     return next;
-  }, [vm, hand, positions, levelKey, showGrounds, linkEdits, live]);
+  }, [drawn, hand, positions, levelKey, showGrounds, linkEdits, live]);
 
   useSaved("uhd-viewer:positions", positions, !hosted);
   useSaved("uhd-viewer:overrides", overrides);
@@ -418,7 +421,7 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
             )}
             <Canvas
               key={`${scenario.id}/${levelKey}`}
-              vm={vm}
+              vm={drawn}
               inspector={Boolean(panel)}
               layout={layout}
               hand={hand}

@@ -102,7 +102,7 @@ export function Canvas(props: CanvasProps) {
       }
       const portKey = ports.map((p) => [p.port.id, p.x, p.y, p.side, p.links.map((l) => l.id + l.state).join()]);
       const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
-      const selected = selection?.kind === "node" && selection.id === node.id;
+      const selected = selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf);
       const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
@@ -110,7 +110,7 @@ export function Canvas(props: CanvasProps) {
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
         data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
-        selected: selection?.kind === "node" && selection.id === node.id,
+        selected,
         style: { width: box.w, height: box.h },
         // size and handle positions are known from the layout: handing them over means React Flow
         // never drops its measured handle bounds when a node object is replaced (which blanked
@@ -227,7 +227,7 @@ export function Canvas(props: CanvasProps) {
       edgeTypes={edgeTypes}
       connectionMode={ConnectionMode.Loose}
       onNodesChange={onNodesChange}
-      onNodeClick={(_, n) => props.onSelect({ kind: "node", id: n.id })}
+      onNodeClick={(_, n) => props.onSelect({ kind: "node", id: n.data.node.tapOf ?? n.id })}
       onNodeDragStart={(_, n, all) => props.onLive({ nodes: new Set([n.id, ...all.map((x) => x.id)]) })}
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
@@ -236,8 +236,8 @@ export function Canvas(props: CanvasProps) {
         props.onNodeContext &&
         ((e, n) => {
           e.preventDefault();
-          props.onSelect({ kind: "node", id: n.id });
-          props.onNodeContext?.(n.id, e.clientX, e.clientY);
+          props.onSelect({ kind: "node", id: n.data.node.tapOf ?? n.id });
+          props.onNodeContext?.(n.data.node.tapOf ?? n.id, e.clientX, e.clientY);
         })
       }
       onPaneClick={() => props.onSelect(null)}

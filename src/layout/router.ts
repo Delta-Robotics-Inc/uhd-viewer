@@ -78,8 +78,14 @@ export class GridRouter {
   private prev: Int32Array;
   private stamp: Uint32Array;
   private gen = 0;
+  private thorough: boolean;
 
-  constructor(obstacles: Rect[], extra: Pt[] = [], margin = 12) {
+  /**
+   * `thorough`: a search that runs out of its budget is retried over the whole grid (off while
+   * dragging, where a frame cannot wait for it).
+   */
+  constructor(obstacles: Rect[], extra: Pt[] = [], margin = 12, thorough = true) {
+    this.thorough = thorough;
     const xs = [...obstacles.flatMap((b) => [b.x, b.x + b.w]), ...extra.map((p) => p[0])];
     const ys = [...obstacles.flatMap((b) => [b.y, b.y + b.h]), ...extra.map((p) => p[1])];
     this.x0 = Math.floor(Math.min(...xs) / GRID) - margin;
@@ -124,7 +130,12 @@ export class GridRouter {
       const last = k === stops.length - 1;
       // arrive at the end cell heading into the target port
       const arrive = last ? (dEnd + 2) % 4 : -1;
-      const leg = this.search(cells[cells.length - 1], dir, stops[k], arrive);
+      // a bounded search first (keeps drags at frame rate); unless mid-drag, one that gives up gets the
+      // whole grid, then may arrive from any side, before the route falls back to a straight jog
+      const from = cells[cells.length - 1];
+      const leg =
+        this.search(from, dir, stops[k], arrive) ??
+        (this.thorough ? this.search(from, dir, stops[k], arrive, Infinity) ?? (arrive >= 0 ? this.search(from, dir, stops[k], -1, Infinity) : undefined) : undefined);
       if (!leg) {
         cells.push(stops[k]);
         continue;
@@ -137,7 +148,7 @@ export class GridRouter {
     return orthogonal(simplify(pts));
   }
 
-  private search(start: Pt, startDir: number, goal: Pt, arriveDir: number): { cells: Pt[]; dir: number } | undefined {
+  private search(start: Pt, startDir: number, goal: Pt, arriveDir: number, budget?: number): { cells: Pt[]; dir: number } | undefined {
     const { g, prev, stamp } = this;
     const gen = ++this.gen;
     const cost = (st: number) => (stamp[st] === gen ? g[st] : Infinity);
@@ -154,7 +165,7 @@ export class GridRouter {
     let found = -1;
     let expanded = 0;
     // a search that has to wander this far is blocked (e.g. mid-drag, a card over a port): give up and jog
-    const limit = 6000 + 80 * (Math.abs(start[0] - goal[0]) + Math.abs(start[1] - goal[1]));
+    const limit = budget ?? 6000 + 80 * (Math.abs(start[0] - goal[0]) + Math.abs(start[1] - goal[1]));
     while (heap.size && expanded < limit) {
       const st = heap.pop()!;
       expanded++;
