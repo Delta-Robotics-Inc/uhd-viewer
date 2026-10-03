@@ -100,7 +100,8 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
 | `src/chrome/Chrome.tsx` | Header, activity bar, inspector, toolbar, and legend. |
-| `src/api.ts` | The host contract: `ViewerOptions`, `ViewerLayout`, `ViewerHandle`. |
+| `src/api.ts` | The host contract: `ViewerOptions`, `ViewerLayout`, `ViewerHandle`, host messages and events. |
+| `src/host/` | The host message channel: checking messages and origins, the parent-window channel, what a focus or select names on the model. |
 | `src/source/source.ts` | Bundle loading and the default artifact resolver. |
 | `src/main.tsx`, `src/lib.tsx` | The standalone app's entry and the library entry (`mountViewer`). |
 | `bin/` | `uhd-viewer serve` (`serve.mjs` holds the server). |
@@ -239,15 +240,15 @@ Boundary: `protoboard-cli/docs/specs/uhd-boundary.md`.
 ### `uhd-viewer serve`
 
 ```bash
-uhd-viewer serve <bundle.json> [--port 5179] [--host 127.0.0.1] [--open]
+uhd-viewer serve <bundle.json> [--port 5179] [--host 127.0.0.1] [--host-origin <origin>]… [--open]
 # from this checkout: npm run build && npm run serve -- <bundle.json>
 ```
 
 A small Node server (`bin/serve.mjs`, no dependencies) for the built app, the
 bundle and its artifacts:
 
-- `/` is the app, with the bundle URL injected as
-  `<script type="application/json" id="uhd-viewer-config">`.
+- `/` is the app, with the bundle URL (and the `--host-origin` origins, if
+  any) injected as `<script type="application/json" id="uhd-viewer-config">`.
 - `/uhd-bundle.json` is the bundle with every filesystem artifact base
   rewritten to a URL on this server, `/artifacts/<name>/` (named after the
   base's folder: `quadcopter-5in`, `uhd`). URL bases are left alone, and no
@@ -260,9 +261,13 @@ bundle and its artifacts:
 - It binds to 127.0.0.1 and only answers requests addressed to a loopback
   name, so a web page elsewhere cannot read the files through DNS rebinding.
   `--host 0.0.0.0` exposes the artifacts to the network and accepts any host.
+- `--host-origin <origin>` (repeatable, or comma-separated; exact,
+  `scheme://*` or `*`) lets a page on that origin frame the app and drive it
+  with host messages (see "Host messages"). Without it only a parent on the
+  app's own origin can.
 
 Hosts with their own server can use the same handler for the viewer's routes:
-`viewerHandler({ bundleFile })` from `@deltarobotics/uhd-viewer/serve`. Its
+`viewerHandler({ bundleFile, hostOrigins? })` from `@deltarobotics/uhd-viewer/serve`. Its
 types are in `bin/serve.d.mts` (written by hand; a test checks they name
 exactly what the module exports).
 
@@ -307,6 +312,50 @@ viewer.unmount();
   fonts, so the viewer is best given a page of its own (as `protoboard dev`
   will).
 
+### Host messages
+
+A host can drive the viewer and hear what the user does in it, through the
+handle or, with the viewer in a frame, through `window.postMessage`. The
+messages are the same either way:
+
+| Direction | Message | Meaning |
+| --- | --- | --- |
+| host → viewer | `{type: "uhd-viewer:focus", path}` | Drill to the level that holds the module at instance path `path` (`"arm_fl/motor"`), select it, open the inspector and bring the module into view. A module already drawn on the current level (also inside a module expanded in place) is selected there. In the 3D view its body is selected and looked at. |
+| | `{type: "uhd-viewer:select", ids}` | Select the first of `ids` drawn on the current level: a module, a net, or a link. Ids are canonical (as `selectionChanged` reports them) or relative to the level; `node:` and `link:` prefixes pick the kind. An empty list clears the selection. In the 3D view it selects there too, without moving the camera: the module's body (or, for an id not on the diagram's level, the first full instance path) or the mate of a link; nets and links without a mate are not drawn in 3D, so they leave the 3D selection alone. |
+| | `{type: "uhd-viewer:drill", path}` | Show the level of an instance path (`""` is the root), as far as it names modules with children. A level of the diagram: the 3D view shows the whole assembly at any level, so there it sets the level the diagram returns to. |
+| | `{type: "uhd-viewer:setView", view}` | `"diagram"` or `"3d"`. |
+| viewer → host | `{type: "uhd-viewer:ready"}` | The model is on screen. Messages sent earlier wait for it. |
+| | `{type: "uhd-viewer:selectionChanged", selection}` | Every change of the selection, in the diagram or the 3D view: `{kind: "node" \| "link", id, defId?}` or `null`. Ids are canonical paths from the root: a module's instance path, a net or boundary interface as `board:v3v3`, a link as its owner's path and id (`stack/fc_esc`, as UHD's system checks name links). `defId` is the module's definition (for a link, the module that declares it). |
+| | `{type: "uhd-viewer:openSource", defId, instancePath?}` | The user asked for a module's source: *OPEN SOURCE* in the inspector (modules and links) or a module's context menu (right-click, on the canvas or in the hierarchy). Offered only when a host takes it. |
+| | `{type: "uhd-viewer:openArtifact", defId, artifactId}` | The user picked an artifact file row in the inspector. Without a host the row opens the file in a new tab, as before. |
+
+With `mountViewer`, the handle has `focus(path)`, `select(ids)`,
+`drill(path)` and `setView(view)`, and `post(message)` for a message object as
+it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`
+and `onOpenArtifact`. Giving `onOpenSource` turns on the *OPEN SOURCE* actions;
+giving `onOpenArtifact` hands artifact rows to the host.
+
+`parentWindow: true | { origins }` connects a mounted viewer to its parent
+window instead (or as well): host messages are taken from `window.parent`
+only, and only from the listed origins (exact origins, `scheme://*`, or `*`;
+default: the page's own origin); events are posted to the parent at its
+origin (the frame's ancestor origin or referrer when allowed, else the only
+listed origin, else the origin of the parent's first message, with events
+held until then). The open actions then go to the parent.
+
+The standalone app (`uhd-viewer serve`, `dist/app`) does this by itself when
+it is in a frame whose parent is on its own origin, or on one its server
+allows: `hostOrigins` in the injected config, which `uhd-viewer serve
+--host-origin <origin>` (for example `--host-origin 'vscode-webview://*'`) and
+`viewerHandler({ hostOrigins })` write. The allowed origins never come from
+the frame's URL, since the page doing the framing writes that URL and could
+name itself. The Vite dev server is the exception: there
+`?hostOrigin=<origin>[,<origin>…]` is honoured, for trying a host locally. In
+a frame it was not told about, and in a tab of its own, it ignores messages
+and posts nothing. Nothing in the
+protocol names an editor: a web page, an IDE webview or a test harness talk to
+it the same way.
+
 ### Checking a build
 
 `node scripts/check-render.mjs <viewer-url> <out-dir>` opens the diagram, two
@@ -325,4 +374,24 @@ that the host's diagnostics are listed and replaced by `update`, that a dragged
 node reaches `onLayoutChange` and not local storage, that a layout passed back
 through `update` moves the node and is not sent again, that the 3D view
 resolves its artifacts through the host's resolver, and that no request fails.
-It writes two PNGs and `host-summary.json`, and exits 1 on any failure.
+It also checks the handle's host methods: `onReady`, `focus` reaching
+`onSelectionChanged`, and no *OPEN SOURCE* without `onOpenSource`. It writes
+two PNGs and `host-summary.json`, and exits 1 on any failure.
+
+`node scripts/check-render.mjs messages <bundle.json> <out-dir>` drives the
+built app through host messages as a framing host does: the app on one origin
+(`localhost`), framed by a page on another (`127.0.0.1`) that its server
+allows (`viewerHandler({ hostOrigins })`). On the quadcopter it checks that the frame posts `ready`; that
+`drill` opens the stack; that `focus` on `arm_fl/motor` from there opens the
+arm, selects the motor, brings it into view clear of the inspector and reports
+it with its definition; that `select` takes the first id on the level (a link
+given by the second half of a cable, `dji_o4`, selects the line `dji_fc`);
+that *OPEN SOURCE* and an artifact row reach the host and no tab opens; that
+events go to the host's origin only; that `setView` switches to the 3D view,
+where `focus` selects the body, and back; and that a frame not told about the
+page's origin ignores it and posts nothing, even when the frame's URL carries
+`?hostOrigin=` naming the page. It also checks that `select` in the 3D view
+selects there and is reported. It writes two PNGs (with page rasterization on the
+CPU: in software GL a frame on another origin otherwise keeps stale tiles of
+earlier levels in its screenshots, nodes that are not in the DOM) and
+`messages-summary.json`, and exits 1 on any failure.

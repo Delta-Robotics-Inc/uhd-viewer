@@ -9,12 +9,16 @@ import type { ViewLink } from "./model/types";
 import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
 import type { Pt } from "./canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source";
-import type { ViewerLayout, ViewerOptions } from "./api";
+import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "./api";
 import { sameLayout } from "./options";
 import { Canvas, type Selection } from "./canvas/Canvas";
-import { ActivityBar, Header, Inspector, Legend, Toolbar, type Goto, type Panel } from "./chrome/Chrome";
+import { ActivityBar, Header, Inspector, Legend, NodeMenu, Toolbar, type Goto, type NodeMenuItem, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
-import { CadView } from "./cad/CadView";
+import { CadView, type CadSelection } from "./cad/CadView";
+import { defAt } from "./cad/model";
+import type { CommandBus } from "./host/channel";
+import { HostContext, type HostActions } from "./host/context";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "./host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -89,6 +93,17 @@ const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
 export interface AppProps extends ViewerOptions {
   /** Development only: absolute artifact bases are served through Vite's /@fs route. */
   fsRoute?: boolean;
+  /** The host channel (mount.tsx): its messages, where events go, and which open actions the host takes. */
+  host?: HostLink;
+}
+
+export interface HostLink {
+  bus: CommandBus;
+  emit: (event: ViewerEvent) => void;
+  /** The host opens sources (the viewer offers OPEN SOURCE). */
+  source: boolean;
+  /** The host opens artifact files (instead of a new tab). */
+  artifact: boolean;
 }
 
 /** Loads the UHD bundle (the viewer's only input), then shows it. */
@@ -120,10 +135,10 @@ export default function App(props: AppProps) {
       </div>
     );
   if (!source) return <div className="load-state">Loading UHD bundle…</div>;
-  return <Viewer source={source} options={props} />;
+  return <Viewer source={source} options={props} host={props.host} />;
 }
 
-function Viewer({ source, options }: { source: LoadedSource; options: ViewerOptions }) {
+function Viewer({ source, options, host }: { source: LoadedSource; options: ViewerOptions; host?: HostLink }) {
   const hosted = Boolean(options.onLayoutChange);
   const SCENARIOS = source.scenarios;
   const HAND_LAYOUTS: Record<string, LevelLayout> = source.display.diagram?.layouts ?? {};
@@ -257,7 +272,100 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
   const errors = diagnostics.filter((d) => d.severity === "error").length + hostDiagnostics.filter((d) => d.severity === "error").length;
   const pair = pairLink ? vm.links.find((l) => l.linkId === pairLink) : undefined;
 
+  // ---- the host channel: messages in, events out (README, "Host messages")
+  const [centre, setCentre] = useState<{ id: string; seq: number }>();
+  const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
+  const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const seq = useRef(0);
+  // what a message applies to: the state of the latest render
+  const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm, view });
+  latest.current = { system, lookup: scenario.lookup, drill, expanded, vm, view };
+  useEffect(() => {
+    if (!host) return;
+    return host.bus.subscribe((m) => {
+      const { system: sys, lookup, drill: d, expanded: ex, vm: v, view: shownView } = latest.current;
+      const sameDrill = (next: string[]) => (cur: string[]) => (cur.join("/") === next.join("/") ? cur : next);
+      setMenu(null);
+      switch (m.type) {
+        case "uhd-viewer:focus": {
+          const t = focusTarget(sys, lookup, m.path, { drill: d, expanded: ex });
+          setDrill(sameDrill(t.drill));
+          setSelection(t.selection);
+          setPairLink(null);
+          // the inspector shows the focused module
+          setPanel((p) => p ?? "hierarchy");
+          if (t.selection) {
+            const n = ++seq.current;
+            setCentre({ id: t.selection.id, seq: n });
+            setCadFocus({ path: fullId(t.drill, t.selection.id), seq: n });
+          }
+          return;
+        }
+        case "uhd-viewer:select": {
+          const sel = selectTarget(v, d, m.ids);
+          if (sel !== undefined) setSelection(sel);
+          // the 3D view selects too (a module's body or a mate), without moving the camera
+          if (shownView === "3d") {
+            const t = cadSelectTarget(sys, lookup, d, sel, m.ids);
+            if (t) setCadFocus({ ...t, seq: ++seq.current, look: false });
+          }
+          return;
+        }
+        // the diagram's level (the 3D view shows the whole assembly at any level)
+        case "uhd-viewer:drill":
+          setDrill(sameDrill(drillTarget(sys, lookup, m.path)));
+          setSelection(null);
+          setPairLink(null);
+          return;
+        case "uhd-viewer:setView":
+          setView(m.view);
+          return;
+      }
+    });
+  }, [host]);
+  const readySent = useRef(false);
+  useEffect(() => {
+    if (!host || readySent.current) return;
+    readySent.current = true;
+    host.emit({ type: "uhd-viewer:ready" });
+  }, [host]);
+  // every selection change, in the view on screen, once
+  const diagramSelection = useMemo(() => hostSelection(vm, drill, selection, levelDef.id), [vm, drill, selection, levelDef]);
+  const shown = view === "3d" ? cadSelection : diagramSelection;
+  const sentSelection = useRef("");
+  useEffect(() => {
+    const key = selectionKey(shown);
+    if (!host || key === sentSelection.current) return;
+    sentSelection.current = key;
+    host.emit({ type: "uhd-viewer:selectionChanged", selection: shown });
+  }, [host, shown]);
+  const onCadSelect = useCallback(
+    (s: CadSelection) => setCadSelection(cadHostSelection(s, (path) => defAt(system, scenario.lookup, path))),
+    [system, scenario],
+  );
+  const hostActions = useMemo<HostActions>(
+    () => ({
+      openSource: host?.source ? (defId, instancePath) => host.emit({ type: "uhd-viewer:openSource", defId, ...(instancePath ? { instancePath } : {}) }) : undefined,
+      openArtifact: host?.artifact ? (defId, artifactId) => host.emit({ type: "uhd-viewer:openArtifact", defId, artifactId }) : undefined,
+    }),
+    [host?.source, host?.artifact, host?.emit],
+  );
+  const onNodeContext = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
+  const menuNode = menu ? vm.nodes.find((n) => n.id === menu.id) : undefined;
+  const menuItems: NodeMenuItem[] = [];
+  if (menuNode?.defId && hostActions.openSource) {
+    const { defId } = menuNode;
+    menuItems.push({ label: "OPEN SOURCE", run: () => hostActions.openSource!(defId, fullId(drill, menuNode.id)) });
+  }
+  if (menuNode?.childCount) {
+    menuItems.push({ label: menuNode.expanded ? "COLLAPSE" : "EXPAND IN PLACE", run: () => onToggleExpand(menuNode.id) });
+    menuItems.push({ label: "OPEN AS CANVAS", run: () => onDrill(menuNode.id) });
+  }
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   return (
+    <HostContext.Provider value={hostActions}>
     <ReactFlowProvider>
       <div className="app">
         <Header
@@ -278,7 +386,16 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
         <div className="workspace">
           <ActivityBar panel={panel} onPanel={setPanel} errors={errors} />
           {view === "3d" ? (
-            <CadView key={scenario.id} system={system} lookup={scenario.lookup} source={source} diagnostics={diagnostics} hostDiagnostics={hostDiagnostics} />
+            <CadView
+              key={scenario.id}
+              system={system}
+              lookup={scenario.lookup}
+              source={source}
+              diagnostics={diagnostics}
+              hostDiagnostics={hostDiagnostics}
+              focusOn={cadFocus}
+              onSelect={onCadSelect}
+            />
           ) : (
           <>
           <main className="canvas">
@@ -309,6 +426,8 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
               onLayout={editLink}
               onLive={setLive}
               onPins={onPins}
+              centre={centre}
+              onNodeContext={hostActions.openSource ? onNodeContext : undefined}
             />
             <Toolbar
               onReset={onReset}
@@ -342,12 +461,15 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
               levelDef={levelDef}
               drill={drill}
               onGoto={onGoto}
+              onNodeContext={hostActions.openSource ? onNodeContext : undefined}
             />
           )}
           </>
           )}
         </div>
+        {menu && <NodeMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} />}
       </div>
     </ReactFlowProvider>
+    </HostContext.Provider>
   );
 }

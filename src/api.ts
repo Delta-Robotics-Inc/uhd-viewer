@@ -65,7 +65,63 @@ export interface ViewerOptions {
    * storage.
    */
   onLayoutChange?: (layout: ViewerLayout) => void;
+
+  // ---- the host message channel (docs: README, "Host messages") ----------
+  /** The viewer has a model on screen and takes host messages from now on. */
+  onReady?: () => void;
+  /** Every change of the selection, in the diagram or the 3D view (null: nothing selected). */
+  onSelectionChanged?: (selection: ViewerSelection | null) => void;
+  /**
+   * The user asked to see where a module is defined (the inspector's OPEN
+   * SOURCE, a node's context menu). Given: the viewer offers these actions.
+   */
+  onOpenSource?: (request: { defId: string; instancePath?: string }) => void;
+  /**
+   * The user picked an artifact file in the inspector. Given: the host opens
+   * it; otherwise the viewer opens the file's URL in a new tab.
+   */
+  onOpenArtifact?: (request: { defId: string; artifactId: string }) => void;
+  /**
+   * Talk to the parent window over `postMessage` (the viewer in a frame):
+   * host messages are accepted from `window.parent` only, and only from the
+   * listed origins (exact origins, `scheme://*`, or `*`; default: the page's
+   * own origin); events are posted to the parent, at its origin. Open actions
+   * then go to the parent. `true` uses the defaults. Off unless given.
+   */
+  parentWindow?: boolean | { origins?: string[] };
 }
+
+/** What a view shows: the diagram or the assembled 3D model. */
+export type ViewerView = "diagram" | "3d";
+
+/**
+ * A selection as the host sees it. Ids are canonical paths from the root
+ * system: a module's instance path (`arm_fl/motor`), a link's owner path and
+ * id (`stack/fc_esc`, as UHD's system checks name links).
+ */
+export interface ViewerSelection {
+  kind: "node" | "link";
+  id: string;
+  /** The selected module's definition id (a link's: the module that declares it). */
+  defId?: string;
+}
+
+/** Host → viewer messages (`window.postMessage`, or the handle's methods). */
+export type ViewerHostMessage =
+  /** Drill to the level that holds the module, select it and centre it. */
+  | { type: "uhd-viewer:focus"; path: string }
+  /** Select on the current level (the first id that is there; none: clear the selection). */
+  | { type: "uhd-viewer:select"; ids: string[] }
+  /** Show the level of this instance path ("" is the root system). */
+  | { type: "uhd-viewer:drill"; path: string }
+  | { type: "uhd-viewer:setView"; view: ViewerView };
+
+/** Viewer → host events (posted to the parent window, or the options' callbacks). */
+export type ViewerEvent =
+  | { type: "uhd-viewer:ready" }
+  | { type: "uhd-viewer:selectionChanged"; selection: ViewerSelection | null }
+  | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
+  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string };
 
 export interface ViewerHandle {
   /**
@@ -76,4 +132,17 @@ export interface ViewerHandle {
    */
   update(options: Partial<ViewerOptions>): void;
   unmount(): void;
+  /** Drill to the level that holds the module at `path`, select it and centre it. */
+  focus(path: string): void;
+  /** Select on the current level: the first of `ids` drawn there (an empty list clears the selection). */
+  select(ids: string[]): void;
+  /** Show the level of an instance path ("" is the root system). */
+  drill(path: string): void;
+  setView(view: ViewerView): void;
+  /**
+   * Apply a host message object, as it arrives over `postMessage`. Returns
+   * false when it is not a valid viewer message. Messages sent before the
+   * model is on screen wait for it.
+   */
+  post(message: unknown): boolean;
 }

@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Background,
   Position,
   BackgroundVariant,
   ConnectionMode,
   ReactFlow,
+  useNodesInitialized,
+  useReactFlow,
   type Edge,
   type Node,
   type NodeChange,
@@ -45,6 +47,10 @@ export interface CanvasProps {
   onMove: (id: string, x: number, y: number) => void;
   /** A drag starts (what moves) or ends (null): the layout reroutes only what moves meanwhile. */
   onLive: (live: Live | null) => void;
+  /** A node to bring into view (a host's focus), once it is drawn; `seq` tells repeats apart. */
+  centre?: { id: string; seq: number };
+  /** Right-click on a node: its context menu at the pointer (the browser's own when not given). */
+  onNodeContext?: (id: string, x: number, y: number) => void;
 }
 
 /**
@@ -174,6 +180,20 @@ export function Canvas(props: CanvasProps) {
     [vm, layout, props],
   );
 
+  // a host's focus: once the node is drawn (and after the initial fit), frame it
+  const flow = useReactFlow();
+  const drawn = useNodesInitialized();
+  const centred = useRef(0);
+  const { centre, inspector } = props;
+  useEffect(() => {
+    if (!centre || !drawn || centred.current === centre.seq || !nodes.some((n) => n.id === centre.id)) return;
+    const t = setTimeout(() => {
+      centred.current = centre.seq;
+      void flow.fitView({ nodes: [{ id: centre.id }], padding: fitPadding(inspector ?? false), maxZoom: 1, duration: 300 });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [centre, drawn, nodes, flow, inspector]);
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -187,6 +207,14 @@ export function Canvas(props: CanvasProps) {
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
       onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
+      onNodeContextMenu={
+        props.onNodeContext &&
+        ((e, n) => {
+          e.preventDefault();
+          props.onSelect({ kind: "node", id: n.id });
+          props.onNodeContext?.(n.id, e.clientX, e.clientY);
+        })
+      }
       onPaneClick={() => props.onSelect(null)}
       nodesConnectable={false}
       snapToGrid

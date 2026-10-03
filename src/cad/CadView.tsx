@@ -30,6 +30,7 @@ import {
 import { COLORS, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
 import { Icon } from "../canvas/Icon";
+import { ArtifactLink } from "../chrome/Artifacts";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -160,6 +161,8 @@ export function CadView({
   source,
   diagnostics = [],
   hostDiagnostics = [],
+  focusOn,
+  onSelect,
 }: {
   system: ModuleDef;
   lookup: ModuleLookup;
@@ -167,6 +170,14 @@ export function CadView({
   /** The viewer's own checks (root and boards) and the host's findings, pinned to the model where they name something placed. */
   diagnostics?: ScopedDiagnostic[];
   hostDiagnostics?: UhdBundleDiagnostic[];
+  /**
+   * A host's focus or select, by instance path; `seq` tells repeats apart. A
+   * node selects the module's body and (with `look`, the default) looks at it;
+   * a link selects the mate of that path (`owner/link`); `none` clears.
+   */
+  focusOn?: { path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean };
+  /** Every selection change (for the host). */
+  onSelect?: (sel: CadSelection) => void;
 }) {
   const display = source.display.spatial ?? {};
   const resolve = source.resolveArtifact;
@@ -914,6 +925,39 @@ export function CadView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, model]);
 
+  // a host's focus: select the module's body (the board body a component is drawn in, or the
+  // nearest placed module above it), then look at it once its model is loaded
+  const focused = useRef(0);
+  const look = useRef(false);
+  useEffect(() => {
+    if (!focusOn || !model || focused.current === focusOn.seq) return;
+    focused.current = focusOn.seq;
+    const key = focusOn.path;
+    if (focusOn.kind === "none") return setSel({});
+    if (focusOn.kind === "link") {
+      if (model.assembly.mates.some((m) => m.linkId === key)) setSel({ mate: key });
+      return;
+    }
+    const has = (k: string) => model.bodies.some((b) => b.key === k);
+    const holder = model.within.get(key);
+    const parts = key.split("/");
+    const above = parts.map((_, i) => parts.slice(0, parts.length - 1 - i).join("/")).find((k) => k && has(k));
+    const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : above ? { body: above } : undefined;
+    if (!next) return;
+    setSel(next);
+    look.current = focusOn.look !== false;
+  }, [focusOn, model]);
+  useEffect(() => {
+    if (!look.current || !sel.body || !bodies.current.has(sel.body)) return;
+    look.current = false;
+    focus();
+    handle.current?.renderOnce();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, loaded]);
+  const selectHandler = useRef(onSelect);
+  selectHandler.current = onSelect;
+  useEffect(() => selectHandler.current?.(sel), [sel]);
+
   const toggleKind = (k: LabelKind) =>
     setLabelKinds((s) => {
       const n = new Set(s);
@@ -1412,11 +1456,11 @@ function BodyContents({ model, body, sel, onSel, resolve }: { model: CadModel; b
           <div className="section-title">MANUFACTURING EXPORTS · {cad.exports.length}</div>
           <div className="artifact-files">
             {cad.exports.map((a) => (
-              <a key={a.id} className="artifact-file" href={a.url ?? (a.filePath ? resolve(body.def.id, a.filePath) : undefined)} target="_blank" rel="noreferrer">
+              <ArtifactLink key={a.id} defId={body.def.id} artifactId={a.id} href={a.url ?? (a.filePath ? resolve(body.def.id, a.filePath) : undefined)}>
                 <Icon name="printer" size={11} />
                 <span className="artifact-name">{(a.filePath ?? a.name).split("/").pop()}</span>
                 <span className="artifact-format">{(a.format ?? "").toUpperCase()}</span>
-              </a>
+              </ArtifactLink>
             ))}
           </div>
         </>

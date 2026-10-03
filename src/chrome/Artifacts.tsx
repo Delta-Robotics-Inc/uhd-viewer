@@ -12,6 +12,7 @@ import { cadWrapper, createScene, loadGlb, materialFor } from "../cad/scene";
 import type { Appearance } from "../source/source";
 import { Icon } from "../canvas/Icon";
 import { isBoardDrawing } from "../model/outputs";
+import { useHost } from "../host/context";
 
 import type { ArtifactResolver } from "../api";
 export type { ArtifactResolver };
@@ -26,6 +27,33 @@ export function thumbnailOf(def: ModuleDef): ArtifactDef | undefined {
   // a board's PCB and schematic drawings are views of the design (shown with the board), not pictures of it
   const images = (def.artifacts ?? []).filter((a) => !isBoardDrawing(a) && (a.mimeType?.startsWith("image/") || IMAGE.test(a.filePath ?? a.url ?? "")));
   return images.find((a) => a.tags?.includes("thumbnail")) ?? images.find((a) => a.type !== "datasheet") ?? images[0];
+}
+
+/**
+ * An artifact file row: a link to the file, or, when a host takes artifacts
+ * (`onOpenArtifact`), a request to the host to open it.
+ */
+export function ArtifactLink({ defId, artifactId, href, title, children }: { defId: string; artifactId: string; href?: string; title?: string; children: React.ReactNode }) {
+  const { openArtifact } = useHost();
+  return (
+    <a
+      className="artifact-file"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={title}
+      data-artifact={artifactId}
+      onClick={
+        openArtifact &&
+        ((e) => {
+          e.preventDefault();
+          openArtifact(defId, artifactId);
+        })
+      }
+    >
+      {children}
+    </a>
+  );
 }
 
 const urlOf = (def: ModuleDef, a: ArtifactDef, resolve: ArtifactResolver) => a.url ?? (a.filePath ? resolve(def.id, a.filePath) : undefined);
@@ -96,11 +124,11 @@ export function ArtifactsSection({ def, resolve, appearance, titled = true }: { 
           {files.map((a) => {
             const url = urlOf(def, a, resolve);
             return (
-              <a key={a.id} className="artifact-file" href={url} target="_blank" rel="noreferrer" title={a.filePath ?? a.url}>
+              <ArtifactLink key={a.id} defId={def.id} artifactId={a.id} href={url} title={a.filePath ?? a.url}>
                 <Icon name={a.role === "drawing" ? "file-text" : "box"} size={11} />
                 <span className="artifact-name">{a.name}</span>
                 <span className="artifact-format">{(a.format ?? a.type).toUpperCase()}</span>
-              </a>
+              </ArtifactLink>
             );
           })}
         </div>

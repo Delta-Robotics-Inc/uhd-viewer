@@ -27,7 +27,7 @@ export interface BundlePlan {
 export declare function planBundle(bundle: unknown, bundleFile: string): BundlePlan;
 
 /** The app's index.html with `config` injected as `<script type="application/json" id="uhd-viewer-config">`. */
-export declare function injectConfig(html: string, config: { bundleUrl?: string }): string;
+export declare function injectConfig(html: string, config: { bundleUrl?: string; hostOrigins?: string[] }): string;
 
 export interface ViewerHandlerOptions {
   /** The bundle on disk (re-read when it changes). */
@@ -36,6 +36,8 @@ export interface ViewerHandlerOptions {
   appDir?: string;
   /** Which Host header names to answer; defaults to loopback names only. */
   allowHost?: (hostname: string) => boolean;
+  /** Parent origins the app takes host messages from when framed (exact, `scheme://*` or `*`); none by default. */
+  hostOrigins?: string[];
 }
 
 /** A request handler for the viewer, a bundle and its artifacts. It answers every request it is given. */
@@ -47,6 +49,8 @@ export interface StartServerOptions {
   /** Interface to bind; defaults to 127.0.0.1. */
   host?: string;
   appDir?: string;
+  /** Parent origins the app takes host messages from when framed (`--host-origin`). */
+  hostOrigins?: string[];
 }
 
 /** Starts the server. Fails before listening if the bundle or the built app is missing. */

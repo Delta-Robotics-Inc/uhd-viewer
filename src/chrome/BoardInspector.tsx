@@ -14,6 +14,7 @@ import { circuitOutputs, drawingFits, footprintAt, footprints, parsePnp, toDrawi
 import type { ArtifactResolver } from "../api";
 import type { Selection } from "../canvas/Canvas";
 import { Icon } from "../canvas/Icon";
+import { ArtifactLink } from "./Artifacts";
 
 const STATE_LABEL: Record<string, string> = { configured: "CONFIGURED", partial: "PARTIAL", incompatible: "INCOMPATIBLE", unconfigured: "NOT CONFIGURED" };
 
@@ -315,11 +316,11 @@ export function BoardViews({
       {files.length > 0 && (
         <div className="artifact-files">
           {files.map((a) => (
-            <a key={a.id} className="artifact-file" href={urlOf(def, a, resolve)} target="_blank" rel="noreferrer" title={a.filePath ?? a.url}>
+            <ArtifactLink key={a.id} defId={def.id} artifactId={a.id} href={urlOf(def, a, resolve)} title={a.filePath ?? a.url}>
               <Icon name={/csv|json/.test(a.format ?? "") ? "file-text" : "box"} size={11} />
               <span className="artifact-name">{(a.filePath ?? a.url ?? a.name).split("/").pop()}</span>
               <span className="artifact-format">{(a.format ?? a.type).toUpperCase()}</span>
-            </a>
+            </ArtifactLink>
           ))}
         </div>
       )}
