@@ -86,6 +86,9 @@ export interface Live {
   links?: Set<string>;
 }
 
+/** Below this width the panel starts closed: open, it would cover most of the view. */
+const NARROW = 760;
+
 /** Initial view state from the URL: ?scenario=o4-on-vbat&mode=drc&detail=conductors&drill=stack&open=gnss_i2c&panel=checks */
 const params = new URLSearchParams(window.location.search);
 const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
@@ -153,7 +156,8 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
   const [selection, setSelection] = useState<Selection>(
     params.get("select") ? { kind: params.get("select")!.startsWith("link:") ? "link" : "node", id: params.get("select")!.replace(/^(link|node):/, "") } : null,
   );
-  const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? "hierarchy");
+  // a narrow host (a VS Code panel beside an editor) starts with the view, not the panel over it (PB-861)
+  const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? (typeof window !== "undefined" && window.innerWidth < NARROW ? null : "hierarchy"));
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
   const [view, setView] = useState<"diagram" | "3d">(params.get("view") === "3d" ? "3d" : "diagram");
   // layout edits: local storage by default, the host's when it takes them (onLayoutChange)
@@ -395,6 +399,7 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
               hostDiagnostics={hostDiagnostics}
               focusOn={cadFocus}
               onSelect={onCadSelect}
+              inspector={Boolean(panel)}
             />
           ) : (
           <>

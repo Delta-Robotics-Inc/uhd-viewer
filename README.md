@@ -39,10 +39,14 @@ To open a particular view, pass URL parameters:
 | `expand` | `stack` | Expands a child in place (the arms are expanded by default). |
 | `grounds` | `1` | Draws ground links as wires rather than symbols. |
 | `scenario` | `o4-on-vbat`, `frame-20mm-stack`, `gps-on-rx-uart`, `two-compasses`, `legacy-m10q` | Loads a fault or variant scenario. |
-| `panel` | `checks` | Opens the system checks panel. |
+| `panel` | `checks` | Opens the system checks panel. The hierarchy panel opens by default, except in a view narrower than 760 px (a VS Code panel beside an editor), where the panel and the 3D inspector start closed. |
+| `labels` | `1` | Shows the 3D callout labels from the start (off by default: on a small view they hide the model; the 3D toolbar's **Labels** turns them on). |
 | `select` | `node:gnss`, `link:m1_phases` | Selects a module or link. |
 | `pair` | `gnss_uart` | Opens the pair view for a link. |
 | `select` | `node::sda` | A board net is selected by its path (`:<net>`). |
+
+Clicking a link's label selects it; on a bundle (`2 LINKS`, a harness's
+lanes) it also opens or closes it, as its +/− box does.
 
 ## What the MVP covers
 
