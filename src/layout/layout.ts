@@ -12,6 +12,8 @@ import { boardLayout, freeSpot, hits } from "./board-layout";
 
 /** Distance kept between a corner and anything placed on a link (handles, toggles). */
 export const BEND_CLEAR = 28;
+/** How far a link keeps its label from a corner (LinkEdge: the corner radius, half a toggle, 4 px). */
+const LABEL_CLEAR = 24;
 
 export interface Box {
   x: number;
@@ -152,8 +154,24 @@ function netPositions(vm: ViewModel, top: ViewNode[], sheets: ViewNode[], sizes:
   for (const [a, b] of edges) for (const id of [a, b]) degree.set(id, (degree.get(id) ?? 0) + 1);
   // a junction grows to fit its ports once they have sides: lay it out at the size it will likely have
   const planned = (n: ViewNode) => (n.kind === "net" ? { w: sizes[n.id].w, h: Math.max(sizes[n.id].h, (Math.ceil((degree.get(n.id) ?? 0) / 2) + 1) * GRID) } : sizes[n.id]);
+  const grows = (n: ViewNode) => n.kind !== "net" && n.shape !== "circle";
+  const isNet = new Set(top.filter((n) => n.kind === "net").map((n) => n.id));
+  const otherPorts = (id: string) =>
+    new Set(
+      vm.links
+        .filter((l) => !l.ground && (l.source.node === id || l.target.node === id) && !isNet.has(l.source.node) && !isNet.has(l.target.node))
+        .map((l) => (l.source.node === id ? l.source.port : l.target.port)),
+    ).size;
   const at = boardLayout(
-    top.map((n) => ({ id: n.id, ...planned(n), net: n.kind === "net", category: n.category, label: n.label })),
+    top.map((n) => ({
+      id: n.id,
+      ...planned(n),
+      net: n.kind === "net",
+      ...(n.tapOf ? { tapOf: n.tapOf } : {}),
+      category: n.category,
+      label: n.label,
+      ...(grows(n) ? { heightFor: (k: number) => Math.ceil((44 + k * PORT_PITCH) / GRID) * GRID, otherPorts: otherPorts(n.id) } : {}),
+    })),
     edges,
   );
   const x0 = sheets.length ? 400 : 60;
@@ -354,7 +372,10 @@ export function computeLayout(
           target[1] = out[parentPort.side][1];
         }
       }
-      let side = hand?.ports?.[key] ?? sideFacing(box, target);
+      // a line to or from a net junction leaves its card sideways, toward the junction's channel (a schematic's pins)
+      const otherNode = vm.nodes.find((n) => n.id === other.node);
+      const sideways = !node.parent && !node.expanded && !otherNode?.expanded && (node.kind === "net" || otherNode?.kind === "net");
+      let side = hand?.ports?.[key] ?? (sideways ? (target[0] >= center(box)[0] ? "right" : "left") : sideFacing(box, target));
       if (node.sheetPort && !hand?.ports?.[key]) side = target[0] >= center(box)[0] ? "right" : "left";
       if (!hand?.ports?.[key] && inside) {
         // boundary port with only an inner counterpart: face outward on the nearest edge
@@ -457,8 +478,9 @@ export function computeLayout(
   const routes: Record<string, Pt[]> = {};
   const pins: Record<string, Pt[]> = {};
   const bends: Record<string, Pt[]> = {};
-  const obstacles = vm.nodes.filter((n) => !n.expanded).map((n) => boxes[n.id]);
-  const router = new GridRouter(obstacles, Object.values(ports).map((p) => [p.x, p.y] as Pt));
+  const obstacleNodes = vm.nodes.filter((n) => !n.expanded);
+  const obstacles = obstacleNodes.map((n) => boxes[n.id]);
+  const router = new GridRouter(obstacles, Object.values(ports).map((p) => [p.x, p.y] as Pt), 12, !live);
   const todo = vm.links
     .filter((link) => !(link.ground && !showGrounds))
     .map((link) => ({ link, a: ports[portKey(link.source.node, link.source.port)], b: ports[portKey(link.target.node, link.target.port)] }))
@@ -484,7 +506,15 @@ export function computeLayout(
     }
     const wp = linkOverrides?.[link.id]?.waypoints ?? hand?.links?.[link.id]?.waypoints ?? [];
     pins[link.id] = wp;
-    routes[link.id] = link.passThrough ? route([a.x, a.y], sa, [b.x, b.y], b.side, wp) : router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
+    // a pass-through line (a container's boundary inward, a sheet port to its child) runs the plain way,
+    // unless that would cross a card it does not end at (a sheet port's line across a board): then it
+    // goes round the cards like the rest
+    if (link.passThrough) {
+      const plain = route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
+      const intoContainer = fromContainer || vm.nodes.find((n) => n.id === link.target.node)?.expanded;
+      const ends = new Set([link.source.node, link.target.node]);
+      routes[link.id] = intoContainer || !crossesCards(plain, obstacleNodes.filter((n) => !ends.has(n.id)).map((n) => boxes[n.id])) ? plain : router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
+    } else routes[link.id] = router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
     const pts = routes[link.id];
     // automatic waypoints: every interior corner that is not a pin
     bends[link.id] = pts.slice(1, -1).filter((p) => !wp.some((w) => Math.abs(w[0] - p[0]) < 1 && Math.abs(w[1] - p[1]) < 1));
@@ -510,16 +540,36 @@ export function computeLayout(
   return { boxes, ports, groups, routes, labels, labelAt, runs, pins, bends, labelFixed, edits };
 }
 
+/** Whether an axis-aligned polyline runs through any of `cards` (inside them, not along an edge). */
+function crossesCards(pts: Pt[], cards: Box[]): boolean {
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, x1] = [Math.min(pts[i - 1][0], pts[i][0]), Math.max(pts[i - 1][0], pts[i][0])];
+    const [y0, y1] = [Math.min(pts[i - 1][1], pts[i][1]), Math.max(pts[i - 1][1], pts[i][1])];
+    if (cards.some((b) => x1 > b.x + 1 && x0 < b.x + b.w - 1 && y1 > b.y + 1 && y0 < b.y + b.h - 1)) return true;
+  }
+  return false;
+}
+
 const CANDIDATES = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];
 
 function labelSize(link: ViewLink): { w: number; h: number } {
   return { w: link.name.length * 5.6 + (link.children.length > 1 ? 44 : 16), h: 16 };
 }
 
+/** Whether a link opens into lanes (its label carries the +/− toggle, so it is always drawn). */
+const opens = (link: ViewLink) => (link.lanes?.length ?? 0) > 1 || link.children.length > 1;
+
 /**
- * Choose a label spot per link: the longest segment's middle by default,
- * moved along the route to avoid other labels and module cards. Routes
- * shorter than 70 px (e.g. prop-on-shaft) stay unlabelled.
+ * Choose a label spot per link, as an arc length along its route. The label
+ * reads along the line (design D13): above a horizontal stretch, turned
+ * beside a vertical one. Candidates are spots along every straight stretch
+ * long enough for the text, horizontal ones first; each is scored by what
+ * the text would cover: a card or another label (never), other lines (as
+ * few as possible). A label with no clear spot is left off (the line still
+ * names itself in the inspector and on hover); a link that opens into lanes
+ * keeps its label, as that is where its toggle is. A label made only of a
+ * pin number (a resistor's "1") says nothing on the sheet and is left off.
+ * Routes shorter than 70 px (e.g. prop-on-shaft) stay unlabelled.
  */
 function placeLabels(
   vm: ViewModel,
@@ -537,31 +587,67 @@ function placeLabels(
   ];
   const overlaps = (a: Box, b: Box, pad = 3) =>
     a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+  // every drawn segment, for counting the lines a label would sit on
+  const segs: { id: string; a: Pt; b: Pt }[] = [];
+  for (const link of vm.links) {
+    const pts = routes[link.id];
+    if (pts) for (let i = 1; i < pts.length; i++) segs.push({ id: link.id, a: pts[i - 1], b: pts[i] });
+  }
+  const crossing = (r: Box, own: string) =>
+    segs.filter(
+      (s) => s.id !== own && Math.max(s.a[0], s.b[0]) > r.x && Math.min(s.a[0], s.b[0]) < r.x + r.w && Math.max(s.a[1], s.b[1]) > r.y && Math.min(s.a[1], s.b[1]) < r.y + r.h,
+    ).length;
+  /**
+   * The text's box for a label asked for at arc length `s` along `pts`: where the link draws it (moved
+   * off the bends onto a straight stretch, as LinkEdge does), above a horizontal stretch or right of a
+   * vertical one. Returns the arc length it lands at too.
+   */
+  const rectAt = (pts: Pt[], s0: number, w: number): { rect: Box; vertical: boolean; s: number } => {
+    const s = clearOfBends(pts, s0, LABEL_CLEAR, 12);
+    const { p, d } = at(pts, s);
+    const vertical = Math.abs(d[1]) > Math.abs(d[0]);
+    // the drawn tab: text plus its padding and border, a few px off the line
+    return vertical ? { rect: { x: p[0] + 2, y: p[1] - w / 2, w: 22, h: w }, vertical, s } : { rect: { x: p[0] - w / 2, y: p[1] - 22, w, h: 20 }, vertical, s };
+  };
 
-  const ordered = [...vm.links].sort((a, b) => b.children.length - a.children.length);
+  const ordered = [...vm.links].sort((a, b) => Number(opens(b)) - Number(opens(a)) || b.children.length - a.children.length || a.id.localeCompare(b.id));
   for (const link of ordered) {
     const pts = routes[link.id];
     if (!pts || link.passThrough || link.segment === "b") continue;
     const L = pathLength(pts);
     if (L < 70) continue;
-    const size = labelSize(link);
     const fixed = linkOverrides?.[link.id]?.labelT ?? hand?.links?.[link.id]?.labelT;
+    const keep = opens(link);
+    if (fixed === undefined && !keep && /^\d+$/.test(link.name.trim())) continue;
+    const size = labelSize(link);
     const [lo, hi] = runs[link.id] ?? [0, L];
     const within = (t: number) => (lo + (hi - lo) * t) / L;
-    const tries = fixed !== undefined ? [fixed] : [longestMid(pts), ...CANDIDATES.map(within)];
-    let best: { t: number; score: number } | undefined;
+    // fractions of the route: the given one, or the classic spots plus the middle of every straight stretch the text fits on
+    const tries: number[] = [];
+    if (fixed !== undefined) tries.push(fixed);
+    else {
+      let walked = 0;
+      const stretches: { mid: number; len: number }[] = [];
+      for (let i = 1; i < pts.length; i++) {
+        const len = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        if (len >= size.w + 2 * BEND_CLEAR) stretches.push({ mid: walked + len / 2, len });
+        walked += len;
+      }
+      stretches.sort((a, b) => b.len - a.len);
+      for (const st of stretches) for (const f of [0, -0.25, 0.25]) tries.push((st.mid + f * (st.len - size.w - 2 * BEND_CLEAR)) / L);
+      tries.push(longestMid(pts), ...CANDIDATES.map(within));
+    }
+    let best: { at: number; score: number; rect: Box } | undefined;
     for (const t of tries) {
-      const p = pointAlong(pts, t);
-      const rect = { x: p[0] - size.w / 2, y: p[1] - 30, w: size.w, h: 40 };
-      const score =
-        placed.filter((b) => overlaps(rect, b)).length * 10 + cards.filter((b) => overlaps(rect, b, 0)).length * 4;
-      if (!best || score < best.score) best = { t, score };
+      const { rect, vertical, s } = rectAt(pts, t * L, size.w);
+      const hard = cards.filter((b) => overlaps(rect, b, 0)).length + placed.filter((b) => overlaps(rect, b)).length;
+      const score = hard * 100 + crossing(rect, link.id) * 2 + (vertical ? 1 : 0);
+      if (!best || score < best.score) best = { at: fixed !== undefined ? t * L : s, score, rect };
       if (score === 0) break;
     }
-    if (!best) continue;
-    out[link.id] = best.t * L;
-    const p = pointAlong(pts, best.t);
-    placed.push({ x: p[0] - size.w / 2, y: p[1] - 30, w: size.w, h: 40 });
+    if (!best || (best.score >= 100 && fixed === undefined && !keep)) continue;
+    out[link.id] = best.at;
+    placed.push(best.rect);
   }
   return out;
 }

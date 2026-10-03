@@ -55,6 +55,12 @@ export interface ViewNode {
   sheetPort?: boolean;
   /** A board net (PB-823): drawn as a junction its members' grouped membership links meet at. */
   net?: ViewNet;
+  /**
+   * A rail drawn in several places (PB-873): this junction is a local tap of the
+   * net junction with this id, joined to the members near it. Selecting a tap
+   * selects the net.
+   */
+  tapOf?: string;
 }
 
 /** A net on a board (UHD `Net` interface, exposed: false), as a junction node. */

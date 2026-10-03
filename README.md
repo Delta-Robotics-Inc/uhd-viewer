@@ -68,9 +68,17 @@ lanes) it also opens or closes it, as its +/− box does.
 - **Inspector:** by default it shows the hierarchy of modules and links. Selecting a module shows its details and interfaces; selecting a link shows its child links and diagnostics.
 - **Layout:**
   - A level's hand layout comes from the bundle's display hints; a level without one lays itself out.
-  - A board (a level with nets) is laid out like a schematic sheet: components in columns by function
-    (connectors, power, processor, sensors, outputs, from their taxonomy category), each passive beside the
-    part it serves, and each net junction at the free spot nearest the parts it joins (`src/layout/board-layout.ts`).
+  - A board (a level with nets) is laid out like a schematic sheet (`src/layout/board-layout.ts`):
+    - components in columns by function (connectors, power, processor, then sensors and outputs, from their
+      taxonomy category); a part driven only by another peripheral (an LED driver's LEDs) one column further out;
+    - each passive stacked under the part it serves, on the side its junctions are, so its lines leave the
+      cluster without crossing the other stack;
+    - net junctions in the channels between columns, level with the parts they join, in one lane where they fit
+      (each cluster is given the height its junctions need), and every line leaving its card sideways;
+    - a supply rail with five or more members drawn as taps, one beside each cluster it feeds, the way a schematic
+      repeats a net label (`src/layout/taps.ts`). Selecting a tap selects the net; the inspector shows the net whole.
+  - Lines go round the cards; a link's label sits where it is clear of cards and other labels, or is left off
+    (a link that opens into lanes always keeps its label, which carries the toggle).
   - Nodes a hand layout does not name (added since it was saved) are placed next to what they link to, not at the origin.
   - Dragged positions are saved per level in local storage, and the toolbar can reset them.
 
@@ -100,8 +108,9 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/model/nets.ts` | Board nets: junction nodes, grouped membership lines, links derived over nets (PB-823). |
 | `src/model/diagnostics.ts` | The viewer's own checks: the root, and each board on its own, re-based onto the root. |
 | `src/model/outputs.ts` | Standard outputs by file name, pick-and-place parsing, component rectangles on PCB drawings. |
-| `src/layout/board-layout.ts` | Board layout for levels with nets: function columns, passive clusters, junction placement. |
-| `src/cad/labels.ts` | 3D callouts: the label solver (side columns ordered by screen y, no overlaps) and its layer. |
+| `src/layout/board-layout.ts` | Board layout for levels with nets: function columns, passive clusters, junction channels and lanes. |
+| `src/layout/taps.ts` | Rail taps: a supply rail drawn beside each cluster it feeds (the canvas's view model only). |
+| `src/cad/labels.ts` | 3D callouts: the label solver (side columns ordered by screen y, leaders untangled, no overlaps) and its layer. |
 | `src/chrome/BoardInspector.tsx` | Package facts, pin table, net and derived-link details, board drawings with pan and zoom. |
 | `src/cad/findings.ts` | Where a finding is on the 3D model. |
 | `fixtures/` | Hand-made sample bundles and standard outputs for boards and enclosures (see its README). |
@@ -134,7 +143,8 @@ ASSEMBLED / EXPLODED animates every module along the normal of the mate that pla
 a part a display placement holds inside a shell (a board and a cell in a case) comes out through the shell's opening, in
 stacking order, each clear of the one before it;
 LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which), in columns either
-side of the model ordered by screen height so leaders do not cross and cards never overlap, re-solved as the camera moves;
+side of the model ordered by screen height (then untangled where two would still cross) so leaders do not cross and
+cards never overlap, re-solved as the camera moves; a view opened with a section is framed on the part the section keeps;
 FRAMES shows every interface frame; CABLES shows the routed wire harnesses;
 HARDWARE places the stack harness's fasteners and checks the screw stack-up;
 FOCUS looks along the selected interface's normal.
