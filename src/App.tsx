@@ -278,6 +278,8 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
 
   // ---- the host channel: messages in, events out (README, "Host messages")
   const [centre, setCentre] = useState<{ id: string; seq: number }>();
+  // a host's select brings what it selected into view (unless it says not to)
+  const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -309,6 +311,7 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
         case "uhd-viewer:select": {
           const sel = selectTarget(v, d, m.ids);
           if (sel !== undefined) setSelection(sel);
+          if (sel && m.reveal !== false && shownView !== "3d") setReveal({ selection: sel, seq: ++seq.current });
           // the 3D view selects too (a module's body or a mate), without moving the camera
           if (shownView === "3d") {
             const t = cadSelectTarget(sys, lookup, d, sel, m.ids);
@@ -432,6 +435,7 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
               onLive={setLive}
               onPins={onPins}
               centre={centre}
+              reveal={reveal}
               onNodeContext={hostActions.openSource ? onNodeContext : undefined}
             />
             <Toolbar

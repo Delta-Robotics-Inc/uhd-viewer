@@ -429,6 +429,41 @@ async function checkMessages(bundleFile, out) {
     await settle(300);
     expect("select picks a module", (await state()).selected === "gnss" && (await lastSelection())?.id === "gnss", await state());
 
+    // select brings what it selects into view (a DRC Locate with the panel open), unless the host says not to:
+    // zoom in at the top left corner until the camera cable is off screen, then select it
+    await page.mouse.move(80, 120);
+    for (let i = 0; i < 12; i++) {
+      await page.mouse.wheel({ deltaY: -400 });
+      await settle(60);
+    }
+    await settle(600);
+    const viewport = () => frame.evaluate(() => /** @type {HTMLElement} */ (document.querySelector(".react-flow__viewport")).style.transform);
+    const edgeBox = () =>
+      frame.evaluate(() => {
+        const e = document.querySelector(".react-flow__edge.selected");
+        const r = e?.getBoundingClientRect();
+        const inspector = document.querySelector(".inspector")?.getBoundingClientRect();
+        return r ? { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom, w: innerWidth, h: innerHeight, inspectorLeft: inspector?.left ?? null } : null;
+      });
+    const zoomed = await viewport();
+    await send({ type: "uhd-viewer:select", ids: ["link:dji_o4"], reveal: false });
+    await selected("dji_fc");
+    await settle(800);
+    const stayed = await edgeBox();
+    expect("select with reveal: false leaves the view where it is", (await viewport()) === zoomed && stayed && (stayed.x1 < 0 || stayed.x0 > stayed.w || stayed.y1 < 0 || stayed.y0 > stayed.h || (stayed.inspectorLeft !== null && stayed.x0 > stayed.inspectorLeft)), { zoomed, stayed });
+    await send({ type: "uhd-viewer:select", ids: [] });
+    await settle(200);
+    await send({ type: "uhd-viewer:select", ids: ["link:dji_o4"] });
+    await selected("dji_fc");
+    await settle(1200);
+    const shown = await edgeBox();
+    const clearRight = shown ? (shown.inspectorLeft ?? shown.w) : 0;
+    expect("select brings an off-screen link into view, clear of the inspector", shown && shown.x0 >= 0 && shown.y0 >= 0 && shown.x1 <= clearRight && shown.y1 <= shown.h && (await viewport()) !== zoomed, shown);
+    await page.screenshot({ path: join(out, "08b-messages-reveal.png") });
+    await send({ type: "uhd-viewer:select", ids: ["gnss"] });
+    await selected("gnss");
+    await settle(300);
+
     // open actions go to the host
     const tabs = (await browser.pages()).length;
     const clicked = await frame.evaluate(() => {

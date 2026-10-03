@@ -11,6 +11,7 @@ import { systemDiagnostics } from "../src/model/diagnostics";
 import { commandBus, connectParent, deliver, type ChannelWindow } from "../src/host/channel";
 import { isViewerEvent, originAllowed, originList, parseHostMessage } from "../src/host/protocol";
 import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, hostSelection, selectTarget, selectionKey } from "../src/host/targets";
+import { revealViewport, selectionBounds } from "../src/canvas/reveal";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
 
 const defs = new Map((bundle.definitions as unknown as ModuleDef[]).map((d) => [d.id, d]));
@@ -26,6 +27,10 @@ describe("host messages", () => {
     expect(parseHostMessage({ type: "uhd-viewer:drill", path: "/board/" })).toEqual({ type: "uhd-viewer:drill", path: "board" });
     expect(parseHostMessage({ type: "uhd-viewer:select", ids: ["u2", "link:board_mount"] })).toEqual({ type: "uhd-viewer:select", ids: ["u2", "link:board_mount"] });
     expect(parseHostMessage({ type: "uhd-viewer:setView", view: "3d" })).toEqual({ type: "uhd-viewer:setView", view: "3d" });
+    // a select reveals what it selects unless the host says not to
+    expect(parseHostMessage({ type: "uhd-viewer:select", ids: ["u2"], reveal: false })).toEqual({ type: "uhd-viewer:select", ids: ["u2"], reveal: false });
+    expect(parseHostMessage({ type: "uhd-viewer:select", ids: ["u2"], reveal: true })).toEqual({ type: "uhd-viewer:select", ids: ["u2"] });
+    expect(parseHostMessage({ type: "uhd-viewer:select", ids: ["u2"], reveal: "no" })).toBeUndefined();
   });
 
   it("refuses anything else", () => {
@@ -248,5 +253,38 @@ describe("focus, select and drill on the model", () => {
     // not on the diagram's level: the first full instance path
     expect(cadSelectTarget(root, lookup, board, undefined, ["link:enclosure", "nothing", "node:enclosure"])).toEqual({ kind: "node", path: "enclosure" });
     expect(cadSelectTarget(root, lookup, board, undefined, ["board/nothing"])).toBeUndefined();
+  });
+});
+
+describe("select brings the selection into view", () => {
+  const pane = { width: 1000, height: 700 };
+  const rect = { x0: 100, y0: 100, x1: 200, y1: 150 };
+  it("leaves the view alone when the selection is clear of the chrome", () => {
+    expect(revealViewport(rect, { x: 0, y: 0, zoom: 1 }, pane, false)).toBeUndefined();
+  });
+  it("pans, at the same zoom, to a selection off screen or under the inspector", () => {
+    const off = revealViewport(rect, { x: -2000, y: 0, zoom: 1 }, pane, false)!;
+    expect(off.zoom).toBe(1);
+    // centred in what the chrome leaves: x 64..936, y 56..628
+    expect(off.x + 150).toBeCloseTo(500);
+    expect(off.y + 125).toBeCloseTo(342);
+    // at x 700..800 it is on screen but under the inspector (376 px on the right)
+    const under = revealViewport(rect, { x: 600, y: 0, zoom: 1 }, pane, true)!;
+    expect(under).toBeDefined();
+    expect(under.x + 200).toBeLessThanOrEqual(pane.width - 376);
+  });
+  it("zooms out only as far as a large selection needs, never in", () => {
+    const big = revealViewport({ x0: 0, y0: 0, x1: 4000, y1: 100 }, { x: 0, y: 0, zoom: 1 }, pane, false)!;
+    expect(big.zoom).toBeCloseTo((1000 - 128 - 48) / 4000);
+    expect(revealViewport(rect, { x: -5000, y: 0, zoom: 0.5 }, pane, false)!.zoom).toBe(0.5);
+  });
+  it("finds where a module or a link is drawn on the level", () => {
+    const v = view(["board"]);
+    const layout = { boxes: Object.fromEntries(v.nodes.map((n, i) => [n.id, { x: i * 100, y: 0, w: 50, h: 40 }])), routes: Object.fromEntries(v.links.map((l) => [l.id, [[10, 20], [300, 400]]])) };
+    const node = v.nodes[1];
+    expect(selectionBounds(v, layout as never, { kind: "node", id: node.id })).toEqual({ x0: 100, y0: 0, x1: 150, y1: 40 });
+    expect(v.links.length).toBeGreaterThan(0);
+    expect(selectionBounds(v, layout as never, { kind: "link", id: v.links[0].linkId })).toEqual({ x0: 10, y0: 20, x1: 300, y1: 400 });
+    expect(selectionBounds(v, layout as never, { kind: "node", id: "nothing" })).toBeUndefined();
   });
 });

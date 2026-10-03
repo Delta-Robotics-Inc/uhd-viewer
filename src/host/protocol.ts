@@ -28,7 +28,8 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
     }
     case "uhd-viewer:select": {
       const ids = isString(m.ids) ? [m.ids] : Array.isArray(m.ids) && m.ids.every(isString) ? m.ids : undefined;
-      return ids ? { type: m.type, ids } : undefined;
+      if (!ids || (m.reveal !== undefined && typeof m.reveal !== "boolean")) return undefined;
+      return m.reveal === false ? { type: m.type, ids, reveal: false } : { type: m.type, ids };
     }
     case "uhd-viewer:setView":
       return m.view === "diagram" || m.view === "3d" ? { type: m.type, view: m.view } : undefined;

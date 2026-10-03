@@ -61,7 +61,7 @@ export function render(element: HTMLElement, props: AppProps): ViewerHandle {
       root.unmount();
     },
     focus: (path) => void post({ type: "uhd-viewer:focus", path }),
-    select: (ids) => void post({ type: "uhd-viewer:select", ids }),
+    select: (ids, options) => void post({ type: "uhd-viewer:select", ids, ...(options?.reveal === false ? { reveal: false } : {}) }),
     drill: (path) => void post({ type: "uhd-viewer:drill", path }),
     setView: (view) => void post({ type: "uhd-viewer:setView", view }),
     post,

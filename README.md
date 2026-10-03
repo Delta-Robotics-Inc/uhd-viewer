@@ -325,7 +325,7 @@ messages are the same either way:
 | Direction | Message | Meaning |
 | --- | --- | --- |
 | host → viewer | `{type: "uhd-viewer:focus", path}` | Drill to the level that holds the module at instance path `path` (`"arm_fl/motor"`), select it, open the inspector and bring the module into view. A module already drawn on the current level (also inside a module expanded in place) is selected there. In the 3D view its body is selected and looked at. |
-| | `{type: "uhd-viewer:select", ids}` | Select the first of `ids` drawn on the current level: a module, a net, or a link. Ids are canonical (as `selectionChanged` reports them) or relative to the level; `node:` and `link:` prefixes pick the kind. An empty list clears the selection. In the 3D view it selects there too, without moving the camera: the module's body (or, for an id not on the diagram's level, the first full instance path) or the mate of a link; nets and links without a mate are not drawn in 3D, so they leave the 3D selection alone. |
+| | `{type: "uhd-viewer:select", ids, reveal?}` | Select the first of `ids` drawn on the current level: a module, a net, or a link. Ids are canonical (as `selectionChanged` reports them) or relative to the level; `node:` and `link:` prefixes pick the kind. An empty list clears the selection. When the selection is off screen or under the inspector, the diagram pans to it (zooming out only if it must, never in); `reveal: false` leaves the view where it is. In the 3D view it selects there too, without moving the camera: the module's body (or, for an id not on the diagram's level, the first full instance path) or the mate of a link; nets and links without a mate are not drawn in 3D, so they leave the 3D selection alone. |
 | | `{type: "uhd-viewer:drill", path}` | Show the level of an instance path (`""` is the root), as far as it names modules with children. A level of the diagram: the 3D view shows the whole assembly at any level, so there it sets the level the diagram returns to. |
 | | `{type: "uhd-viewer:setView", view}` | `"diagram"` or `"3d"`. |
 | viewer → host | `{type: "uhd-viewer:ready"}` | The model is on screen. Messages sent earlier wait for it. |
@@ -333,7 +333,7 @@ messages are the same either way:
 | | `{type: "uhd-viewer:openSource", defId, instancePath?}` | The user asked for a module's source: *OPEN SOURCE* in the inspector (modules and links) or a module's context menu (right-click, on the canvas or in the hierarchy). Offered only when a host takes it. |
 | | `{type: "uhd-viewer:openArtifact", defId, artifactId}` | The user picked an artifact file row in the inspector. Without a host the row opens the file in a new tab, as before. |
 
-With `mountViewer`, the handle has `focus(path)`, `select(ids)`,
+With `mountViewer`, the handle has `focus(path)`, `select(ids, { reveal? })`,
 `drill(path)` and `setView(view)`, and `post(message)` for a message object as
 it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`
 and `onOpenArtifact`. Giving `onOpenSource` turns on the *OPEN SOURCE* actions;
@@ -390,6 +390,8 @@ allows (`viewerHandler({ hostOrigins })`). On the quadcopter it checks that the 
 arm, selects the motor, brings it into view clear of the inspector and reports
 it with its definition; that `select` takes the first id on the level (a link
 given by the second half of a cable, `dji_o4`, selects the line `dji_fc`);
+that `select` with `reveal: false` leaves a zoomed-in view where it is, and
+without it brings the off-screen cable into view clear of the inspector;
 that *OPEN SOURCE* and an artifact row reach the host and no tab opens; that
 events go to the host's origin only; that `setView` switches to the 3D view,
 where `focus` selects the body, and back; and that a frame not told about the

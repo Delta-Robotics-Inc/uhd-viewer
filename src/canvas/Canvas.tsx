@@ -7,6 +7,7 @@ import {
   ReactFlow,
   useNodesInitialized,
   useReactFlow,
+  useStore,
   type Edge,
   type Node,
   type NodeChange,
@@ -19,6 +20,7 @@ import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
 import type { Live } from "../App";
+import { revealViewport, selectionBounds } from "./reveal";
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
@@ -49,6 +51,8 @@ export interface CanvasProps {
   onLive: (live: Live | null) => void;
   /** A node to bring into view (a host's focus), once it is drawn; `seq` tells repeats apart. */
   centre?: { id: string; seq: number };
+  /** A selection to bring into view if it is not (a host's select): panned to, zoomed out only if it must; `seq` tells repeats apart. */
+  reveal?: { selection: NonNullable<Selection>; seq: number };
   /** Right-click on a node: its context menu at the pointer (the browser's own when not given). */
   onNodeContext?: (id: string, x: number, y: number) => void;
 }
@@ -197,6 +201,23 @@ export function Canvas(props: CanvasProps) {
     }, 60);
     return () => clearTimeout(t);
   }, [centre, drawn, nodes, flow, inspector]);
+
+  // a host's select: when what it selected is off screen (or under the inspector), pan to it
+  const revealed = useRef(0);
+  const { reveal } = props;
+  const paneWidth = useStore((s) => s.width);
+  const paneHeight = useStore((s) => s.height);
+  useEffect(() => {
+    if (!reveal || !drawn || revealed.current === reveal.seq || !paneWidth || !paneHeight) return;
+    const rect = selectionBounds(vm, layout, reveal.selection);
+    if (!rect) return;
+    const t = setTimeout(() => {
+      revealed.current = reveal.seq;
+      const next = revealViewport(rect, flow.getViewport(), { width: paneWidth, height: paneHeight }, inspector ?? false);
+      if (next) void flow.setViewport(next, { duration: 300 });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [reveal, drawn, vm, layout, flow, inspector, paneWidth, paneHeight]);
 
   return (
     <ReactFlow

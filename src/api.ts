@@ -110,8 +110,12 @@ export interface ViewerSelection {
 export type ViewerHostMessage =
   /** Drill to the level that holds the module, select it and centre it. */
   | { type: "uhd-viewer:focus"; path: string }
-  /** Select on the current level (the first id that is there; none: clear the selection). */
-  | { type: "uhd-viewer:select"; ids: string[] }
+  /**
+   * Select on the current level (the first id that is there; none: clear the
+   * selection). The diagram pans (zooming out only if it must) to bring the
+   * selection into view when it is not; `reveal: false` leaves the view where it is.
+   */
+  | { type: "uhd-viewer:select"; ids: string[]; reveal?: boolean }
   /** Show the level of this instance path ("" is the root system). */
   | { type: "uhd-viewer:drill"; path: string }
   | { type: "uhd-viewer:setView"; view: ViewerView };
@@ -134,8 +138,11 @@ export interface ViewerHandle {
   unmount(): void;
   /** Drill to the level that holds the module at `path`, select it and centre it. */
   focus(path: string): void;
-  /** Select on the current level: the first of `ids` drawn there (an empty list clears the selection). */
-  select(ids: string[]): void;
+  /**
+   * Select on the current level: the first of `ids` drawn there (an empty list
+   * clears the selection), brought into view unless `reveal` is false.
+   */
+  select(ids: string[], options?: { reveal?: boolean }): void;
   /** Show the level of an instance path ("" is the root system). */
   drill(path: string): void;
   setView(view: ViewerView): void;
