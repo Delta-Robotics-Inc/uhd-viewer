@@ -25,12 +25,14 @@ import { viewerHandler } from "../bin/serve.mjs";
 
 const W = 1600;
 const H = 1000;
+/** Software WebGL (SwiftShader) with CPU raster and compositing: without the last three, zoomed diagrams keep stale tiles (PB-873). */
+const HEADLESS_GL = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-rasterization", "--disable-partial-raster", "--disable-gpu-compositing"];
 
 const launch = (extra = []) =>
   puppeteer.launch({
     executablePath: process.env.CHROME ?? "/usr/bin/google-chrome",
     headless: true,
-    args: ["--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", `--window-size=${W},${H}`, ...extra],
+    args: ["--no-sandbox", ...HEADLESS_GL, "--hide-scrollbars", `--window-size=${W},${H}`, ...extra],
     defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
   });
 
@@ -61,7 +63,9 @@ async function visit(browser, url, ready, timeout = 180000) {
   page.on("pageerror", (e) => errors.push(String(e)));
   // fresh layout state for every run (dev and served runs share no storage, but be explicit)
   await page.evaluateOnNewDocument(() => localStorage.clear());
-  await page.goto(url, { waitUntil: "networkidle0", timeout });
+  // with GPU compositing off, Chrome never reports network idle on a WebGL page: wait for the requests instead
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout });
+  await page.waitForNetworkIdle({ idleTime: 500, timeout });
   await page.waitForFunction(ready, { timeout });
   await settle(1500);
   return { page, failed: () => failed.filter((f) => !/favicon\.ico/.test(f)), errors, ok: () => ok };
@@ -358,9 +362,9 @@ async function checkMessages(bundleFile, out) {
   const appPort = await listen(app);
   const closedPort = await listen(closedApp);
   const outerUrl = (port, query = "") => `${hostOrigin}/?src=${encodeURIComponent(`http://localhost:${port}/${query}`)}`;
-  // rasterized on the CPU: with swiftshader, a frame on another origin otherwise keeps stale
-  // tiles in its screenshots (nodes of earlier levels and zooms that are not in the DOM)
-  const browser = await launch(["--disable-gpu-rasterization", "--disable-partial-raster"]);
+  // rasterized on the CPU (HEADLESS_GL): a frame on another origin otherwise keeps stale tiles
+  // in its screenshots (nodes of earlier levels and zooms that are not in the DOM)
+  const browser = await launch();
   const results = [];
   const expect = (name, ok, detail) => {
     results.push({ name, ok: Boolean(ok), detail });

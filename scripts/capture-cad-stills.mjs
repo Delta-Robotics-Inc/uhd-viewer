@@ -51,15 +51,19 @@ const SHOTS = [
 const ONLY = process.env.SHOTS ? new RegExp(process.env.SHOTS) : null;
 
 mkdirSync(OUT, { recursive: true });
+/** Software WebGL (SwiftShader) with CPU raster and compositing: without the last three, zoomed diagrams keep stale tiles (PB-873). */
+const HEADLESS_GL = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-rasterization", "--disable-partial-raster", "--disable-gpu-compositing"];
 const browser = await puppeteer.launch({
   executablePath: chrome(),
   headless: "new",
-  args: ["--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", `--window-size=${W},${H}`],
+  args: ["--no-sandbox", ...HEADLESS_GL, "--hide-scrollbars", `--window-size=${W},${H}`],
   defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
 });
 const page = await browser.newPage();
 page.on("console", (m) => m.type() === "error" && console.error("[page]", m.text()));
-await page.goto(`http://localhost:5178/?view=3d&present=1&labels=0${QUERY}`, { waitUntil: "networkidle0", timeout: 180000 });
+// with GPU compositing off, Chrome never reports network idle on a WebGL page: wait for the requests instead
+await page.goto(`http://localhost:5178/?view=3d&present=1&labels=0${QUERY}`, { waitUntil: "domcontentloaded", timeout: 180000 });
+await page.waitForNetworkIdle({ idleTime: 500, timeout: 180000 });
 await page.waitForFunction(() => window.__cad && window.__cad.ready() >= 16, { timeout: 180000 });
 await new Promise((r) => setTimeout(r, 5000)); // hardware and harness GLBs
 
