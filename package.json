@@ -1,6 +1,7 @@
 {
   "name": "@deltarobotics/uhd-viewer",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "Standalone viewer for UHD systems: modules, interfaces, interface links, and harnesses.",
   "bin": {
@@ -40,8 +41,7 @@
     "test": "vitest run",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
-    "prepack": "npm run build",
-    "prepublishOnly": "node scripts/guard-publish.mjs"
+    "prepack": "npm run build"
   },
   "peerDependencies": {
     "@deltarobotics/uhd": ">=0.2.0"

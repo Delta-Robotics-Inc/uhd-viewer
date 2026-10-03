@@ -24,8 +24,9 @@ npm test             # vitest: bundle loading, nets and boards, sample fixtures,
 npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
 ```
 
-The package is private: it is published only to the stack's local registry
-(`publishConfig`, guarded by `scripts/guard-publish.mjs`; `prepack` runs
+The package is private (`"private": true`, so `npm publish` refuses it): it is
+published only to the stack's local registry, by protoboard-cli's
+`scripts/registry/publish-stack.mjs` from a staged copy (`prepack` runs
 `npm run build`, so the tarball's `dist/` matches the source). See
 protoboard-cli's `docs/guides/local-registry.md`.
 
