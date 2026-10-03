@@ -12,8 +12,9 @@ Tracking: PB-770 (Track B) under PB-763 in the ProtoBoard Stack Linear project.
 
 ## Run
 
-The viewer imports UHD source and library parts from a sibling checkout
-(`../uhd`) until UHD ships a JSON form (PB-778).
+The viewer imports UHD source from a sibling checkout (`../uhd`) until UHD
+ships a JSON form (PB-778). UHD has no part library; parts reach the viewer
+inside bundles.
 
 ```bash
 # ../uhd on branch mark/pb-793-child-link-integrity (or later)
@@ -144,8 +145,8 @@ routed for the assembled model. Nothing about a cable is drawn from outside
 the bundle.
 
 URL: `view=3d&body=arm_fl/motor&iface=base_mount&dir=feature&explode=14&focus=1`
-(also `mate=<link>`, `harness=<path>`, `frames=1`, `wires=0`, `hardware=0`). The vendor GNSS GLB
-is generated locally by `library/cad/py/gnss_vendor.py` in the UHD repo.
+(also `mate=<link>`, `harness=<path>`, `frames=1`, `wires=0`, `hardware=0`). A vendor body
+(the GNSS GLB) comes with the bundle when its terms allow it; the viewer does not generate it.
 
 Stills for review: `node scripts/capture-cad-stills.mjs <out-dir>` renders a
 fixed set of shots (assembled from four sides, exploded, labels, stack and
@@ -221,10 +222,10 @@ hints, appearance, keyed by instance path). It never imports a project.
   itself for every scenario.
 - Part evidence: the inspector shows a part's evidence traits from the bundle.
   The audit result and source list come from the part's `sources.json` and
-  `verification.json`, which bundles do not carry yet. In development they are
-  read from the sibling UHD checkout's part library
-  (`src/model/library-evidence.ts`); production builds do not contain the
-  library and show the traits only.
+  `verification.json`, which bundles do not carry yet and UHD has no part
+  library to read them from, so the inspector shows the traits only.
+  `registerEvidenceFiles` (`src/model/evidence.ts`) is the hook for supplying
+  them; nothing calls it yet.
 - Without display hints, the diagram lays itself out and 3D labels are derived
   from instance names, harness children and mates; the assembly is placed from
   the top-level module with the most interface frames.

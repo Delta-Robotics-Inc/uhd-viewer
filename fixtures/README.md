@@ -39,8 +39,8 @@ incomplete.
   placement is hand-made. It is renamed `sample-imu-board` so it is not
   mistaken for the fixture itself.
 - **The parts** are the fixture's, as UHD defines them, without their
-  artifacts: their CAD files live in the UHD part library, which these
-  bundles do not ship.
+  artifacts (UHD's fixture copies carry none: the board's own CAD draws
+  them inside board.glb).
 - **The enclosure** (`sample-imu-enclosure`) is a sample definition written
   here: `board_mount` (two bosses), `cable_entry` (an opening for the
   battery lead) and `swd_window` (an opening in the lid over the SWD pads),

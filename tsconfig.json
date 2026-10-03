@@ -12,8 +12,7 @@
     "allowImportingTsExtensions": false,
     "types": ["vite/client", "node"],
     "paths": {
-      "@uhd/*": ["../uhd/src/*"],
-      "@uhd-library/*": ["../uhd/library/*"]
+      "@uhd/*": ["../uhd/src/*"]
     }
   },
   "include": ["src", "fixtures/src", "vite.config.ts"]

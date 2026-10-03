@@ -1,11 +1,11 @@
 /**
- * Evidence for a part: its committed sources.json and verification.json
- * (UHD skills/uhd-part-verify) plus the evidence traits on its definition.
+ * Evidence for a part: its sources.json and verification.json, when they are
+ * registered (registerEvidenceFiles; nothing does yet), plus the evidence
+ * traits on its definition.
  *
- * The traits come with the bundle. The two files do not (yet): in
- * development they are read from the sibling UHD checkout's part library
- * (library-evidence.ts, registered by main.tsx); a production build ships
- * without them and shows the traits only.
+ * The traits come with the bundle. The two files do not (yet): UHD has no
+ * part library to read them from, so without a host that supplies them the
+ * viewer shows the traits only.
  */
 import type { ModuleDef, TraitDef } from "@uhd/types/index.js";
 

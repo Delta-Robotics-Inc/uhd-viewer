@@ -1384,50 +1384,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (1 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -1477,76 +1433,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM0_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -1598,76 +1484,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM0_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -1717,76 +1533,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM1_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -1838,76 +1584,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM1_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -1957,76 +1633,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM2_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -2078,76 +1684,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM2_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -2197,76 +1733,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM3_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -2318,76 +1784,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM3_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -2419,50 +1815,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (2 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -2512,76 +1864,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM4_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -2633,76 +1915,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM4_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -2752,76 +1964,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM5_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -2873,76 +2015,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM5_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -2992,76 +2064,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM6_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -3113,76 +2115,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM6_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -3232,76 +2164,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM7_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -3353,76 +2215,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM7_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -3453,37 +2245,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / Table 619 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_input",
-          "direction": "sink",
-          "signal_class": "data",
-          "note": "TESTEN — factory test enable (IOVDD bank)."
-         }
-        ]
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "pull_down_at_reset": true,
-        "source": "RP2040 Datasheet Table 619 (internal pull-down at reset)"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Must be tied externally to GND in production use — a floating TESTEN can place the chip in factory test mode and prevent normal boot. Not a ground source.",
-        "source": "ProtoPart pin 19 description / design_rules / warnings"
-       }
-      }
      ]
     },
     {
@@ -3510,33 +2271,6 @@
        "unit": "Hz",
        "value": 12000000
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / §2.16 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "XIN",
-          "direction": "sink",
-          "signal_class": "clock",
-          "note": "Crystal oscillator input. Connect a 12 MHz crystal between XIN/XOUT with load capacitors, or drive XIN with a single-ended CMOS clock (XOUT disconnected)."
-         },
-         {
-          "name": "digital_input",
-          "direction": "sink",
-          "signal_class": "clock"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      }
      ]
     },
     {
@@ -3556,33 +2290,6 @@
      ],
      "capabilities": [
       "xtal_out"
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / §2.16 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "XOUT",
-          "direction": "source",
-          "signal_class": "clock",
-          "note": "Crystal oscillator output. Connect to the 12 MHz crystal opposite XIN; leave open when XIN is driven by an external clock."
-         },
-         {
-          "name": "digital_output",
-          "direction": "source",
-          "signal_class": "clock"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      }
      ]
     },
     {
@@ -3614,50 +2321,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (3 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -3689,54 +2352,6 @@
      "capabilities": [
       "power_in",
       "dvdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "DVDD",
-        "note": "1.1 V digital core supply (1 of 2). Keep within 1.05-1.16 V per Datasheet Table 634 (use 1.15 V if running clk_sys at 200 MHz)."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_dvdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_23",
-         "pin_50"
-        ]
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_45",
-        "condition": "always",
-        "effect": "DVDD must not be left floating: supply from VREG_VOUT (typical — route pin 45 externally to both DVDD pins with low impedance) or from an external 1.1 V regulator.",
-        "source": "ProtoPart design_rules / warnings"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -3765,41 +2380,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / Table 342 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "SWCLK",
-          "direction": "sink",
-          "signal_class": "clock",
-          "note": "Serial Wire Debug clock input (Digital In FT, IOVDD bank). Multi-drop SWD bus access to both M0+ cores; also used to download code."
-         },
-         {
-          "name": "digital_input",
-          "direction": "sink",
-          "signal_class": "clock"
-         }
-        ]
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "pull_up_at_reset": true,
-        "source": "RP2040 Datasheet Table 342, PADS_BANK0:SWCLK (PUE=1/PDE=0)"
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
       }
      ]
     },
@@ -3832,41 +2412,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "SWDIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "Serial Wire Debug bidirectional data. Pair with SWCLK for SWD debug to both cores."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "pull_up_at_reset": true,
-        "source": "ProtoPart pin 25 description ('has internal pull-up')"
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      }
      ]
     },
     {
@@ -3896,37 +2441,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "RESET",
-          "direction": "sink",
-          "signal_class": "data",
-          "note": "Global asynchronous reset. Reset when driven low, run when driven high."
-         }
-        ]
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "pull_up_at_reset": true,
-        "note": "Has internal pull-up; if no external reset is required, tie directly to IOVDD.",
-        "source": "ProtoPart pin 26 description"
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
       }
      ]
     },
@@ -3978,76 +2492,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM0_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -4097,76 +2541,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM0_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -4218,76 +2592,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM1_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -4337,76 +2641,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM1_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -4460,82 +2694,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM2_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPIN0",
-          "direction": "sink",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -4588,82 +2746,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM2_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPOUT0",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -4695,50 +2777,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (4 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -4790,82 +2828,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM3_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPIN1",
-          "direction": "sink",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -4919,82 +2881,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM3_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPOUT1",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -5047,82 +2933,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM4_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPOUT2",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      }
      ]
     },
     {
@@ -5174,82 +2984,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "SPI1_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM4_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "CLOCK_GPOUT3",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F8"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
       }
      ]
     },
@@ -5309,89 +3043,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "analog_input",
-          "direction": "sink",
-          "signal_class": "sense",
-          "note": "ADC0"
-         },
-         {
-          "name": "SPI1_SCK",
-          "direction": "source",
-          "signal_class": "clock",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_CTS",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM5_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      },
-      {
-       "type": "analog_input_clamp",
-       "params": {
-        "note": "The voltage on the ADC analogue inputs must not exceed IOVDD — voltages greater than IOVDD leak through the pad ESD protection diodes (absolute maximum pin voltage IOVDD + 0.5 V, Table 622).",
-        "source": "RP2040 Datasheet §2.9.5 note / Table 622 — corrects the ProtoPart warning's 'clamped to ADC_AVDD + 0.3 V'"
-       }
-      }
      ]
     },
     {
@@ -5449,89 +3100,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "analog_input",
-          "direction": "sink",
-          "signal_class": "sense",
-          "note": "ADC1"
-         },
-         {
-          "name": "SPI1_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART1_RTS",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C1_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM5_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_OVCUR_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      },
-      {
-       "type": "analog_input_clamp",
-       "params": {
-        "note": "The voltage on the ADC analogue inputs must not exceed IOVDD — voltages greater than IOVDD leak through the pad ESD protection diodes (absolute maximum pin voltage IOVDD + 0.5 V, Table 622).",
-        "source": "RP2040 Datasheet §2.9.5 note / Table 622 — corrects the ProtoPart warning's 'clamped to ADC_AVDD + 0.3 V'"
-       }
       }
      ]
     },
@@ -5591,89 +3159,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "analog_input",
-          "direction": "sink",
-          "signal_class": "sense",
-          "note": "ADC2"
-         },
-         {
-          "name": "SPI1_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_TX",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SDA",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM6_A",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_DET",
-          "direction": "sink",
-          "signal_class": "sense",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      },
-      {
-       "type": "analog_input_clamp",
-       "params": {
-        "note": "The voltage on the ADC analogue inputs must not exceed IOVDD — voltages greater than IOVDD leak through the pad ESD protection diodes (absolute maximum pin voltage IOVDD + 0.5 V, Table 622).",
-        "source": "RP2040 Datasheet §2.9.5 note / Table 622 — corrects the ProtoPart warning's 'clamped to ADC_AVDD + 0.3 V'"
-       }
-      }
      ]
     },
     {
@@ -5732,89 +3217,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (GPIO function table) — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         },
-         {
-          "name": "analog_input",
-          "direction": "sink",
-          "signal_class": "sense",
-          "note": "ADC3"
-         },
-         {
-          "name": "SPI1_CSn",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F1"
-         },
-         {
-          "name": "UART0_RX",
-          "direction": "sink",
-          "signal_class": "data",
-          "funcsel": "F2"
-         },
-         {
-          "name": "I2C0_SCL",
-          "direction": "bidirectional",
-          "signal_class": "clock",
-          "funcsel": "F3"
-         },
-         {
-          "name": "PWM6_B",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F4"
-         },
-         {
-          "name": "SIO",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F5"
-         },
-         {
-          "name": "PIO0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F6"
-         },
-         {
-          "name": "PIO1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "funcsel": "F7"
-         },
-         {
-          "name": "USB_VBUS_EN",
-          "direction": "source",
-          "signal_class": "data",
-          "funcsel": "F9"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Logic level tracks IOVDD: 3.3 V typical, 1.8 V supported. All GPIO are NOT 5 V tolerant — apply level shifting for 5 V signals (ProtoPart warnings)."
-       }
-      },
-      {
-       "type": "analog_input_clamp",
-       "params": {
-        "note": "The voltage on the ADC analogue inputs must not exceed IOVDD — voltages greater than IOVDD leak through the pad ESD protection diodes (absolute maximum pin voltage IOVDD + 0.5 V, Table 622).",
-        "source": "RP2040 Datasheet §2.9.5 note / Table 622 — corrects the ProtoPart warning's 'clamped to ADC_AVDD + 0.3 V'"
-       }
-      }
      ]
     },
     {
@@ -5846,50 +3248,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (5 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -5922,39 +3280,6 @@
       "power_in",
       "adc_avdd",
       "analog_supply"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "ADC_AVDD",
-        "note": "Analog supply / reference for the 12-bit ADC. 1.62-3.63 V (typ 3.3 V) per Table 634; ADC performance is compromised below 2.97 V (§2.9.5)."
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "ADC supply filtering for best ENOB",
-        "components": [
-         {
-          "kind": "ferrite_bead",
-          "value": "from the main 3V3 rail",
-          "connection": "3V3 to ADC_AVDD"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF",
-          "connection": "ADC_AVDD to GND"
-         },
-         {
-          "kind": "capacitor",
-          "value": "100 nF",
-          "connection": "ADC_AVDD to GND"
-         }
-        ],
-        "source": "ProtoPart design_rules / adc_avdd power-domain description"
-       }
-      }
      ]
     },
     {
@@ -5986,34 +3311,6 @@
      "capabilities": [
       "power_in",
       "vreg_vin"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "VREG_VIN",
-        "note": "Power input for the internal core voltage regulator (nominal 1.8-3.3 V per Datasheet §1.4.2)."
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ],
      "bridgesTo": [
       "pin_45"
@@ -6050,24 +3347,6 @@
       "power_out",
       "vreg_vout"
      ],
-     "traits": [
-      {
-       "type": "internal_regulator",
-       "params": {
-        "description": "Output of the internal core voltage regulator: nominal 1.1 V at up to 100 mA (Datasheet §1.4.2). Externally route to both DVDD pins (23, 50).",
-        "source": "ProtoPart pin 45 description / ldo interface"
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_23, pin_50",
-        "condition": "internal core LDO in use (typical)",
-        "effect": "Keep VREG_VOUT decoupling close to pin 45 and route to both DVDD pins with low impedance.",
-        "source": "ProtoPart design_rules"
-       }
-      }
-     ],
      "bridgesTo": [
       "pin_23",
       "pin_50"
@@ -6090,57 +3369,6 @@
      ],
      "capabilities": [
       "usb_dm"
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / §1.4.2 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "usb_dm",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "USB 1.1 differential data minus."
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "USB_VDD"
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "note": "USB bus pull-ups/pull-downs are provided internally.",
-        "source": "ProtoPart pin 46 description"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "USB series termination",
-        "components": [
-         {
-          "kind": "resistor",
-          "value": "27 Ω",
-          "connection": "in series with USB_DM"
-         }
-        ],
-        "source": "ProtoPart pin 46 description / design_rules"
-       }
-      },
-      {
-       "type": "layout_requirement",
-       "params": {
-        "note": "Route USB_DP/USB_DM as a 90 Ω differential pair (Hardware Design with RP2040 §2.4.1; the 27 Ω series terminations are from Datasheet §1.4.2).",
-        "source": "ProtoPart design_rules"
-       }
-      }
      ]
     },
     {
@@ -6160,57 +3388,6 @@
      ],
      "capabilities": [
       "usb_dp"
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 / §1.4.2 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "usb_dp",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "USB 1.1 differential data plus."
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "USB_VDD"
-       }
-      },
-      {
-       "type": "internal_pulls",
-       "params": {
-        "available": true,
-        "note": "USB bus pull-ups/pull-downs are provided internally.",
-        "source": "ProtoPart pin 47 description"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "USB series termination",
-        "components": [
-         {
-          "kind": "resistor",
-          "value": "27 Ω",
-          "connection": "in series with USB_DP"
-         }
-        ],
-        "source": "ProtoPart pin 47 description / design_rules"
-       }
-      },
-      {
-       "type": "layout_requirement",
-       "params": {
-        "note": "Route USB_DP/USB_DM as a 90 Ω differential pair (Hardware Design with RP2040 §2.4.1; the 27 Ω series terminations are from Datasheet §1.4.2).",
-        "source": "ProtoPart design_rules"
-       }
-      }
      ]
     },
     {
@@ -6242,43 +3419,6 @@
      "capabilities": [
       "power_in",
       "usb_vdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "USB_VDD",
-        "note": "Dedicated 3.3 V supply for the integrated USB 1.1 PHY. Decouple separately from IOVDD; supply from the same 3.3 V rail with its own decoupling."
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "usb_device, usb_host",
-        "condition": "always (even if USB is unused)",
-        "effect": "USB_VDD must be supplied even if USB is unused; otherwise the USB PHY draws leakage current that may keep the chip from entering low-power states cleanly.",
-        "source": "ProtoPart warnings"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -6310,50 +3450,6 @@
      "capabilities": [
       "power_in",
       "iovdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD",
-        "note": "Digital I/O ring supply (6 of 6). Sets logic level for all 30 GPIOs and the QSPI flash interface."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_iovdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_1",
-         "pin_10",
-         "pin_22",
-         "pin_33",
-         "pin_42",
-         "pin_49"
-        ],
-        "source": "ProtoPart design_rules: 'Tie all six IOVDD pins to the same supply rail (1.8 V or 3.3 V).'"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -6385,54 +3481,6 @@
      "capabilities": [
       "power_in",
       "dvdd"
-     ],
-     "traits": [
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "DVDD",
-        "note": "1.1 V digital core supply (2 of 2). Keep within 1.05-1.16 V per Datasheet Table 634 (use 1.15 V if running clk_sys at 200 MHz)."
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "rp2040_dvdd",
-        "policy": "single_supply_instance_may_serve_all_members",
-        "members": [
-         "pin_23",
-         "pin_50"
-        ]
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_45",
-        "condition": "always",
-        "effect": "DVDD must not be left floating: supply from VREG_VOUT (typical — route pin 45 externally to both DVDD pins with low impedance) or from an external 1.1 V regulator.",
-        "source": "ProtoPart design_rules / warnings"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Supply decoupling",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "100 nF ceramic",
-          "connection": "pin to GND, close to the pin"
-         },
-         {
-          "kind": "capacitor",
-          "value": "1 µF bulk",
-          "connection": "one per rail group"
-         }
-        ],
-        "source": "ProtoPart design_rules / Hardware Design with RP2040"
-       }
-      }
      ]
     },
     {
@@ -6464,40 +3512,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SD3",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "External XIP flash data line 3."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
       }
      ]
     },
@@ -6531,40 +3545,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SCLK",
-          "direction": "source",
-          "signal_class": "clock",
-          "note": "External XIP flash clock output."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
-      }
      ]
     },
     {
@@ -6596,40 +3576,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SD0",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "External XIP flash data line 0 (MOSI in single-bit SPI mode)."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
       }
      ]
     },
@@ -6663,40 +3609,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SD2",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "External XIP flash data line 2."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
-      }
      ]
     },
     {
@@ -6728,40 +3640,6 @@
         1.8,
         3.3
        ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SD1",
-          "direction": "bidirectional",
-          "signal_class": "data",
-          "note": "External XIP flash data line 1 (MISO in single-bit SPI mode)."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
       }
      ]
     },
@@ -6795,55 +3673,6 @@
         3.3
        ]
       }
-     ],
-     "traits": [
-      {
-       "type": "rp2040_pin_functions",
-       "params": {
-        "source": "RP2040 Datasheet Table 1 — carried verbatim from the ProtoPart definition",
-        "functions": [
-         {
-          "name": "QSPI_SS_N",
-          "direction": "source",
-          "signal_class": "data",
-          "note": "External XIP flash chip-select (active low)."
-         },
-         {
-          "name": "digital_io",
-          "direction": "bidirectional",
-          "signal_class": "data"
-         }
-        ]
-       }
-      },
-      {
-       "type": "power_domain",
-       "params": {
-        "domain": "IOVDD"
-       }
-      },
-      {
-       "type": "usage_restriction",
-       "params": {
-        "restriction": "Dedicated to the external XIP flash on any booting design — the chip cannot run user code without it.",
-        "exemption": "Usable as a software-controlled GPIO when not required for flash access (ProtoPart pin descriptions)."
-       }
-      },
-      {
-       "type": "display_notation",
-       "params": {
-        "active_low": true,
-        "display": "QSPI_SS̅"
-       }
-      },
-      {
-       "type": "boot_strapping",
-       "params": {
-        "controls": "USB BOOTSEL UF2 mode: pulling this pin low during reset forces the boot ROM into UF2 mass-storage mode — the standard board-level BOOTSEL mechanism (there is no dedicated USB_BOOT pin on the bare chip).",
-        "recommended_wiring": "Route through a momentary pushbutton to GND to support firmware loading via the USB BOOTSEL UF2 path (ProtoPart design_rules).",
-        "source": "ProtoPart pin 56 description / design_rules / warnings"
-       }
-      }
      ]
     },
     {
@@ -6869,28 +3698,6 @@
        "id": "max_current",
        "unit": "A",
        "value": 1
-      }
-     ],
-     "traits": [
-      {
-       "type": "assembly_requirement",
-       "params": {
-        "note": "Exposed thermal pad on the QFN-56 underside — the single external ground connection (Datasheet §1.4.2), bonded to all internal ground pads on the die. Solder to the PCB ground plane and stitch with thermal vias for heat dissipation and ground reference integrity; leaving it floating violates the ground reference, increases noise, and degrades thermal performance.",
-        "source": "ProtoPart pad_gnd description / design_rules / warnings"
-       }
-      },
-      {
-       "type": "net_shareable",
-       "params": {
-        "net": "gnd",
-        "policy": "single_ground_instance_may_serve_all_members"
-       }
-      },
-      {
-       "type": "pin_designator_note",
-       "params": {
-        "note": "The ProtoPart resource id is 'pad_gnd' (no perimeter pin number); 57 is the CAD-footprint designator for the exposed pad."
-       }
       }
      ]
     },
@@ -6941,33 +3748,7 @@
        "value": 12
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "channels",
-       "params": {
-        "count": 4,
-        "mapping": "ADC0=GPIO26 (pin 38), ADC1=GPIO27 (pin 39), ADC2=GPIO28 (pin 40), ADC3=GPIO29 (pin 41)",
-        "note": "12-bit successive-approximation ADC; an internal temperature sensor occupies a further non-pinned input (ProtoPart usage_notes)."
-       }
-      },
-      {
-       "type": "performance_note",
-       "params": {
-        "note": "Effective ENOB ~9 bits without filtering; ADC performance is compromised below ADC_AVDD = 2.97 V (Datasheet §2.9.5).",
-        "source": "ProtoPart usage_notes / adc_avdd power-domain description"
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_43",
-        "condition": "always",
-        "effect": "ADC_AVDD is the analog supply and conversion reference; the voltage on ADC inputs must not exceed IOVDD (leakage through ESD protection diodes above IOVDD — Datasheet §2.9.5 note). Filter from the main 3V3 with a ferrite bead + 1 µF + 100 nF for best ENOB.",
-        "source": "ProtoPart warnings / design_rules (input limit corrected to the datasheet's IOVDD bound, §2.9.5)"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "spi_0",
@@ -7073,38 +3854,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Arm PL022 SSP",
-        "source": "RP2040 Datasheet §4.4; ProtoPart spi interface description"
-       }
-      },
-      {
-       "type": "signal_naming",
-       "params": {
-        "note": "Datasheet signals are SPI0_TX / SPI0_RX / SPI0_SCK / SPI0_CSn; TX binds the mosi slot, RX the miso slot, CSn the ss slot."
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Four fixed pin groups: GPIO0-3, GPIO4-7, GPIO16-19, GPIO20-23. Signals do not mix across groups arbitrarily — each GPIO carries exactly one fixed SPI0 signal.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F1 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "protopart_constraints",
-       "params": {
-        "requires_matching_voltage_domain": true,
-        "max_lane_rate_mbps": 62
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "spi_1",
@@ -7200,39 +3950,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Arm PL022 SSP",
-        "source": "RP2040 Datasheet §4.4; ProtoPart spi interface description"
-       }
-      },
-      {
-       "type": "signal_naming",
-       "params": {
-        "note": "Datasheet signals are SPI1_TX / SPI1_RX / SPI1_SCK / SPI1_CSn; TX binds the mosi slot, RX the miso slot, CSn the ss slot."
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Three complete fixed pin groups: GPIO8-11, GPIO12-15, GPIO24-27.",
-        "partial_groups": "GPIO28/GPIO29 (pins 40/41) carry only SPI1_RX / SPI1_CSn — not a complete bus by themselves.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F1 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "protopart_constraints",
-       "params": {
-        "requires_matching_voltage_domain": true,
-        "max_lane_rate_mbps": 62
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "uart_0",
@@ -7327,33 +4045,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Arm PL011",
-        "source": "RP2040 Datasheet §4.2; ProtoPart uart interface description"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Four fixed TX/RX groups: GPIO0/1, GPIO12/13, GPIO16/17, GPIO28/29 (CTS/RTS on GPIO2/3, GPIO14/15, GPIO18/19).",
-        "partial_groups": "The GPIO28/29 group has no CTS/RTS pins.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F2 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "flow_control",
-       "params": {
-        "note": "Optional hardware flow control via UART0_CTS / UART0_RTS on the corresponding F2 pins.",
-        "source": "ProtoPart uart interface description"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "uart_1",
@@ -7450,32 +4142,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Arm PL011",
-        "source": "RP2040 Datasheet §4.2; ProtoPart uart interface description"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Four fixed TX/RX groups: GPIO4/5, GPIO8/9, GPIO20/21, GPIO24/25 (CTS/RTS on GPIO6/7, GPIO10/11, GPIO22/23, GPIO26/27).",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F2 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "flow_control",
-       "params": {
-        "note": "Optional hardware flow control via UART1_CTS / UART1_RTS on the corresponding F2 pins.",
-        "source": "ProtoPart uart interface description"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "i2c_0",
@@ -7588,62 +4255,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "display_notation",
-       "params": {
-        "latex": "I^{2}C"
-       }
-      },
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Synopsys DW_apb_i2c",
-        "modes": [
-         "standard-mode",
-         "fast-mode",
-         "fast-mode plus"
-        ],
-        "source": "RP2040 Datasheet §4.3; ProtoPart i2c interface descriptions"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Eight fixed SDA/SCL pairs: GPIO0/1, 4/5, 8/9, 12/13, 16/17, 20/21, 24/25, 28/29.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F3 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "role_note",
-       "params": {
-        "note": "The ProtoPart definition models I2C 0 master and slave as separate interfaces (i2c_0_master / i2c_0_slave); both are roles of the same DW_apb_i2c controller."
-       }
-      },
-      {
-       "type": "protopart_constraints",
-       "params": {
-        "requires_matching_voltage_domain": true
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Open-drain bus pull-ups",
-        "components": [
-         {
-          "kind": "resistor",
-          "value": "bus-speed dependent",
-          "connection": "SDA and SCL to the bus supply"
-         }
-        ],
-        "source": "I²C bus specification (open-drain bus) — not stated in the ProtoPart definition"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "i2c_1",
@@ -7748,62 +4360,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "display_notation",
-       "params": {
-        "latex": "I^{2}C"
-       }
-      },
-      {
-       "type": "controller_ip",
-       "params": {
-        "ip": "Synopsys DW_apb_i2c",
-        "modes": [
-         "standard-mode",
-         "fast-mode",
-         "fast-mode plus"
-        ],
-        "source": "RP2040 Datasheet §4.3; ProtoPart i2c interface descriptions"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Seven fixed SDA/SCL pairs: GPIO2/3, 6/7, 10/11, 14/15, 18/19, 22/23, 26/27.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F3 column); ProtoPart per-pin function lists"
-       }
-      },
-      {
-       "type": "role_note",
-       "params": {
-        "note": "The ProtoPart definition models I2C 1 master and slave as separate interfaces (i2c_1_master / i2c_1_slave); both are roles of the same DW_apb_i2c controller."
-       }
-      },
-      {
-       "type": "protopart_constraints",
-       "params": {
-        "requires_matching_voltage_domain": true
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Open-drain bus pull-ups",
-        "components": [
-         {
-          "kind": "resistor",
-          "value": "bus-speed dependent",
-          "connection": "SDA and SCL to the bus supply"
-         }
-        ],
-        "source": "I²C bus specification (open-drain bus) — not stated in the ProtoPart definition"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "qspi_flash",
@@ -7890,32 +4447,7 @@
        "value": 133000000
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "dedicated_pads",
-        "combination_space": "Exactly one pin set — the QSPI flash bus is not muxed onto bank-0 GPIOs."
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "external QSPI flash",
-        "condition": "always",
-        "effect": "External QSPI flash is mandatory — the RP2040 has no internal flash and cannot boot or run user code without it (typically 2-16 MB). Use a flash compatible with the chip's XIP boot ROM (typically Winbond W25Q-series).",
-        "source": "ProtoPart qspi_flash description / design_rules / warnings"
-       }
-      },
-      {
-       "type": "protopart_constraints",
-       "params": {
-        "requires_matching_voltage_domain": true
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "pwm",
@@ -8077,40 +4609,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "channels",
-       "params": {
-        "count": 16,
-        "detail": "16 channels arranged as 8 slices × 2 channels (A/B). Each slice has an independent 16-bit counter with an 8.4 fractional clock divider (8 integer + 4 fractional bits, Datasheet §4.5.1 / DIV register); channels A and B share the counter but have independent compare registers.",
-        "mapping": "Slice = floor(GPIO/2) mod 8; channel A on even GPIOs, B on odd. GPIO16-29 repeat slices 0-6, so PWM0_A appears on GPIO0 and GPIO16, etc.; PWM7_A/B appear only on GPIO14/15.",
-        "source": "ProtoPart pwm interface description / RP2040 Datasheet §4.5"
-       }
-      },
-      {
-       "type": "measurement_input",
-       "params": {
-        "note": "The B channel can also serve as a frequency / duty-cycle measurement input.",
-        "source": "ProtoPart pwm interface description"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Any bank-0 GPIO via F4; the per-pin PWMn_A/PWMn_B capability tag identifies which slice/channel that pin carries."
-       }
-      },
-      {
-       "type": "application_note",
-       "params": {
-        "note": "8.4 fractional clock dividers (Datasheet §4.5.1) easily cover 22-25 kHz / 12-bit duty applications.",
-        "source": "ProtoPart usage_notes (divider width corrected to the datasheet's 8.4 fractional divider)"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "pio0",
@@ -8137,32 +4636,7 @@
        }
       }
      ],
-     "max_instances": 4,
-     "traits": [
-      {
-       "type": "channels",
-       "params": {
-        "count": 4,
-        "detail": "Four user-programmable I/O state machines per block; eight total across PIO0/PIO1.",
-        "source": "ProtoPart metadata description / usage_notes"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 4,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Any bank-0 GPIO (GPIO0-29) via funcsel F6; QSPI-bank pads are not reachable."
-       }
-      },
-      {
-       "type": "application_note",
-       "params": {
-        "note": "Especially good for protocols not natively supported: I2S, SK6812 / WS2812 LED data, parallel pixel buses (CSI/DPI capture), software USB host.",
-        "source": "ProtoPart usage_notes / application_examples"
-       }
-      }
-     ]
+     "max_instances": 4
     },
     {
      "id": "pio1",
@@ -8189,32 +4663,7 @@
        }
       }
      ],
-     "max_instances": 4,
-     "traits": [
-      {
-       "type": "channels",
-       "params": {
-        "count": 4,
-        "detail": "Four user-programmable I/O state machines per block; eight total across PIO0/PIO1.",
-        "source": "ProtoPart metadata description / usage_notes"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 4,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Any bank-0 GPIO (GPIO0-29) via funcsel F7; QSPI-bank pads are not reachable."
-       }
-      },
-      {
-       "type": "application_note",
-       "params": {
-        "note": "Especially good for protocols not natively supported: I2S, SK6812 / WS2812 LED data, parallel pixel buses (CSI/DPI capture), software USB host.",
-        "source": "ProtoPart usage_notes / application_examples"
-       }
-      }
-     ]
+     "max_instances": 4
     },
     {
      "id": "ws2812",
@@ -8249,25 +4698,7 @@
        "value": 800000
       }
      ],
-     "max_instances": 8,
-     "traits": [
-      {
-       "type": "implemented_by",
-       "params": {
-        "note": "WS2812 / NeoPixel-family LED data line driver implemented via a PIO state machine (Datasheet §3.6.2 'WS2812 LEDs'); bit timing is held in the PIO program. One bank-0 GPIO drives a daisy-chain of LEDs using the canonical ~800 kbit/s NRZ wire protocol.",
-        "consumes": "one PIO state machine per instance",
-        "source": "ProtoPart ws2812 interface description"
-       }
-      },
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 8,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Any GPIO0-29 can serve as the data pin."
-       }
-      }
-     ]
+     "max_instances": 8
     },
     {
      "id": "usb_device",
@@ -8313,32 +4744,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_48",
-        "condition": "always",
-        "effect": "The USB PHY is powered from the dedicated USB_VDD rail (3.135-3.63 V)."
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "usb_host",
-        "condition": "usb_host active",
-        "effect": "One PHY: device and host modes are mutually exclusive (see the usb_phy_mode interface group)."
-       }
-      },
-      {
-       "type": "boot_rom_role",
-       "params": {
-        "note": "In device mode used for the BOOTSEL UF2 mass-storage interface and user firmware CDC/HID.",
-        "source": "ProtoPart usb_device description"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "usb_host",
@@ -8384,36 +4790,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "pin_48",
-        "condition": "always",
-        "effect": "The USB PHY is powered from the dedicated USB_VDD rail (3.135-3.63 V)."
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "usb_device",
-        "condition": "usb_device active",
-        "effect": "One PHY: device and host modes are mutually exclusive (see the usb_phy_mode interface group)."
-       }
-      },
-      {
-       "type": "operating_modes",
-       "params": {
-        "modes": [
-         "full-speed",
-         "low-speed"
-        ],
-        "note": "USB 1.1 host mode supports Full Speed and Low Speed devices (software stack required).",
-        "source": "RP2040 Datasheet Table 1 / §1.2 ('Full Speed device and Full/Low Speed host') — corrects the ProtoPart usb_host description's 'full-speed only'"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "usb_vbus_detect",
@@ -8438,24 +4815,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Available on GPIO1, 4, 7, 10, 13, 16, 19, 22, 25, 28 per Datasheet Table 2.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F9 column); ProtoPart interface description"
-       }
-      },
-      {
-       "type": "description",
-       "params": {
-        "note": "USB VBUS detection input via GPIO F9 mux (USB_VBUS_DET). Read this signal to know when the USB host is providing bus power."
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "usb_vbus_enable",
@@ -8480,24 +4840,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Available on GPIO2, 5, 8, 11, 14, 17, 20, 23, 26, 29 per Datasheet Table 2.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F9 column); ProtoPart interface description"
-       }
-      },
-      {
-       "type": "description",
-       "params": {
-        "note": "USB VBUS enable output via GPIO F9 mux (USB_VBUS_EN). Drives an external USB host power switch (e.g. TPS2051) in host mode."
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "usb_overcurrent_detect",
@@ -8522,24 +4865,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 1,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "Available on GPIO0, 3, 6, 9, 12, 15, 18, 21, 24, 27 per Datasheet Table 2.",
-        "source": "RP2040 Datasheet §1.4.3 Table 2 (F9 column); ProtoPart interface description"
-       }
-      },
-      {
-       "type": "description",
-       "params": {
-        "note": "USB over-current detection input via GPIO F9 mux (USB_OVCUR_DET). Reads the active-low overcurrent flag from an external USB power switch in host mode."
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "clock_gp_input",
@@ -8580,24 +4906,7 @@
        }
       }
      ],
-     "max_instances": 2,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 2,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "CLOCK_GPIN0 on GPIO20 (pin 31), CLOCK_GPIN1 on GPIO22 (pin 34) via F8 — no other pins.",
-        "source": "RP2040 Datasheet §1.4.3 Table 3 / §2.15.2; ProtoPart clock_gp_input description"
-       }
-      },
-      {
-       "type": "description",
-       "params": {
-        "note": "Routes an external clock signal into the chip's clocks block as an alternative reference (e.g. to drive clk_ref or feed the frequency counter)."
-       }
-      }
-     ]
+     "max_instances": 2
     },
     {
      "id": "clock_gp_output",
@@ -8652,24 +4961,7 @@
        }
       }
      ],
-     "max_instances": 4,
-     "traits": [
-      {
-       "type": "instance_combinations",
-       "params": {
-        "instances_in_silicon": 4,
-        "routing": "gpio_funcsel_fixed",
-        "combination_space": "CLOCK_GPOUT0-3 fixed to GPIO21 (pin 32), GPIO23 (pin 35), GPIO24 (pin 36), GPIO25 (pin 37) via F8.",
-        "source": "RP2040 Datasheet §1.4.3 Table 3 / §2.15.2; ProtoPart clock_gp_output description"
-       }
-      },
-      {
-       "type": "description",
-       "params": {
-        "note": "Drives any selected internal clock (PLL outputs, clk_sys, etc.) onto a GPIO with optional integer divide, for use by other parts."
-       }
-      }
-     ]
+     "max_instances": 4
     },
     {
      "id": "crystal_oscillator",
@@ -8723,50 +5015,7 @@
        "value": 12000000
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "oscillator_topology",
-       "params": {
-        "note": "Pierce-type crystal oscillator (XOSC, Datasheet §2.16). XIN and XOUT form the inverter terminals of an on-chip Pierce circuit driving an external crystal. Drives clk_ref / the PLLs.",
-        "source": "ProtoPart crystal_oscillator description"
-       }
-      },
-      {
-       "type": "implied_passives",
-       "params": {
-        "purpose": "Crystal load",
-        "components": [
-         {
-          "kind": "capacitor",
-          "value": "per crystal vendor C_L spec",
-          "connection": "XIN to GND"
-         },
-         {
-          "kind": "capacitor",
-          "value": "per crystal vendor C_L spec",
-          "connection": "XOUT to GND"
-         }
-        ],
-        "source": "ProtoPart crystal_oscillator description ('external crystal with two load capacitors to ground')"
-       }
-      },
-      {
-       "type": "co_requirement",
-       "params": {
-        "with": "usb_device, usb_host",
-        "condition": "USB bootloader / USB in use",
-        "effect": "The USB bootloader requires a 12 MHz crystal (or a 12 MHz CMOS clock driven into XIN with XOUT left open, per §1.4.2 / §2.16.2).",
-        "source": "ProtoPart pin 20 / crystal_oscillator descriptions"
-       }
-      },
-      {
-       "type": "alternative_drive",
-       "params": {
-        "note": "XIN may instead be driven by a single-ended CMOS clock with XOUT disconnected."
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "swd",
@@ -8808,16 +5057,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "description",
-       "params": {
-        "note": "Serial Wire Debug interface to both Cortex-M0+ cores (Datasheet §2.3.4). Dedicated multi-drop SWD bus on SWCLK (pin 24) and SWDIO (pin 25), each with internal pull-up at reset. Used for debugging and to download code over the bus.",
-        "source": "ProtoPart swd interface description"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "reset_input",
@@ -8852,16 +5092,7 @@
        }
       }
      ],
-     "max_instances": 1,
-     "traits": [
-      {
-       "type": "description",
-       "params": {
-        "note": "Active-low RUN pin (pin 26). Drive low to hold the RP2040 in reset; has internal pull-up so it can be left unconnected or tied to IOVDD for autonomous power-on reset.",
-        "source": "ProtoPart reset_input description"
-       }
-      }
-     ]
+     "max_instances": 1
     },
     {
      "id": "footprint_mounting",
@@ -8880,15 +5111,6 @@
      "capabilities": [
       "qfn56_7x7_0p4mm",
       "surface_mount"
-     ],
-     "traits": [
-      {
-       "type": "assembly_requirement",
-       "params": {
-        "note": "Reflow solder to the QFN-56 land pattern. The center exposed pad must be soldered to the PCB ground plane and stitched with thermal vias for heat dissipation and electrical ground continuity.",
-        "source": "ProtoPart footprint_mounting description"
-       }
-      }
      ]
     },
     {
@@ -8909,14 +5131,6 @@
      "capabilities": [
       "heat_sink",
       "pcb_thermal_plane"
-     ],
-     "traits": [
-      {
-       "type": "assembly_requirement",
-       "params": {
-        "note": "Same physical pad as pad_gnd (the single external ground connection); primary heat path to the PCB ground plane via thermal vias."
-       }
-      }
      ]
     }
    ],
@@ -9087,29 +5301,7 @@
        ],
        "max_current_mA": 1000
       }
-     ],
-     "metadata": {
-      "cpu": "Dual-core Arm Cortex-M0+, up to 133 MHz default system clock",
-      "sram_KB": 264,
-      "internal_flash": "none — external QSPI flash required (XIP)",
-      "supply_voltage_V": [
-       1.8,
-       3.3
-      ],
-      "power_consumption_mW": 132,
-      "max_operating_freq_Hz": 133000000,
-      "supports_usb": true,
-      "supports_hot_plug": false,
-      "power_domain_details": {
-       "iovdd": "Digital I/O ring supply (six pins: 1, 10, 22, 33, 42, 49). Sets logic level for all 30 GPIOs and QSPI flash interface. Typical 3.3 V; 1.8 V supported for low-voltage I/O. Non-isolated, common ground reference.",
-       "dvdd": "1.1 V digital core supply (pins 23 and 50). Normally driven by the on-chip core LDO from VREG_VOUT, but can be supplied externally. Per datasheet Table 634, DVDD must be 1.05-1.16 V (typ 1.1 V).",
-       "vreg_vin": "VREG_VIN input to the on-chip core voltage regulator (1.8-3.3 V). VREG_VOUT delivers ~1.1 V to DVDD.",
-       "usb_vdd": "Dedicated 3.3 V supply for the USB 1.1 PHY (USB_VDD pin 48). Per datasheet Table 634: 3.135-3.63 V (typ 3.3 V). Decouple separately from IOVDD.",
-       "adc_avdd": "Analog supply / reference for the 12-bit ADC (ADC_AVDD pin 43). Per datasheet Table 634: 1.62-3.63 V (typ 3.3 V); ADC performance is compromised below 2.97 V (datasheet §2.9.5). Filter from main 3V3 with ferrite bead to maximize ENOB.",
-       "gnd": "Common ground via the QFN-56 exposed thermal pad (center). Single external ground connection per datasheet §1.4.2; bonded to a number of internal ground pads on the RP2040 die."
-      },
-      "source": "ProtoPart electrical domain (power_domains + metadata); RP2040 Datasheet Table 634"
-     }
+     ]
     },
     {
      "domain": "mechanical",
@@ -9129,11 +5321,6 @@
        3.1
       ],
       "source": "https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf (build-date 2025-02-20: §5.1 \"The RP2040 7×7 mm QFN-56 package\", \"0.4mm QFN-56\", central GND pad (ePad), D2/E2 3.0-3.2 mm, nominal 3.1; §5.5 Pinout, Table 621: GND 57, \"Common ground connection via central pad\")"
-     },
-     "metadata": {
-      "max_height_mm": 0.9,
-      "mounting_method": "surface_mount",
-      "enclosure_type": "ic_package"
      }
     },
     {
@@ -9141,98 +5328,7 @@
      "operating_temperature_C": [
       -40,
       85
-     ],
-     "metadata": {
-      "thermal_design_power_W": 0.13,
-      "requires_thermal_management": false,
-      "thermal_monitoring_available": true,
-      "cooling_method": "passive",
-      "primary_heat_path": "exposed_pad_to_pcb_ground_plane"
-     }
-    }
-   ],
-   "traits": [
-    {
-     "type": "requires_external_flash",
-     "params": {
-      "interfaceId": "qspi_flash",
-      "defaultProfile": "qspi_flash_fixed"
-     }
-    },
-    {
-     "type": "bare_chip_notice",
-     "params": {
-      "note": "This is the bare RP2040 chip, not a Pico board. There is no dedicated USB_BOOT pin — the board-level BOOTSEL button on the Pi Pico is wired to QSPI_SS_N (pin 56). Bare-chip BOOTSEL entry is via a pushbutton on QSPI_CS.",
-      "source": "ProtoPart usage_notes / warnings"
-     }
-    },
-    {
-     "type": "compatibility_notes",
-     "params": {
-      "note": "Pin-compatible only with itself (RP2040). The RP2350 successor uses a different package (QFN-60) and is NOT a drop-in replacement. Most RP2040 reference layouts (Pico, Pico W, Adafruit Feather RP2040) are good starting points for new designs."
-     }
-    },
-    {
-     "type": "design_rules",
-     "params": {
-      "source": "ProtoPart definition design_rules (verbatim)",
-      "rules": [
-       "Tie all six IOVDD pins (1, 10, 22, 33, 42, 49) to the same supply rail (1.8 V or 3.3 V). Mixing rails on IOVDD pins is not supported.",
-       "Bypass each supply pin with a 100 nF ceramic close to the pin. Place a 1 uF bulk cap on each rail group.",
-       "DVDD (pins 23, 50) must be supplied either by VREG_VOUT (typical) or an external 1.1 V regulator. Keep DVDD within 1.05-1.16 V per datasheet Table 634 (use 1.15 V if running clk_sys at 200 MHz).",
-       "Connect the QFN-56 center pad to the PCB ground plane with multiple thermal vias for both heat dissipation and ground reference integrity. This pad is the single external ground connection on the bare chip.",
-       "External QSPI flash is mandatory — the RP2040 has no internal flash. Use a flash compatible with the chip's XIP boot ROM (typically Winbond W25Q-series).",
-       "Keep VREG_VOUT decoupling close to pin 45 and route to both DVDD pins (23, 50) with low impedance.",
-       "Filter ADC_AVDD (pin 43) with a ferrite bead from 3V3 plus 1 uF + 100 nF for best ENOB.",
-       "USB_VDD (pin 48) must come from the same 3.3 V rail with its own decoupling; route USB_DP/USB_DM (pins 47/46) as a 90 ohm differential pair (Hardware Design with RP2040 §2.4.1) with 27 ohm series termination resistors per datasheet §1.4.2.",
-       "Tie TESTEN (pin 19) to GND in production designs; floating TESTEN may cause incorrect boot behavior.",
-       "To support firmware loading via the USB BOOTSEL UF2 path at the board level, route QSPI_SS_N (pin 56) through a momentary pushbutton-to-GND. Pulling QSPI_CS low during reset forces the boot ROM into UF2 mass-storage mode."
-      ]
-     }
-    },
-    {
-     "type": "warnings",
-     "params": {
-      "source": "ProtoPart definition warnings (verbatim)",
-      "warnings": [
-       "No internal flash. The chip cannot boot or run user code without an external QSPI flash (typically 2-16 MB).",
-       "All GPIO are 3.3 V (or 1.8 V) digital — NOT 5 V tolerant. Apply level shifting for 5 V signals.",
-       "The voltage on ADC inputs must not exceed IOVDD — voltages above IOVDD leak through the ESD protection diodes (Datasheet §2.9.5 note; absolute maximum pin voltage IOVDD + 0.5 V per Table 622). [Corrected from the ProtoPart 'clamped to ADC_AVDD + 0.3 V' wording.]",
-       "DVDD pins (23, 50) must not be left floating. Connect to VREG_VOUT (typical) or an external 1.1 V supply.",
-       "The exposed center pad must be soldered to ground — it is the single external GND connection. Leaving it floating violates ground reference, increases noise, and degrades thermal performance.",
-       "USB_VDD must be supplied even if USB is unused; otherwise the USB PHY draws leakage current that may keep the chip from entering low-power states cleanly.",
-       "TESTEN (pin 19) must be tied to GND. A floating TESTEN can place the chip in factory test mode and prevent normal boot.",
-       "There is no dedicated USB_BOOT pin on the bare RP2040 chip. The board-level BOOTSEL button on the Pi Pico is wired to QSPI_CS (pin 56), not to a separate USB_BOOT pin."
-      ]
-     }
-    },
-    {
-     "type": "usage_notes",
-     "params": {
-      "source": "ProtoPart definition usage_notes (verbatim)",
-      "note": "Bare-chip dual-core Cortex-M0+ at 133 MHz with 264 KB SRAM. Requires external QSPI flash for user code (no internal flash). Strong PIO subsystem (8 user state machines) makes it especially good for protocols not natively supported (I2S, SK6812 / WS2812 LED data, parallel pixel buses, software USB host). 16 PWM channels (8 slices x A/B) with 8.4 fractional clock dividers (Datasheet §4.5.1) — easily covers 22-25 kHz / 12-bit duty applications. 4-channel 12-bit ADC plus internal temperature sensor; effective ENOB ~9 bits without filtering. USB 1.1 PHY supports both device (BOOTSEL UF2 + user CDC/HID) and host modes. SWD debug via SWCLK (pin 24) / SWDIO (pin 25). Bare-chip BOOTSEL entry is via a pushbutton on QSPI_CS (pin 56), not a dedicated USB_BOOT pin — that pin only exists on board-level products like the Pi Pico."
-     }
-    },
-    {
-     "type": "application_examples",
-     "params": {
-      "source": "ProtoPart definition application_examples (verbatim)",
-      "examples": [
-       "Audio effects co-processor with PIO-based I2S receive and bass-band FFT envelope tracking",
-       "Multi-channel SK6812 / WS2812 LED ring driver via PIO",
-       "Cost-sensitive USB MIDI / HID device",
-       "Closed-loop coil drivers (e.g. 22-25 kHz / 12-bit duty PWM into MOSFET gates)",
-       "Educational and hobbyist Pico-class boards",
-       "Industrial sensor hubs with parallel CSI / DPI capture via PIO",
-       "I2C peripheral acting as command relay between a host MCU/BT SoC and on-board effects engine"
-      ]
-     }
-    },
-    {
-     "type": "terminology_policy",
-     "params": {
-      "note": "Signal and function names in `rp2040_pin_functions` traits are ProtoPart/datasheet-verbatim and intentionally NOT normalised to a curated whitelist; canonical capability tags exist only where slot matching requires them. The ProtoPart per-pin generic entries (pwm_out, CLOCK_GPIN, CLOCK_GPOUT, SIO, PIO0, PIO1) are represented as capability tags plus the F4/F5/F6/F7/F8 rows of each pin's function list."
-     }
+     ]
     }
    ],
    "geometry": {
@@ -9890,16 +5986,6 @@
         "scl": "pin_13"
        }
       }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "7-bit address 0x68 with SDO (pin 1) to GND, 0x69 with SDO to VDDIO. Standard (100 kHz), fast (400 kHz) and fast-mode plus (1000 kHz); 7-bit addressing only. Tie CSB (pin 12) to VDDIO for I2C.",
-        "alternate_address": 105,
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§6.5, Table 22)"
-       }
-      }
      ]
     },
     {
@@ -9975,15 +6061,6 @@
         "ss": "pin_12"
        }
       }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "fSPI max 10 MHz at VDDIO >= 1.62 V (30 pF load), 7 MHz at VDDIO < 1.62 V. SPI 3-wire is also supported with SDx as SDIO and SDO DNC (not modelled as a separate bus).",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 19, Table 22)"
-       }
-      }
      ]
     },
     {
@@ -10037,15 +6114,6 @@
        "bindings": {
         "sda": "pin_2",
         "scl": "pin_3"
-       }
-      }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "Aux interface to connect an I2C slave sensor device (e.g. magnetometer): ASCx push-pull, ASDx open-drain; internal pull-up configured in AUX_IF_TRIM.asda_pupsel, no external pull-ups needed. Secondary I2C timings follow I2C fast-mode plus (up to 1 MHz); fast-mode (400 kHz) operation requires contacting Bosch Sensortec. No other I2C masters/slaves may share this bus.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§6.6.1, Table 21, Table 22 note **)"
        }
       }
      ]
@@ -10123,15 +6191,6 @@
         "ss": "pin_10"
        }
       }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "OIS interface on ASDx (SDI), ASCx (SCK), OCSB, OSDO; enabled with IF_CONF.ois_en; 10 MHz slave SPI. OIS 3-wire (ASDx as SDA/SDIO, OSDO DNC, IF_CONF.spi3_ois) is also supported, not modelled as a separate bus.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Key features, §6.6 Table 21, Table 22)"
-       }
-      }
      ]
     },
     {
@@ -10161,50 +6220,7 @@
         "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§8.1)"
        }
       }
-     ],
-     "geometry": {
-      "frame": {
-       "origin": [
-        0,
-        0,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        -1
-       ],
-       "xAxis": [
-        1,
-        0,
-        0
-       ]
-      },
-      "refs": [
-       {
-        "kind": "feature",
-        "artifact": "cad_step",
-        "name": "pcb_mount",
-        "signature": {
-         "area_mm2": 1.662,
-         "centroid": [
-          0,
-          0,
-          0
-         ],
-         "normal": [
-          0,
-          0,
-          -1
-         ]
-        }
-       },
-       {
-        "kind": "artifact",
-        "artifact": "cad_if_pcb_mount"
-       }
-      ]
-     }
+     ]
     }
    ],
    "interfaceGroups": [
@@ -10260,24 +6276,7 @@
         3.6
        ]
       }
-     ],
-     "metadata": {
-      "logic_levels": {
-       "vil_max": "0.3 VDDIO",
-       "vih_min": "0.7 VDDIO",
-       "vol_max": "0.2 VDDIO",
-       "voh_min": "0.8 VDDIO"
-      },
-      "idd_typ_uA": {
-       "ag_performance": 970,
-       "ag_normal": 685,
-       "ag_low_power_25Hz": 420,
-       "a_normal": 210,
-       "a_low_power_25Hz": 10,
-       "suspend": 3.5
-      },
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 1)"
-     }
+     ]
     },
     {
      "domain": "mechanical",
@@ -10299,10 +6298,7 @@
      "operating_temperature_C": [
       -40,
       85
-     ],
-     "metadata": {
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 1)"
-     }
+     ]
     }
    ],
    "traits": [
@@ -10344,75 +6340,6 @@
       "esd": "HBM 2 kV, CDM 500 V, MM 200 V",
       "mechanical_shock": "20,000 g (<= 200 us), 2,000 g (<= 1.0 ms)",
       "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 5)"
-     }
-    },
-    {
-     "type": "performance",
-     "params": {
-      "kind": "imu",
-      "accel_ranges_g": [
-       2,
-       4,
-       8,
-       16
-      ],
-      "gyro_ranges_dps": [
-       125,
-       250,
-       500,
-       1000,
-       2000
-      ],
-      "resolution_bits": 16,
-      "gyro_odr_Hz": [
-       25,
-       6400
-      ],
-      "accel_odr_Hz": [
-       0.78,
-       1600
-      ],
-      "fifo_bytes": 2048,
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Basic description, key features)"
-     }
-    },
-    {
-     "type": "usage_note",
-     "params": {
-      "note": "Unused INT1/INT2: do not connect. Unused ASDx/ASCx: VDDIO or DNC, never GND. OCSB/OSDO: DNC, or GND only if IF_CONF.ois_en = 0. The device needs an 8 kB configuration file written to INIT_DATA after power-up before advanced features work.",
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22 notes, §4 initialization)"
-     }
-    },
-    {
-     "type": "source_discrepancy",
-     "params": {
-      "field": "supply max current",
-      "values": [
-       "1 mA per supply (ProtoPart power_domains)",
-       "IDD typ 685 uA normal / 970 uA performance, no maximum (datasheet Table 1)"
-      ],
-      "sources": [
-       "https://github.com/Delta-Robotics-Inc/ProtoPart/blob/main/protoparts/bosch-bmi270/definition.json",
-       "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf"
-      ],
-      "resolution": "No max_current set; datasheet typical IDD recorded in electrical metadata."
-     }
-    },
-    {
-     "type": "assumption",
-     "params": {
-      "field": "CAD pad thickness",
-      "value": "0.02 mm",
-      "reason": "§8.1 does not dimension pad thickness; pads are drawn flush with the seating plane."
-     }
-    },
-    {
-     "type": "data_gap",
-     "params": {
-      "fields": [
-       "manufacturer CAD"
-      ],
-      "note": "No manufacturer CAD: the Bosch product page lists no 3D model; Digi-Key and SnapEDA pages returned HTTP 403 to fetch; Ultra Librarian requires a login. Geometry generated from datasheet §8.1 (library/cad/py/catalog/bosch-bmi270.py)."
      }
     }
    ]
@@ -10471,13 +6398,6 @@
         "description": "VINA — supply voltage for control stage.",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
        }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "0.1 uF ceramic from VINA to GND recommended; must not be higher than 0.22 uF.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.4)"
-       }
       }
      ]
     },
@@ -10533,13 +6453,6 @@
        "params": {
         "description": "FB — voltage feedback of adjustable versions, must be connected to VOUT on fixed output voltage versions.",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "Divider VOUT-FB-GND, VFB = 500 mV; R2 (FB to GND) about 200 kOhm; R1 = R2 x (VOUT/VFB - 1). Table 3: 3.3 V = 1 MOhm / 180 kOhm.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.3)"
        }
       }
      ]
@@ -10639,13 +6552,6 @@
         "description": "L2 — connection for inductor (pins 6, 7).",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
        }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "L2: connect the single external inductor between L1 (pins 8, 9) and L2 (pins 6, 7); 1 uH or 1.5 uH recommended for 1.5-2 A output (e.g. Coilcraft XFL4020-152ML, 1.5 uH).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.2, Table 2 BOM)"
-       }
       }
      ]
     },
@@ -10673,13 +6579,6 @@
        "params": {
         "description": "L2 — connection for inductor (pins 6, 7).",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "L2: connect the single external inductor between L1 (pins 8, 9) and L2 (pins 6, 7); 1 uH or 1.5 uH recommended for 1.5-2 A output (e.g. Coilcraft XFL4020-152ML, 1.5 uH).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.2, Table 2 BOM)"
        }
       }
      ]
@@ -10709,13 +6608,6 @@
         "description": "L1 — connection for inductor (pins 8, 9).",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
        }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "L1: connect the single external inductor between L1 (pins 8, 9) and L2 (pins 6, 7); 1 uH or 1.5 uH recommended for 1.5-2 A output (e.g. Coilcraft XFL4020-152ML, 1.5 uH).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.2, Table 2 BOM)"
-       }
       }
      ]
     },
@@ -10743,13 +6635,6 @@
        "params": {
         "description": "L1 — connection for inductor (pins 8, 9).",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "L1: connect the single external inductor between L1 (pins 8, 9) and L2 (pins 6, 7); 1 uH or 1.5 uH recommended for 1.5-2 A output (e.g. Coilcraft XFL4020-152ML, 1.5 uH).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.2, Table 2 BOM)"
        }
       }
      ]
@@ -10957,40 +6842,8 @@
         "description": "PGND — power ground. The exposed thermal pad is connected to PGND.",
         "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
        }
-      },
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "Solder the exposed pad to the PCB ground plane (thermal and mechanical); place output capacitors close to VOUT and PGND.",
-        "source": [
-         "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2.2.3)",
-         "https://www.ti.com/lit/pdf/MPSS014A"
-        ]
-       }
       }
-     ],
-     "geometry": {
-      "refs": [
-       {
-        "kind": "feature",
-        "artifact": "cad_step",
-        "name": "thermal_pad",
-        "signature": {
-         "area_mm2": 4.503,
-         "centroid": [
-          0,
-          0,
-          0
-         ],
-         "normal": [
-          0,
-          0,
-          -1
-         ]
-        }
-       }
-      ]
-     }
+     ]
     },
     {
      "id": "vin",
@@ -11064,15 +6917,6 @@
         "gnd": "pgnd"
        }
       }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "1.8-5.5 V (2-3 cell alkaline/NiMH, 1-cell Li-ion/LiPo, supercap). Minimum start-up input 1.8 V typ (1.9 V max 0-85 C, 2.0 V max full range). UVLO 1.5 V falling, 200 mV hysteresis. 10 uF input capacitor recommended. Quiescent 25 uA typ (VIN+VINA), shutdown 0.1 uA typ.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.5, §8.2.2.4)"
-       }
-      }
      ]
     },
     {
@@ -11142,15 +6986,6 @@
         "gnd": "pgnd"
        }
       }
-     ],
-     "traits": [
-      {
-       "type": "usage_note",
-       "params": {
-        "note": "Adjustable 1.2-5.5 V set by the FB divider. 2 A output for VIN > 2.5 V at VOUT = 3.3 V; 'as high as 2 A in boost mode and as high as 4 A in buck mode' (see Figures 1-2 for the operating-point limit). 2.4 MHz fixed frequency; power-save mode at light load unless PS/SYNC is high. Recommended output capacitance 3 x 22 uF ceramic. Load disconnected in shutdown.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (Features, §6.5, §8.2)"
-       }
-      }
      ]
     },
     {
@@ -11183,50 +7018,7 @@
         ]
        }
       }
-     ],
-     "geometry": {
-      "frame": {
-       "origin": [
-        0,
-        0,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        -1
-       ],
-       "xAxis": [
-        1,
-        0,
-        0
-       ]
-      },
-      "refs": [
-       {
-        "kind": "feature",
-        "artifact": "cad_step",
-        "name": "pcb_mount",
-        "signature": {
-         "area_mm2": 1.344,
-         "centroid": [
-          0,
-          0,
-          0
-         ],
-         "normal": [
-          0,
-          0,
-          -1
-         ]
-        }
-       },
-       {
-        "kind": "artifact",
-        "artifact": "cad_if_pcb_mount"
-       }
-      ]
-     }
+     ]
     },
     {
      "id": "thermal_pad",
@@ -11244,71 +7036,7 @@
      ],
      "capabilities": [
       "exposed_pad"
-     ],
-     "traits": [
-      {
-       "type": "performance",
-       "params": {
-        "kind": "thermal",
-        "theta_ja_C_per_W": 41.8,
-        "theta_jc_top_C_per_W": 47,
-        "theta_jb_C_per_W": 17,
-        "psi_jt_C_per_W": 0.9,
-        "psi_jb_C_per_W": 16.8,
-        "theta_jc_bottom_C_per_W": 3.6,
-        "pad_mm": [
-         2.85,
-         1.58
-        ],
-        "source": [
-         "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.4, p.32)"
-        ]
-       }
-      }
-     ],
-     "geometry": {
-      "frame": {
-       "origin": [
-        0,
-        0,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        -1
-       ],
-       "xAxis": [
-        1,
-        0,
-        0
-       ]
-      },
-      "refs": [
-       {
-        "kind": "feature",
-        "artifact": "cad_step",
-        "name": "thermal_pad",
-        "signature": {
-         "area_mm2": 4.503,
-         "centroid": [
-          0,
-          0,
-          0
-         ],
-         "normal": [
-          0,
-          0,
-          -1
-         ]
-        }
-       },
-       {
-        "kind": "artifact",
-        "artifact": "cad_if_thermal_pad"
-       }
-      ]
-     }
+     ]
     }
    ],
    "interfaceGroups": [
@@ -11365,30 +7093,7 @@
        "max_current_mA": 2000,
        "regulation_type": "regulated"
       }
-     ],
-     "metadata": {
-      "switching_frequency_kHz": [
-       2200,
-       2400,
-       2600
-      ],
-      "switch_current_limit_mA": [
-       3500,
-       4000,
-       4500
-      ],
-      "feedback_voltage_mV": [
-       495,
-       500,
-       505
-      ],
-      "switch_rds_on_mOhm": 50,
-      "output_ovp_V": [
-       5.5,
-       7
-      ],
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.5)"
-     }
+     ]
     },
     {
      "domain": "mechanical",
@@ -11410,13 +7115,6 @@
       ],
       "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5: \"DSJ Package, 14-Pin VSON with Exposed Thermal Pad\"; p.32 exposed pad 2.85 x 1.58 mm); https://www.ti.com/lit/pdf/MPSS014A (body 3.85-4.15 x 2.85-3.15 x 0.80-1.00 mm, pitch 0.50)",
       "assumption": "TI numbers no exposed pad; \"EP\" is this part's label for it. Height 0.9 mm is the midpoint of 0.80-1.00 mm (see the assumption trait)."
-     },
-     "metadata": {
-      "height_range_mm": [
-       0.8,
-       1
-      ],
-      "source": "https://www.ti.com/lit/pdf/MPSS014A"
      }
     },
     {
@@ -11424,17 +7122,7 @@
      "operating_temperature_C": [
       -40,
       85
-     ],
-     "metadata": {
-      "junction_C": [
-       -40,
-       125
-      ],
-      "overtemperature_protection_C": 140,
-      "hysteresis_C": 20,
-      "theta_ja_C_per_W": 41.8,
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.3-6.5)"
-     }
+     ]
     }
    ],
    "traits": [
@@ -11481,62 +7169,6 @@
       ],
       "esd": "HBM ±500 V (VIN, VINA, L1), ±2000 V other pins; CDM ±1500 V",
       "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.1-6.2)"
-     }
-    },
-    {
-     "type": "performance",
-     "params": {
-      "kind": "regulator",
-      "topology": "single-inductor buck-boost, average current mode, synchronous",
-      "output_current_A": "2 A (VIN > 2.5 V, VOUT 3.3 V); up to 4 A in buck mode, 2 A in boost mode",
-      "quiescent_current_uA": 25,
-      "shutdown_current_uA": 0.1,
-      "switching_frequency_MHz": 2.4,
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (Features, §6.5, §8.2)"
-     }
-    },
-    {
-     "type": "source_discrepancy",
-     "params": {
-      "field": "input max current",
-      "values": [
-       "4000 mA on the VIN rail (ProtoPart, from the switch current limit)",
-       "average switch current limit 3.5/4.0/4.5 A; no input-current rating (datasheet §6.5)"
-      ],
-      "sources": [
-       "https://github.com/Delta-Robotics-Inc/ProtoPart/blob/main/protoparts/tps63020dsjr/definition.json",
-       "https://www.ti.com/lit/ds/symlink/tps63020.pdf"
-      ],
-      "resolution": "vin carries no max_current; the switch limit is in electrical metadata."
-     }
-    },
-    {
-     "type": "assumption",
-     "params": {
-      "field": "package height (CAD, dimensions)",
-      "value": "0.9 mm",
-      "reason": "Drawing gives 0.80-1.00 mm; midpoint used."
-     }
-    },
-    {
-     "type": "assumption",
-     "params": {
-      "field": "CAD lead size and pad thickness",
-      "value": "0.24 x 0.40 mm leads, 0.02 mm pads",
-      "reason": "Drawing gives ranges (0.18-0.30 x 0.30-0.50); pad thickness is not dimensioned. PGND tie bars (4 x 0.20 mm) not modelled."
-     }
-    },
-    {
-     "type": "data_gap",
-     "params": {
-      "fields": [
-       "manufacturer CAD"
-      ],
-      "note": "TI product folder (www.ti.com/product/TPS63020, 'CAD symbols, footprints & 3D models' tab) offers CAD/3D models (STEP etc.) only through Ultra Librarian, whose download requires accepting its terms as a registered user (not redistributable here); the Digi-Key model page (digikey.com/en/models/2353761) returned HTTP 403. Geometry generated from TI drawings 4208212-3/C and 4208549-3/G (library/cad/py/catalog/ti-tps63020dsjr.py).",
-      "source": [
-       "https://www.ti.com/product/TPS63020",
-       "https://vendor.ultralibrarian.com/TI/embedded/?gpn=TPS63020&package=DSJ&pin=14"
-      ]
      }
     }
    ]
