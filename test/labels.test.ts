@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LABEL_GAP, solveLabels, type LabelBox } from "../src/cad/labels";
+import { LABEL_GAP, LEADER_RUN, segmentsCross, solveLabels, type LabelBox } from "../src/cad/labels";
 
 const W = 1600;
 const H = 1000;
@@ -24,14 +24,21 @@ function check(items: LabelBox[]) {
       const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h + LABEL_GAP - 0.01 && b.y < a.y + a.h + LABEL_GAP - 0.01;
       expect(hit, `${a.id} / ${b.id}`).toBe(false);
     }
-  // each column is ordered by its anchors' screen y (leaders do not cross)
+  // no two leaders in a column cross (anchor to the elbow beside the card's inner edge)
   const cols = new Map<string, typeof boxes>();
   for (const b of boxes) cols.set(`${b.side}:${b.column}`, [...(cols.get(`${b.side}:${b.column}`) ?? []), b]);
-  for (const col of cols.values()) {
-    const byCard = [...col].sort((a, b) => a.y - b.y).map((b) => b.id);
-    const byAnchor = [...col].sort((a, b) => a.ay - b.ay || a.id.localeCompare(b.id)).map((b) => b.id);
-    expect(byCard).toEqual(byAnchor);
-  }
+  const leader = (b: (typeof boxes)[number]) => {
+    const a = items.find((p) => p.id === b.id)!;
+    const ex = b.side < 0 ? b.x + b.w + LEADER_RUN : b.x - LEADER_RUN;
+    return [[a.x, a.y], [ex, b.y + b.h / 2]] as [[number, number], [number, number]];
+  };
+  for (const col of cols.values())
+    for (let i = 0; i < col.length; i++)
+      for (let j = i + 1; j < col.length; j++) {
+        const [p1, p2] = leader(col[i]);
+        const [q1, q2] = leader(col[j]);
+        expect(segmentsCross(p1, p2, q1, q2), `${col[i].id} × ${col[j].id}`).toBe(false);
+      }
   // cards stay inside the view horizontally
   for (const b of boxes) {
     expect(b.x).toBeGreaterThanOrEqual(M.left - 0.01);
@@ -72,5 +79,15 @@ describe("3D callout label solver", () => {
     const a = scatter(12, 5);
     check(a);
     check(a.map((p) => ({ ...p, x: W - p.x, y: p.y * 0.7 + 120 })));
+  });
+
+  it("untangles leaders in crowded columns (ordering by anchor height alone crossed in most of these)", () => {
+    for (let seed = 1; seed <= 20; seed++) for (const n of [8, 14, 22]) check(scatter(n, seed, 300));
+  });
+
+  it("finds crossing segments, and not ones that only touch", () => {
+    expect(segmentsCross([0, 0], [10, 10], [0, 10], [10, 0])).toBe(true);
+    expect(segmentsCross([0, 0], [10, 0], [0, 5], [10, 5])).toBe(false);
+    expect(segmentsCross([0, 0], [10, 10], [10, 10], [20, 0])).toBe(false);
   });
 });

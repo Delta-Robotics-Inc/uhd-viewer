@@ -705,6 +705,25 @@ export function CadView({
     for (const rec of bodies.current.values()) if (!rec.box.isEmpty()) box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
     return box;
   };
+  /** Where the section plane cuts `box` (the assembled bounds), and which side it keeps (flip: the + side). */
+  const sectionPlane = (box: THREE.Box3) => {
+    const h = handle.current;
+    if (!h || !section || box.isEmpty()) return undefined;
+    const lo = box.min.getComponent(section.axis);
+    const hi = box.max.getComponent(section.axis);
+    const at = lo + (hi - lo) * section.at;
+    const flip = section.flip ?? h.camera.position.getComponent(section.axis) < h.controls.target.getComponent(section.axis);
+    return { at, flip };
+  };
+  /** Bounds of what is drawn now: the model as exploded, less what a section cuts away. */
+  const visibleBounds = () => {
+    const box = currentBounds();
+    const cut = sectionPlane(assembledBounds());
+    if (!section || !cut || box.isEmpty()) return box;
+    if (cut.flip) box.min.setComponent(section.axis, Math.max(box.min.getComponent(section.axis), cut.at));
+    else box.max.setComponent(section.axis, Math.min(box.max.getComponent(section.axis), cut.at));
+    return box;
+  };
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
@@ -729,10 +748,7 @@ export function CadView({
       if (grid) grid.visible = !present;
       return;
     }
-    const lo = box.min.getComponent(section.axis);
-    const hi = box.max.getComponent(section.axis);
-    const at = lo + (hi - lo) * section.at;
-    const flip = section.flip ?? h.camera.position.getComponent(section.axis) < h.controls.target.getComponent(section.axis);
+    const { at, flip } = sectionPlane(box)!;
     const n = new THREE.Vector3();
     n.setComponent(section.axis, flip ? 1 : -1);
     // three.js keeps what lies on the normal's side: n·p + c ≥ 0
@@ -1079,7 +1095,8 @@ export function CadView({
     if (framed.current || params.get("focus") || h.manual.on) return;
     framed.current = true;
     if (opening.dist !== undefined) return;
-    fit(currentBounds(), opening.az, opening.el);
+    // what is drawn: a section view opens on the half it keeps, centred
+    fit(visibleBounds(), opening.az, opening.el);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, model]);
   useEffect(() => {

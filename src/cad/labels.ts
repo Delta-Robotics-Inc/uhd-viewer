@@ -26,6 +26,18 @@ const SVGNS = "http://www.w3.org/2000/svg";
 export const LABEL_GAP = 6;
 const COLUMN_OFFSET = 56;
 const COLUMN_GAP = 16;
+/** The leader's short level run into a card's inner edge. */
+export const LEADER_RUN = 16;
+
+/** Whether segments p1–p2 and q1–q2 cross (touching at an end does not count). */
+export function segmentsCross(p1: [number, number], p2: [number, number], q1: [number, number], q2: [number, number]): boolean {
+  const d = (a: [number, number], b: [number, number], c: [number, number]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const d1 = d(q1, q2, p1);
+  const d2 = d(q1, q2, p2);
+  const d3 = d(p1, p2, q1);
+  const d4 = d(p1, p2, q2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
 
 /** A card to place: its anchor on screen (x, y) and its size. */
 export interface LabelBox {
@@ -46,8 +58,9 @@ export interface SolvedLabel {
 
 /**
  * Callout placement (PB-873): cards in columns either side of the model,
- * each column ordered by its anchors' screen y so leader lines do not cross,
- * and stacked so no two cards overlap. Sides are chosen by anchor x and then
+ * each column ordered by its anchors' screen y (then untangled, where two
+ * anchors at much the same height would still cross) so leader lines do not
+ * cross, and stacked so no two cards overlap. Sides are chosen by anchor x and then
  * balanced by height; a side taller than the view spills into a second,
  * outer column. Pure: re-solved every frame as the camera moves.
  */
@@ -85,15 +98,41 @@ export function solveLabels(items: LabelBox[], width: number, height: number, m:
       const wMax = Math.max(...col.map((p) => p.w));
       // keep the column on screen: a left column's right edge, a right column's left edge
       const e = s < 0 ? Math.max(m.left + wMax, Math.min(edge, width - m.right)) : Math.min(width - m.right - wMax, Math.max(edge, m.left));
-      const ys = col.map((p) => p.y - p.h / 2);
-      for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + LABEL_GAP);
-      const overflow = ys[ys.length - 1] + col[col.length - 1].h - (height - m.bottom);
-      if (overflow > 0) for (let i = 0; i < ys.length; i++) ys[i] -= overflow;
-      for (let i = ys.length - 2; i >= 0; i--) ys[i] = Math.min(ys[i], ys[i + 1] - col[i].h - LABEL_GAP);
-      if (ys[0] < m.top) {
-        // taller than the view (a single column that cannot spill): stack from the top, never overlapping
-        ys[0] = m.top;
+      const stackYs = () => {
+        const ys = col.map((p) => p.y - p.h / 2);
         for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + LABEL_GAP);
+        const overflow = ys[ys.length - 1] + col[col.length - 1].h - (height - m.bottom);
+        if (overflow > 0) for (let i = 0; i < ys.length; i++) ys[i] -= overflow;
+        for (let i = ys.length - 2; i >= 0; i--) ys[i] = Math.min(ys[i], ys[i + 1] - col[i].h - LABEL_GAP);
+        if (ys[0] < m.top) {
+          // taller than the view (a single column that cannot spill): stack from the top, never overlapping
+          ys[0] = m.top;
+          for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + LABEL_GAP);
+        }
+        return ys;
+      };
+      // leaders run from the anchor to an elbow beside the column (labels' LabelLayer draws the same):
+      // where two in a column cross (anchors at much the same height, one far from the column), swap
+      // their cards and stack again, until none cross
+      const elbowX = s < 0 ? e + LEADER_RUN : e - LEADER_RUN;
+      let ys = stackYs();
+      for (let pass = 0; pass < col.length * col.length; pass++) {
+        let swapped = false;
+        for (let i = 0; i + 1 < col.length; i++) {
+          const a = col[i];
+          const b = col[i + 1];
+          if (!segmentsCross([a.x, a.y], [elbowX, ys[i] + a.h / 2], [b.x, b.y], [elbowX, ys[i + 1] + b.h / 2])) continue;
+          [col[i], col[i + 1]] = [b, a];
+          const next = stackYs();
+          // keep the swap only if it uncrosses this pair
+          if (segmentsCross([b.x, b.y], [elbowX, next[i] + b.h / 2], [a.x, a.y], [elbowX, next[i + 1] + a.h / 2])) {
+            [col[i], col[i + 1]] = [a, b];
+            continue;
+          }
+          ys = next;
+          swapped = true;
+        }
+        if (!swapped) break;
       }
       col.forEach((p, i) => out.set(p.id, { x: s < 0 ? e - p.w : e, y: ys[i], side: s, column: ci }));
       edge = s < 0 ? e - wMax - COLUMN_GAP : e + wMax + COLUMN_GAP;
@@ -207,7 +246,7 @@ export class LabelLayer {
         const ly = y + p.h / 2;
         // the leader meets the card's inner edge: a short horizontal run, then straight to the anchor
         const lx = sv.side < 0 ? sv.x + p.w : sv.x;
-        const ex = sv.side < 0 ? lx + 16 : lx - 16;
+        const ex = sv.side < 0 ? lx + LEADER_RUN : lx - LEADER_RUN;
         c.el.style.transform = `translate(${sv.x.toFixed(1)}px, ${y.toFixed(1)}px)`;
         c.path.setAttribute("d", `M${p.x.toFixed(1)},${p.y.toFixed(1)} L${ex.toFixed(1)},${ly.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)}`);
         c.dot.setAttribute("cx", p.x.toFixed(1));
