@@ -72,6 +72,8 @@ export interface LinkData extends Record<string, unknown> {
   bends: Pt[];
   onToggle: (id: string) => void;
   onToggleLane: (id: string) => void;
+  /** Select the link (a click on its label: the label stops the edge's own click). */
+  onSelect?: (linkId: string) => void;
   /** Where the user put the label and harness tab (and which side of the line). */
   edit?: LinkLayout;
   onLayout: (linkId: string, patch: LinkLayout) => void;
@@ -736,8 +738,16 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
           <div
             className={`link-label nodrag nopan${selected ? " selected" : ""}`}
             style={{ transform: geo.label.tf, transformOrigin: "0 0", borderColor: color, color, opacity: faded ? 0.25 : 1, cursor: "grab" }}
-            title="Drag along the link to move the label and its expansion, or across it to the other side"
-            {...slider("label")}
+            title={
+              geo.expandable
+                ? `Click to ${data.open ? "close" : "open"} the link's ${link.children.length || ""} lanes; drag along the link to move the label and its expansion, or across it to the other side`.replace("  ", " ")
+                : "Click to select; drag along the link to move the label, or across it to the other side"
+            }
+            {...slider("label", () => {
+              // a bundle ("2 LINKS") opens and closes from its label too, not only from its +/− box (PB-861)
+              data.onSelect?.(link.linkId);
+              if (geo.expandable) data.onToggle(link.linkId);
+            })}
           >
             {link.manual && <Icon name="lock" size={9} />}
             <span>{link.name.toUpperCase()}</span>

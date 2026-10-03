@@ -163,6 +163,7 @@ export function CadView({
   hostDiagnostics = [],
   focusOn,
   onSelect,
+  inspector = true,
 }: {
   system: ModuleDef;
   lookup: ModuleLookup;
@@ -176,6 +177,8 @@ export function CadView({
    * a link selects the mate of that path (`owner/link`); `none` clears.
    */
   focusOn?: { path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean };
+  /** Show the inspector card (the app's panel toggle; closed by default on a narrow view, PB-861). */
+  inspector?: boolean;
   /** Every selection change (for the host). */
   onSelect?: (sel: CadSelection) => void;
 }) {
@@ -199,7 +202,8 @@ export function CadView({
   const [loaded, setLoaded] = useState(0);
   const [direction, setDirection] = useState<Direction>((params.get("dir") as Direction) ?? "feature");
   const [exploded, setExploded] = useState(explode.current.target === 1);
-  const [showLabels, setShowLabels] = useState(params.get("labels") !== "0");
+  // off unless asked for (?labels=1, or the toolbar): on a small view the callouts hide the model (PB-861)
+  const [showLabels, setShowLabels] = useState(params.get("labels") === "1");
   const [labelKinds, setLabelKinds] = useState<Set<LabelKind>>(new Set((params.get("labelkinds") ?? "module,harness").split(",") as LabelKind[]));
   const [labelMenu, setLabelMenu] = useState(false);
   const [showFrames, setShowFrames] = useState(params.get("frames") === "1");
@@ -1111,7 +1115,7 @@ export function CadView({
           </div>
         )}
       </div>
-      {model && !present && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} findings={findings} resolve={resolve} />}
+      {model && !present && inspector && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} findings={findings} resolve={resolve} />}
     </div>
   );
 }

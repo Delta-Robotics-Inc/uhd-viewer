@@ -2175,3 +2175,92 @@ body {
 .context-menu button:hover {
   background: var(--pb-accent);
 }
+
+/* narrow hosts (a VS Code panel beside an editor, ~600 px; PB-861): the title keeps its room and
+   the controls scroll sideways instead of covering it; the floating cards leave the view a strip */
+.breadcrumb {
+  flex: 1 1 0;
+  min-width: 96px;
+  overflow: hidden;
+}
+.crumb-wrap {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.crumb-wrap:not(:last-child) {
+  flex-shrink: 0;
+}
+.crumb {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-controls {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.header-controls::-webkit-scrollbar {
+  display: none;
+}
+.header-controls > * {
+  flex-shrink: 0;
+}
+.inspector {
+  width: min(340px, calc(100% - 64px));
+}
+.cad-inspector {
+  width: min(360px, calc(100% - 64px));
+}
+@media (max-width: 760px) {
+  .brand-name,
+  .brand + .sep {
+    display: none;
+  }
+  .brand {
+    padding: 0 4px 0 6px;
+  }
+}
+/* the 3D toolbar: centred on what the floating cards leave of the view, icons only when that is narrow */
+.cad-toolbar {
+  left: 52px;
+  right: 8px;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100% - 60px);
+  transform: none;
+}
+.cad-view:has(.cad-inspector) .cad-toolbar {
+  right: calc(min(360px, 100% - 64px) + 12px);
+}
+@media (max-width: 1280px) {
+  .cad-view:has(.cad-inspector) .cad-toolbar :is(.chip-toggle, .segmented button):has(> svg) {
+    font-size: 0;
+    gap: 0;
+    padding: 0 8px;
+  }
+}
+@media (max-width: 900px) {
+  .cad-toolbar :is(.chip-toggle, .segmented button):has(> svg) {
+    font-size: 0;
+    gap: 0;
+    padding: 0 8px;
+  }
+}
+@media (max-width: 700px) {
+  .cad-toolbar {
+    gap: 2px;
+    left: 8px;
+    max-width: calc(100% - 16px);
+  }
+  .cad-toolbar > .sep {
+    display: none;
+  }
+  .cad-toolbar :is(.chip-toggle, .segmented button) {
+    padding: 0 6px;
+    min-width: 28px;
+  }
+}

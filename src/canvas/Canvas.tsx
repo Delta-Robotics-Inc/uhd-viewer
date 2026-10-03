@@ -122,6 +122,9 @@ export function Canvas(props: CanvasProps) {
     });
   }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts]);
 
+  const { onSelect } = props;
+  const onSelectLink = useCallback((id: string) => onSelect({ kind: "link", id }), [onSelect]);
+
   const edges = useMemo<Edge<LinkData>[]>(() => {
     return vm.links
       .filter((link) => layout.routes[link.id])
@@ -132,7 +135,7 @@ export function Canvas(props: CanvasProps) {
         const key = [
           link, layout.routes[link.id], color, mode, props.detail, open, props.openLinks, layout.runs[link.id], layout.labelAt[link.id],
           layout.labelFixed[link.id], layout.pins[link.id], layout.bends[link.id], layout.edits[link.id], selected,
-          props.onToggleLink, props.onLayout, props.onPins, props.onLive,
+          props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink,
         ];
         return stable(edgeCache.current, link.id, key, () => ({
           id: link.id,
@@ -159,6 +162,7 @@ export function Canvas(props: CanvasProps) {
             bends: layout.bends[link.id] ?? [],
             onToggle: props.onToggleLink,
             onToggleLane: props.onToggleLink,
+            onSelect: onSelectLink,
             onLayout: props.onLayout,
             edit: layout.edits[link.id],
             onPins: props.onPins,
@@ -166,7 +170,7 @@ export function Canvas(props: CanvasProps) {
           },
         }));
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {
