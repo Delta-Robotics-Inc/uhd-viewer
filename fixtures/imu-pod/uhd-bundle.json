@@ -9246,7 +9246,7 @@
   {
    "id": "bosch-bmi270",
    "name": "Bosch BMI270",
-   "version": "1.1.0",
+   "version": "1.2.0",
    "manufacturer": "Bosch Sensortec",
    "part_number": "BMI270",
    "description": "6-axis IMU (16-bit accelerometer ±2/4/8/16 g, 16-bit gyroscope ±125-2000 dps) in a 14-pad LGA, 3.0 x 2.5 x 0.83 mm. Primary I2C (0x68/0x69, up to 1 MHz) or SPI (up to 10 MHz) target interface; secondary AUX I2C / OIS SPI. VDD 1.71-3.6 V, VDDIO 1.2-3.6 V.",
@@ -9304,6 +9304,20 @@
         "description": "SDO — primary interface: serial data output in SPI 4W; I2C address bit-0 select in I2C mode.",
         "connect_to": "SPI4W: SDO; SPI3W: DNC; I2C: GND for default I2C address",
         "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+       }
+      },
+      {
+       "type": "strap",
+       "params": {
+        "function": "I2C address bit 0",
+        "when": [
+         "i2c"
+        ],
+        "levels": {
+         "low": "address 0x68 (SDO to GND)",
+         "high": "address 0x69 (SDO to VDDIO)"
+        },
+        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§6.5, Table 22)"
        }
       }
      ]
