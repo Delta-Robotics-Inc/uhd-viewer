@@ -22,8 +22,14 @@ const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top
 
 export type Selection = { kind: "node" | "link"; id: string } | null;
 
+/** Fit padding that keeps the diagram clear of the floating chrome: the header, the toolbar and, when open, the inspector. */
+export const fitPadding = (inspector: boolean) =>
+  ({ top: "56px", bottom: "72px", left: "64px", right: inspector ? "376px" : "64px" }) as const;
+
 export interface CanvasProps {
   vm: ViewModel;
+  /** The inspector is open over the right of the canvas (fitting leaves room for it). */
+  inspector?: boolean;
   layout: ComputedLayout;
   hand?: LevelLayout;
   mode: Classification;
@@ -60,7 +66,10 @@ export function Canvas(props: CanvasProps) {
   const edgeCache = useRef(new Map<string, { key: unknown[]; value: Edge<LinkData> }>());
   const { vm, layout, mode, selection } = props;
 
-  const selectedLinks = selection?.kind === "link" ? vm.links.filter((l) => l.linkId === selection.id) : [];
+  // a selected link derived over nets lights up the lines it runs over
+  const derivedSel = selection?.kind === "link" ? vm.derived.find((d) => d.id === selection.id) : undefined;
+  const selectedIds = new Set(derivedSel ? derivedSel.via : selection?.kind === "link" ? [selection.id] : []);
+  const selectedLinks = vm.links.filter((l) => selectedIds.has(l.linkId));
 
   // in ribbon mode a multi-conductor link ends in its own pin handle, so the port dot underneath is hidden
   const ribbonPorts = useMemo(() => {
@@ -87,7 +96,7 @@ export function Canvas(props: CanvasProps) {
       const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
-        type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.expanded ? "container" : "module",
+        type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.kind === "net" ? "net" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
         data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
@@ -112,7 +121,7 @@ export function Canvas(props: CanvasProps) {
       .filter((link) => layout.routes[link.id])
       .map((link) => {
         const color = colorFor(link, mode);
-        const selected = selection?.kind === "link" && selection.id === link.linkId;
+        const selected = selectedIds.has(link.linkId);
         const open = props.openLinks.has(link.linkId);
         const key = [
           link, layout.routes[link.id], color, mode, props.detail, open, props.openLinks, layout.runs[link.id], layout.labelAt[link.id],
@@ -184,7 +193,7 @@ export function Canvas(props: CanvasProps) {
       snapGrid={[16, 16]}
       elevateEdgesOnSelect
       fitView
-      fitViewOptions={{ padding: 0.08 }}
+      fitViewOptions={{ padding: fitPadding(props.inspector ?? false), maxZoom: 1.25 }}
       minZoom={0.2}
       maxZoom={2.5}
       attributionPosition="bottom-left"

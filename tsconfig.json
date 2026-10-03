@@ -16,5 +16,5 @@
       "@uhd-library/*": ["../uhd/library/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "fixtures/src", "vite.config.ts"]
 }

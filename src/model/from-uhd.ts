@@ -21,6 +21,8 @@ import {
 import { deriveLinks } from "@uhd/system/derive.js";
 import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import { isConnector } from "@uhd/protocols/connector.js";
+import { isNetMembership } from "@uhd/system/nets.js";
+import { levelNets, type LevelNets } from "./nets";
 import type {
   LinkState,
   ViewChildPort,
@@ -226,6 +228,8 @@ export interface LevelLinks {
   regionHarnesses: Set<string>;
   /** Stored or derived link id → the view link that draws it (for diagnostics). */
   owners: Map<string, string>;
+  /** Every link UHD derives at this level (through cables and over nets). */
+  derived: LinkResult[];
 }
 
 /**
@@ -313,7 +317,8 @@ export function levelLinks(
   }
 
   for (const r of results) {
-    if (consumed.has(r.link.id)) continue;
+    // net memberships are drawn grouped, per component and net (./nets.ts)
+    if (consumed.has(r.link.id) || isNetMembership(r)) continue;
     const harnessRef = r.link.harness ? def.children?.find((c) => c.id === r.link.harness) : undefined;
     const harnessDef = harnessRef ? lookup(harnessRef.moduleDefId) : undefined;
     const [view] = toLinks(r, prefix, undefined, Boolean(prefix === "" && overrides?.[r.link.id]));
@@ -351,7 +356,7 @@ export function levelLinks(
     owners.set(prefix + r.link.id, view.id);
     links.push(view);
   }
-  return { links, regionHarnesses, owners };
+  return { links, regionHarnesses, owners, derived };
 }
 
 /**
@@ -377,8 +382,14 @@ export interface BuildOptions {
   expanded: Set<string>;
   /** Stored child-link overrides keyed by link id (top level). */
   overrides?: Overrides;
-  /** System diagnostics to overlay on link state. */
+  /**
+   * System diagnostics to overlay on link state. Refs are relative to the
+   * root; findings of a board checked on its own (see App) carry its path
+   * (`link:board/<id>`), so they overlay when that board is drilled into.
+   */
   diagnostics?: SystemDiagnostic[];
+  /** Draw ground nets as junctions with wires (GND wires on) rather than as ground symbols. */
+  grounds?: boolean;
 }
 
 /** Apply child-link overrides to a module's stored links. */
@@ -481,6 +492,9 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
   const levelResults = validateLinks(level, lookup);
   const top = levelLinks(level, levelResults, lookup, "", opts.overrides);
   const owners = new Map(top.owners);
+  const grounds = opts.grounds ?? false;
+  // board nets: junction nodes and grouped membership lines (./nets.ts)
+  const netLevels: LevelNets[] = [levelNets(level, levelResults, top.derived, lookup, "", { grounds })];
   /** Link-scoped compositions (PB-805) are ports on their child for as long as the link exists. */
   const addComposedPorts = (results: LinkResult[], prefix: string) => {
     for (const r of results) {
@@ -515,6 +529,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     const innerResults = validateLinks(def, lookup);
     const innerLinks = levelLinks(def, innerResults, lookup, `${ref.id}/`, undefined);
     for (const [k, v] of innerLinks.owners) owners.set(k, v);
+    netLevels.push(levelNets(def, innerResults, innerLinks.derived, lookup, `${ref.id}/`, { grounds, parent: ref.id }));
     for (const inner of def.children ?? []) {
       const innerDef = lookup(inner.moduleDefId);
       if (!innerDef) continue;
@@ -548,19 +563,37 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
   addComposedPorts(levelResults, "");
   links.push(...top.links);
 
-  // overlay system diagnostics (top level only): errors → incompatible, warnings → partial
-  if (drill.length === 0) {
-    for (const d of opts.diagnostics ?? []) {
-      if (d.severity === "info") continue;
-      const state: LinkState = d.severity === "error" ? "incompatible" : "partial";
-      for (const ref of d.refs) {
-        if (!ref.startsWith("link:")) continue;
-        const owner = owners.get(ref.slice(5)) ?? ref.slice(5);
-        for (const link of links.filter((l) => l.linkId === owner)) {
-          if (RANK[state] > RANK[link.state]) link.state = state;
-          if (!link.diagnostics.includes(d.message)) link.diagnostics.push(d.message);
-          overlayChildren(link, ref.slice(5), state);
-        }
+  const derived: ViewModel["derived"] = [];
+  const derivedOwners = new Map<string, string[]>();
+  for (const n of netLevels) {
+    nodes.push(...n.nodes);
+    links.push(...n.links);
+    derived.push(...n.derived);
+    for (const [k, v] of n.owners) owners.set(k, v);
+    for (const [k, v] of n.derivedOwners) derivedOwners.set(k, v);
+    for (const [nodeId, ports] of n.ports) {
+      const node = nodes.find((x) => x.id === nodeId);
+      if (node) node.ports.push(...ports.filter((p) => !node.ports.some((q) => q.id === p.id)));
+    }
+  }
+
+  // overlay system diagnostics on the links of this level: errors → incompatible, warnings → partial
+  const levelPrefix = drill.length ? `${drill.join("/")}/` : "";
+  for (const d of opts.diagnostics ?? []) {
+    if (d.severity === "info") continue;
+    const state: LinkState = d.severity === "error" ? "incompatible" : "partial";
+    for (const ref of d.refs) {
+      if (!ref.startsWith("link:") || !ref.startsWith(`link:${levelPrefix}`)) continue;
+      const id = ref.slice(5 + levelPrefix.length);
+      for (const x of derived.filter((x) => x.id === id)) {
+        if (RANK[state] > RANK[x.state]) x.state = state;
+        if (!x.diagnostics.includes(d.message)) x.diagnostics.push(d.message);
+      }
+      const targets = derivedOwners.get(id) ?? [owners.get(id) ?? id];
+      for (const link of links.filter((l) => targets.includes(l.linkId))) {
+        if (RANK[state] > RANK[link.state]) link.state = state;
+        if (!link.diagnostics.includes(d.message)) link.diagnostics.push(d.message);
+        overlayChildren(link, id, state);
       }
     }
   }
@@ -573,5 +606,5 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     node.status = touching.length ? worst(touching.map((l) => l.state)) : "unconfigured";
   }
 
-  return { path, nodes, links };
+  return { path, nodes, links, derived };
 }

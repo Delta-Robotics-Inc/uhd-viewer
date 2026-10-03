@@ -6,13 +6,15 @@
  */
 import * as THREE from "three";
 
-export type LabelKind = "module" | "harness" | "interface";
+export type LabelKind = "module" | "harness" | "interface" | "finding";
 
 export interface LabelItem {
   id: string;
   kind: LabelKind;
   title: string;
   sub?: string;
+  /** A second class for the card, leader and dot (a finding's severity: "error", "warning"). */
+  tone?: string;
   /** World-space anchor (read every frame, so it follows explode and animation). */
   anchor: () => THREE.Vector3 | null;
   onClick?: () => void;
@@ -62,13 +64,14 @@ export class LabelLayer {
         c = { el, path, dot, y: NaN };
         this.cards.set(item.id, c);
       }
-      c.el.className = `cad-label kind-${item.kind}`;
+      const tone = item.tone ? ` tone-${item.tone}` : "";
+      c.el.className = `cad-label kind-${item.kind}${tone}`;
       c.el.innerHTML = `<span class="cad-label-title"></span>${item.sub ? '<span class="cad-label-sub"></span>' : ""}`;
       (c.el.querySelector(".cad-label-title") as HTMLElement).textContent = item.title;
       if (item.sub) (c.el.querySelector(".cad-label-sub") as HTMLElement).textContent = item.sub;
       c.el.onclick = item.onClick ?? null;
-      c.path.setAttribute("class", `kind-${item.kind}`);
-      c.dot.setAttribute("class", `kind-${item.kind}`);
+      c.path.setAttribute("class", `kind-${item.kind}${tone}`);
+      c.dot.setAttribute("class", `kind-${item.kind}${tone}`);
     }
   }
 

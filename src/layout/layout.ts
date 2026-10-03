@@ -8,6 +8,7 @@ import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
 import { at, clearOfBends, lengths } from "../canvas/geometry";
 import type { LinkLayout } from "../api";
+import { graphLayout } from "./graph-layout";
 
 /** Distance kept between a corner and anything placed on a link (handles, toggles). */
 export const BEND_CLEAR = 28;
@@ -76,6 +77,8 @@ const PORT_PITCH = 22;
 function defaultSize(node: ViewNode, visiblePorts: number): { w: number; h: number } {
   if (node.sheetPort) return { w: 150, h: 30 };
   if (node.kind === "harness") return { w: 150, h: Math.max(30, 14 + (visiblePorts / 2) * 16) };
+  // a net junction: as wide as its name, as tall as its busiest side needs (grown once ports have sides)
+  if (node.kind === "net") return { w: Math.max(64, node.label.length * 8 + 40), h: 32 };
   if (node.shape === "circle") return /prop/i.test(node.label) ? { w: 60, h: 60 } : { w: 78, h: 78 };
   const perSide = Math.ceil(visiblePorts / 2);
   return { w: CARD_W, h: Math.max(84, 40 + perSide * PORT_PITCH) };
@@ -105,6 +108,7 @@ function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: numb
   const boxes: Record<string, Box> = {};
   const top = vm.nodes.filter((n) => !n.parent && !n.sheetPort);
   const sheets = vm.nodes.filter((n) => n.sheetPort);
+  if (top.some((n) => n.kind === "net")) return netPositions(vm, top, sheets, sizes);
   const gapX = 300;
   const rowY = 140;
   let x = sheets.length ? 460 : 60;
@@ -130,6 +134,42 @@ function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: numb
       const s = sizes[n.id];
       boxes[n.id] = { x: side === "left" ? 60 : rowRight + 180, y: y0 + i * pitch, ...s };
     });
+  }
+  return boxes;
+}
+
+/**
+ * A level with nets (a board): components and junctions in a block by the
+ * force layout (graph-layout.ts), and each sheet port on the left or right
+ * edge level with the child it exposes.
+ */
+function netPositions(vm: ViewModel, top: ViewNode[], sheets: ViewNode[], sizes: Record<string, { w: number; h: number }>): Record<string, Box> {
+  const ids = new Set(top.map((n) => n.id));
+  const edges = vm.links
+    .filter((l) => !l.passThrough && ids.has(l.source.node) && ids.has(l.target.node))
+    .map((l) => [l.source.node, l.target.node] as [string, string]);
+  const at = graphLayout(top.map((n) => ({ id: n.id, ...sizes[n.id] })), edges);
+  const x0 = sheets.length ? 400 : 60;
+  const y0 = 100;
+  const boxes: Record<string, Box> = {};
+  for (const n of top) boxes[n.id] = { x: at[n.id].x + x0, y: at[n.id].y + y0, ...sizes[n.id] };
+  const minX = Math.min(...top.map((n) => boxes[n.id].x));
+  const maxX = Math.max(...top.map((n) => boxes[n.id].x + boxes[n.id].w));
+  const mid = (minX + maxX) / 2;
+  const columns: Record<"left" | "right", { node: ViewNode; y: number }[]> = { left: [], right: [] };
+  for (const sheet of sheets) {
+    const b = boxes[sheet.ports[0]?.exported?.child ?? ""];
+    const side = b && b.x + b.w / 2 > mid ? "right" : "left";
+    columns[side].push({ node: sheet, y: b ? b.y + b.h / 2 - sizes[sheet.id].h / 2 : y0 });
+  }
+  for (const side of ["left", "right"] as const) {
+    let last = -Infinity;
+    for (const { node, y } of columns[side].sort((a, b) => a.y - b.y)) {
+      const s = sizes[node.id];
+      const top = Math.max(y, last + 54);
+      boxes[node.id] = { x: side === "left" ? minX - 340 : maxX + 180, y: top, ...s };
+      last = top;
+    }
   }
   return boxes;
 }
@@ -281,8 +321,18 @@ export function computeLayout(
   }
   for (const [nodeId, count] of sideCount) {
     const node = vm.nodes.find((n) => n.id === nodeId)!;
-    if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness") continue;
+    if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness" || node.kind === "net") continue;
     boxes[nodeId].h = Math.ceil(Math.max(boxes[nodeId].h, 44 + count * PORT_PITCH) / GRID) * GRID;
+  }
+  // a junction keeps one grid step between its ports on every side
+  for (const [sk, entries] of bySide) {
+    const nodeId = sk.slice(0, sk.lastIndexOf("|"));
+    const side = sk.slice(sk.lastIndexOf("|") + 1);
+    const node = vm.nodes.find((n) => n.id === nodeId)!;
+    if (node.kind !== "net" || hand?.nodes[nodeId]) continue;
+    const need = (entries.length + 1) * GRID;
+    if (side === "left" || side === "right") boxes[nodeId].h = Math.max(boxes[nodeId].h, need);
+    else boxes[nodeId].w = Math.max(boxes[nodeId].w, need + 32);
   }
 
   const counterpartOf = (key: string): Pt | undefined => {
@@ -323,7 +373,7 @@ export function computeLayout(
         p.x = cx + Math.cos(angle) * r;
         p.y = cy + Math.sin(angle) * r;
       } else if (side === "left" || side === "right") {
-        const harness = node.kind === "harness";
+        const harness = node.kind === "harness" || node.kind === "net";
         const inset = node.expanded ? 34 : harness ? 4 : 28;
         p.x = side === "left" ? box.x : box.x + box.w;
         p.y = gridSlot(box.y + inset + (box.h - inset - (harness ? 4 : 12)) * f, box.y, box.y + box.h, used, `${nodeId}|${side}`);

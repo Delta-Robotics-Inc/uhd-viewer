@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
-import { checkSystem } from "@uhd/system/checks.js";
-import { buildView, withOverrides } from "./model/from-uhd";
+import { buildView, levelModule, withOverrides } from "./model/from-uhd";
+import { systemDiagnostics } from "./model/diagnostics";
 import type { Classification } from "./model/classification";
 import type { ViewLink } from "./model/types";
 import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
@@ -12,7 +12,7 @@ import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source
 import type { ViewerLayout, ViewerOptions } from "./api";
 import { sameLayout } from "./options";
 import { Canvas, type Selection } from "./canvas/Canvas";
-import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
+import { ActivityBar, Header, Inspector, Legend, Toolbar, type Goto, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
 import { CadView } from "./cad/CadView";
 
@@ -148,12 +148,13 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
 
   const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0];
   const system = useMemo(() => withOverrides(scenario.system, overrides), [scenario, overrides]);
-  const diagnostics = useMemo(() => checkSystem(system, scenario.lookup).diagnostics, [system, scenario]);
+  // the root's checks, and each board's on its own (model/diagnostics.ts)
+  const diagnostics = useMemo(() => systemDiagnostics(system, scenario.lookup), [system, scenario]);
 
   const levelKey = drill.join("/");
   const vm = useMemo(
-    () => buildView(system, scenario.lookup, drill, { expanded, overrides, diagnostics }),
-    [system, scenario, drill, expanded, overrides, diagnostics],
+    () => buildView(system, scenario.lookup, drill, { expanded, overrides, diagnostics, grounds: showGrounds }),
+    [system, scenario, drill, expanded, overrides, diagnostics, showGrounds],
   );
   const hand = HAND_LAYOUTS[levelKey];
   // while something is dragged only the links it touches are rerouted; all of them once it is dropped
@@ -241,6 +242,12 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
   }, [levelKey]);
   const defFor = useCallback((id?: string) => (id ? scenario.lookup(id) : undefined), [scenario]);
   const onPair = useCallback((l: ViewLink) => setPairLink(l.linkId), []);
+  // a finding or a board drawing can lead to another level: open it, then select there
+  const onGoto = useCallback((g: Goto) => {
+    setDrill((d) => (d.join("/") === g.drill.join("/") ? d : g.drill));
+    setSelection(g.selection);
+  }, []);
+  const levelDef = useMemo(() => levelModule(system, drill, scenario.lookup).def, [system, drill, scenario]);
 
   // the producer's and the host's findings describe the nominal build
   const hostDiagnostics = useMemo(
@@ -271,7 +278,7 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
         <div className="workspace">
           <ActivityBar panel={panel} onPanel={setPanel} errors={errors} />
           {view === "3d" ? (
-            <CadView key={scenario.id} system={system} lookup={scenario.lookup} source={source} />
+            <CadView key={scenario.id} system={system} lookup={scenario.lookup} source={source} diagnostics={diagnostics} hostDiagnostics={hostDiagnostics} />
           ) : (
           <>
           <main className="canvas">
@@ -287,6 +294,7 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
             <Canvas
               key={`${scenario.id}/${levelKey}`}
               vm={vm}
+              inspector={Boolean(panel)}
               layout={layout}
               hand={hand}
               mode={mode}
@@ -304,6 +312,7 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
             />
             <Toolbar
               onReset={onReset}
+              inspector={Boolean(panel)}
             />
             <Legend mode={mode} />
             {pair && <PairView vm={vm} link={pair} mode={mode} onClose={() => setPairLink(null)} />}
@@ -330,6 +339,9 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
               onToggleExpand={onToggleExpand}
               onPair={onPair}
               topLevel={drill.length === 0}
+              levelDef={levelDef}
+              drill={drill}
+              onGoto={onGoto}
             />
           )}
           </>

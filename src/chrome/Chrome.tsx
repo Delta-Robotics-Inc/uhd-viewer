@@ -1,15 +1,17 @@
 import { memo, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
-import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
+import type { ScopedDiagnostic } from "../model/diagnostics";
+import { circuitOutputs } from "../model/outputs";
+import { BoardViews, DerivedDetails, DerivedList, NetDetails, PackageSection, PinTable } from "./BoardInspector";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
 import { CLASSIFICATIONS, colorFor, legendFor, type Classification } from "../model/classification";
 import { evidenceFor } from "../model/evidence";
 import { Icon } from "../canvas/Icon";
-import type { Selection } from "../canvas/Canvas";
+import { fitPadding, type Selection } from "../canvas/Canvas";
 
 // ---------------------------------------------------------------------------
 // Header: breadcrumb (D9), scenario, classification (D7), detail (D5)
@@ -239,7 +241,9 @@ function NodeDetails({
   def,
   onDrill,
   onToggleExpand,
+  onSelect,
   artifacts,
+  board,
 }: {
   node: ViewNode;
   vm: ViewModel;
@@ -247,9 +251,13 @@ function NodeDetails({
   def?: ModuleDef;
   onDrill: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  onSelect: (s: Selection) => void;
   /** Thumbnail and CAD preview. */
   artifacts?: React.ReactNode;
+  /** The board's drawings: this node's own, or those of the board it sits on, with it marked. */
+  board?: React.ReactNode;
 }) {
+  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} />;
   const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
   return (
     <div className="details">
@@ -269,7 +277,10 @@ function NodeDetails({
           <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>
         </div>
       )}
+      {board}
       {artifacts}
+      <PackageSection def={def} />
+      <DerivedList items={vm.derived.filter((d) => d.a.node === node.id || d.b.node === node.id)} title="FUNCTIONAL LINKS" onSelect={onSelect} />
       <EvidenceSection def={def} />
       {node.kind !== "harness" && (
         <>
@@ -282,11 +293,20 @@ function NodeDetails({
                   <span className="swatch" style={{ background: colorFor({ domain: p.domain, protocol: p.protocol, state: link?.state }, mode) }} />
                   <span className="port-name">{p.name}</span>
                   <span className="port-proto">{p.protocol}</span>
-                  {link ? <span className="port-linked">↔ {link.source.node === node.id ? link.target.node : link.source.node}</span> : null}
+                  {link ? (
+                    <span className="port-linked">
+                      ↔ {(() => {
+                        const other = link.source.node === node.id ? link.target.node : link.source.node;
+                        // a net reads by its name, not its path
+                        return vm.nodes.find((n) => n.id === other && n.net)?.label ?? other;
+                      })()}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
           </div>
+          <PinTable def={def} node={node} vm={vm} />
         </>
       )}
     </div>
@@ -303,9 +323,12 @@ function LinkDetails({
   override,
   onOverride,
   harness,
+  derived,
 }: {
   /** The harness carrying the link: its artifacts (thumbnail, CAD). */
   harness?: React.ReactNode;
+  /** Functional links that run over this line (a grouped net membership). */
+  derived?: React.ReactNode;
   link: ViewLink;
   mode: Classification;
   open: boolean;
@@ -337,8 +360,9 @@ function LinkDetails({
       <Row k="DOMAIN" v={link.domain} />
       <Row k="STATE" v={STATE_LABEL[link.state]} />
       <Row k="HARNESS" v={link.run?.name ?? link.harness} />
+      <Row k="NET" v={link.net?.name} />
       <div className="actions">
-        <button onClick={onPair}>PAIR VIEW</button>
+        {!link.net && <button onClick={onPair}>PAIR VIEW</button>}
         {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
       </div>
       {harness}
@@ -346,7 +370,7 @@ function LinkDetails({
         <>
           <div className="section-title">
             <span>
-              CHILD LINKS · {link.children.length}
+              {link.net ? "PINS ON THE NET" : "CHILD LINKS"} · {link.children.length}
               {link.manual && (
                 <span className="manual-tag">
                   <Icon name="lock" size={9} /> STORED
@@ -370,7 +394,7 @@ function LinkDetails({
             <tbody>
               {link.children.map((c, i) => (
                 <tr key={c.id}>
-                  <td>{c.a.toUpperCase()}</td>
+                  <td>{(link.net ? c.label : c.a).toUpperCase()}</td>
                   <td className="muted">{c.aPin ?? ""}</td>
                   <td>→</td>
                   <td>
@@ -393,6 +417,7 @@ function LinkDetails({
           </table>
         </>
       )}
+      {derived}
       {link.diagnostics.length > 0 && (
         <>
           <div className="section-title">DIAGNOSTICS</div>
@@ -407,10 +432,11 @@ function LinkDetails({
   );
 }
 
-function Hierarchy({ vm, selection, onSelect }: { vm: ViewModel; selection: Selection; onSelect: (s: Selection) => void }) {
-  const roots = vm.nodes.filter((n) => !n.parent && !n.sheetPort);
-  const kids = (id: string) => vm.nodes.filter((n) => n.parent === id);
-  const links = vm.links.filter((l) => !l.passThrough && l.segment !== "b");
+function Hierarchy({ vm, selection, onSelect, board }: { vm: ViewModel; selection: Selection; onSelect: (s: Selection) => void; board?: React.ReactNode }) {
+  const roots = vm.nodes.filter((n) => !n.parent && !n.sheetPort && n.kind !== "net");
+  const kids = (id: string) => vm.nodes.filter((n) => n.parent === id && n.kind !== "net");
+  const nets = vm.nodes.filter((n) => n.kind === "net");
+  const links = vm.links.filter((l) => !l.passThrough && l.segment !== "b" && !l.net);
   const item = (n: ViewNode, depth: number): React.ReactNode => (
     <div key={n.id}>
       <button
@@ -427,9 +453,22 @@ function Hierarchy({ vm, selection, onSelect }: { vm: ViewModel; selection: Sele
   );
   return (
     <div className="hierarchy">
-      <div className="section-title">MODULES · {vm.nodes.filter((n) => !n.sheetPort).length}</div>
+      {board}
+      <div className="section-title">MODULES · {vm.nodes.filter((n) => !n.sheetPort && n.kind !== "net").length}</div>
       {roots.map((n) => item(n, 0))}
-      <div className="section-title">LINKS · {links.length}</div>
+      {nets.length > 0 && (
+        <>
+          <div className="section-title">NETS · {nets.length}</div>
+          {nets.map((n) => (
+            <button key={n.id} className={`tree-item${selection?.kind === "node" && selection.id === n.id ? " on" : ""}`} onClick={() => onSelect({ kind: "node", id: n.id })}>
+              <span className={`state-dot ${n.status}`} />
+              <span>{n.label}</span>
+              <span className="tree-tag">{n.net?.voltage ?? n.net?.signal}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {links.length > 0 && <div className="section-title">LINKS · {links.length}</div>}
       {links.map((l) => (
         <button
           key={l.id}
@@ -441,39 +480,95 @@ function Hierarchy({ vm, selection, onSelect }: { vm: ViewModel; selection: Sele
           <span className="tree-tag">{l.protocol}</span>
         </button>
       ))}
+      <DerivedList items={vm.derived} title="FUNCTIONAL LINKS (DERIVED)" onSelect={onSelect} />
     </div>
   );
 }
 
 const SEVERITY_ICON = { error: "octagon-x", warning: "triangle-alert", info: "info" } as const;
 
-/** What a producer finding is about, if it is on this canvas: a link, an instance, or an instance of a definition. */
-function hostTarget(d: UhdBundleDiagnostic, vm: ViewModel): Selection {
+/** Where to go for a finding: a drill path and what to select there. */
+export interface Goto {
+  drill: string[];
+  selection: Selection;
+}
+
+/** A stored or derived link id as the view selects it: the line that draws it, or the derived link itself. */
+export function selectableLink(vm: ViewModel, id: string): Selection {
+  if (vm.derived.some((d) => d.id === id)) return { kind: "link", id };
+  const line = vm.links.find((l) => l.linkId === id || l.alsoIds?.includes(id));
+  return line ? { kind: "link", id: line.linkId } : null;
+}
+
+/**
+ * What a canonical path (`u2:pin_14`, `board/u2`, `:sda`) is on this level:
+ * the node itself, its net junction, or the node that contains it.
+ */
+function nodeFor(vm: ViewModel, path: string): Selection {
+  if (vm.nodes.some((n) => n.id === path)) return { kind: "node", id: path };
+  const [modules] = path.split(":");
+  const parts = modules.split("/");
+  for (let i = parts.length; i > 0; i--) {
+    const id = parts.slice(0, i).join("/");
+    if (vm.nodes.some((n) => n.id === id)) return { kind: "node", id };
+  }
+  return null;
+}
+
+/** What a producer finding is about: on this level, or inside a module on it (drilled into). */
+function hostTarget(d: UhdBundleDiagnostic, vm: ViewModel, drill: string[]): Goto | null {
   const e = d.entity;
   if (!e) return null;
-  if (e.kind === "link") return vm.links.some((l) => l.linkId === e.id) ? { kind: "link", id: e.id } : null;
-  const node = e.kind === "definition" ? vm.nodes.find((n) => n.defId === e.id) : vm.nodes.find((n) => n.id === e.id || e.id.startsWith(`${n.id}/`));
-  return node ? { kind: "node", id: node.id } : null;
+  if (e.kind === "link") {
+    const sel = selectableLink(vm, e.id);
+    return sel ? { drill, selection: sel } : null;
+  }
+  if (e.kind === "definition") {
+    const node = vm.nodes.find((n) => n.defId === e.id);
+    return node ? { drill, selection: { kind: "node", id: node.id } } : null;
+  }
+  const [modules] = e.id.split(":");
+  const parts = modules ? modules.split("/") : [];
+  // inside a child with children of its own (a component on a board): open the child and select it there
+  const first = vm.nodes.find((n) => n.id === parts[0] && n.childCount > 0 && !n.expanded);
+  if (first && parts.length > 1) return { drill: [...drill, parts[0]], selection: { kind: "node", id: parts[1] } };
+  const sel = nodeFor(vm, e.id);
+  return sel ? { drill, selection: sel } : null;
 }
 
 function Checks({
   diagnostics,
   host,
   vm,
-  onSelect,
+  drill,
+  onGoto,
 }: {
-  diagnostics: SystemDiagnostic[];
+  diagnostics: ScopedDiagnostic[];
   host: UhdBundleDiagnostic[];
   vm: ViewModel;
-  onSelect: (s: Selection) => void;
+  drill: string[];
+  onGoto: (g: Goto) => void;
 }) {
   const counts = { error: 0, warning: 0, info: 0 };
   for (const d of [...diagnostics, ...host]) counts[d.severity]++;
-  const target = (d: SystemDiagnostic): Selection => {
-    const link = d.refs.find((r) => r.startsWith("link:"))?.slice(5);
-    if (link && vm.links.some((l) => l.linkId === link)) return { kind: "link", id: link };
-    const node = d.refs.map((r) => r.split(":")[0]).find((n) => vm.nodes.some((x) => x.id === n));
-    return node ? { kind: "node", id: node } : null;
+  const here = drill.join("/");
+  /** A finding of this level resolves against what is drawn; one of another level opens that level. */
+  const target = (d: ScopedDiagnostic): Goto | null => {
+    const scope = d.scope;
+    const strip = (r: string) =>
+      !scope ? r : r.startsWith(`link:${scope}/`) ? `link:${r.slice(6 + scope.length)}` : r.startsWith(`${scope}/`) ? r.slice(scope.length + 1) : r.startsWith(`${scope}:`) ? r.slice(scope.length) : r;
+    const refs = d.refs.map(strip);
+    const link = refs.find((r) => r.startsWith("link:"))?.slice(5);
+    const paths = refs.filter((r) => !r.startsWith("link:"));
+    if (scope === here) {
+      const sel = (link && selectableLink(vm, link)) || paths.map((r) => nodeFor(vm, r)).find(Boolean) || null;
+      return sel ? { drill, selection: sel } : null;
+    }
+    const node = paths[0];
+    return {
+      drill: scope ? scope.split("/") : [],
+      selection: link ? { kind: "link", id: link } : node ? { kind: "node", id: node.startsWith(":") ? node : node.split(":")[0].split("/")[0] } : null,
+    };
   };
   return (
     <div className="checks">
@@ -483,17 +578,20 @@ function Checks({
         <span className="sev info">{counts.info} INFO</span>
       </div>
       {diagnostics.map((d) => (
-        <button key={d.id} className={`check ${d.severity}`} onClick={() => onSelect(target(d))}>
+        <button key={d.id} className={`check ${d.severity}`} onClick={() => onGoto(target(d) ?? { drill, selection: null })}>
           <Icon name={SEVERITY_ICON[d.severity]} size={13} />
           <span className="check-body">
-            <span className="check-rule">{d.rule.replace(/_/g, " ").toUpperCase()}</span>
+            <span className="check-rule">
+              {d.rule.replace(/_/g, " ").toUpperCase()}
+              {d.scope && <span className="check-scope"> · IN {d.scope.toUpperCase()}</span>}
+            </span>
             <span className="check-msg">{d.message}</span>
           </span>
         </button>
       ))}
       {host.length > 0 && <div className="section-title">FROM THE PRODUCER · {host.length}</div>}
       {host.map((d, i) => (
-        <button key={`${d.code}:${d.entity?.id ?? i}`} className={`check ${d.severity}`} onClick={() => onSelect(hostTarget(d, vm))}>
+        <button key={`${d.code}:${d.entity?.id ?? i}`} className={`check ${d.severity}`} onClick={() => onGoto(hostTarget(d, vm, drill) ?? { drill, selection: null })}>
           <Icon name={SEVERITY_ICON[d.severity]} size={13} />
           <span className="check-body">
             <span className="check-rule">
@@ -516,7 +614,7 @@ function InspectorView(props: {
   selection: Selection;
   mode: Classification;
   openLinks: Set<string>;
-  diagnostics: SystemDiagnostic[];
+  diagnostics: ScopedDiagnostic[];
   /** Findings from the bundle's producer and the host (UHD's own checks excluded: the viewer runs them). */
   hostDiagnostics: UhdBundleDiagnostic[];
   defFor: (defId?: string) => ModuleDef | undefined;
@@ -532,10 +630,39 @@ function InspectorView(props: {
   onToggleExpand: (id: string) => void;
   onPair: (link: ViewLink) => void;
   topLevel: boolean;
+  /** The module shown at this level and its drill path (for its board drawings and for findings elsewhere). */
+  levelDef: ModuleDef;
+  drill: string[];
+  onGoto: (g: Goto) => void;
 }) {
   const { vm, selection } = props;
   const node = selection?.kind === "node" ? vm.nodes.find((n) => n.id === selection.id) : undefined;
   const link = selection?.kind === "link" ? vm.links.find((l) => l.linkId === selection.id) : undefined;
+  const derived = selection?.kind === "link" && !link ? vm.derived.find((d) => d.id === selection.id) : undefined;
+  const lookup = (id: string) => props.defFor(id);
+
+  /** The drawings to show for a node: its own board's, or the board it is a component of, marking it. */
+  const boardFor = (n: ViewNode): React.ReactNode => {
+    const own = props.defFor(n.defId);
+    if (n.kind !== "net" && circuitOutputs(own)) {
+      // a click on a component opens the board and selects it there
+      return <BoardViews def={own!} lookup={lookup} resolve={props.resolveArtifact} onPick={(instance) => props.onGoto({ drill: [...props.drill, ...n.id.split("/")], selection: { kind: "node", id: instance } })} />;
+    }
+    const parent = n.parent ? vm.nodes.find((x) => x.id === n.parent) : undefined;
+    const holder = parent ? props.defFor(parent.defId) : props.levelDef;
+    if (!holder || !circuitOutputs(holder)) return null;
+    const prefix = parent ? `${parent.id}/` : "";
+    return (
+      <BoardViews
+        def={holder}
+        lookup={lookup}
+        resolve={props.resolveArtifact}
+        highlight={n.id.slice(prefix.length)}
+        onPick={(instance) => props.onSelect({ kind: "node", id: prefix + instance })}
+      />
+    );
+  };
+
   return (
     <aside className="inspector">
       <div className="inspector-header">
@@ -558,6 +685,8 @@ function InspectorView(props: {
             def={props.defFor(node.defId)}
             onDrill={props.onDrill}
             onToggleExpand={props.onToggleExpand}
+            onSelect={props.onSelect}
+            board={boardFor(node)}
             artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} />}
           />
         ) : link ? (
@@ -575,11 +704,23 @@ function InspectorView(props: {
                 <ArtifactsSection def={props.defFor(link.run.defId)} resolve={props.resolveArtifact} appearance={props.appearance?.[link.run.defId]} />
               )
             }
+            derived={link.net && <DerivedList items={vm.derived.filter((d) => d.via.includes(link.id))} title="FUNCTIONAL LINKS OVER THESE PINS" onSelect={props.onSelect} />}
           />
+        ) : derived ? (
+          <DerivedDetails d={derived} vm={vm} onSelect={props.onSelect} />
         ) : props.panel === "checks" ? (
-          <Checks diagnostics={props.diagnostics} host={props.hostDiagnostics} vm={vm} onSelect={props.onSelect} />
+          <Checks diagnostics={props.diagnostics} host={props.hostDiagnostics} vm={vm} drill={props.drill} onGoto={props.onGoto} />
         ) : (
-          <Hierarchy vm={vm} selection={selection} onSelect={props.onSelect} />
+          <Hierarchy
+            vm={vm}
+            selection={selection}
+            onSelect={props.onSelect}
+            board={
+              circuitOutputs(props.levelDef) && (
+                <BoardViews def={props.levelDef} lookup={lookup} resolve={props.resolveArtifact} onPick={(instance) => props.onSelect({ kind: "node", id: instance })} />
+              )
+            }
+          />
         )}
       </div>
     </aside>
@@ -590,10 +731,10 @@ function InspectorView(props: {
 // Bottom toolbar and legend
 // ---------------------------------------------------------------------------
 
-function ToolbarView({ onReset }: { onReset: () => void }) {
+function ToolbarView({ onReset, inspector = false }: { onReset: () => void; inspector?: boolean }) {
   const flow = useReactFlow();
   const tools = [
-    { icon: "maximize", label: "Fit view", run: () => flow.fitView({ padding: 0.08, duration: 300 }) },
+    { icon: "maximize", label: "Fit view", run: () => flow.fitView({ padding: fitPadding(inspector), maxZoom: 1.25, duration: 300 }) },
     { icon: "zoom-in", label: "Zoom in", run: () => flow.zoomIn({ duration: 200 }) },
     { icon: "zoom-out", label: "Zoom out", run: () => flow.zoomOut({ duration: 200 }) },
     { icon: "rotate-ccw", label: "Reset layout", run: onReset },

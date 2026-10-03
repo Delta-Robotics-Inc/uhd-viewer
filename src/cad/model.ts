@@ -9,7 +9,7 @@
  *     procedural D3  derived from its parameters at its frame
  *   plus whether it is logical, unmapped, or resolved through its children.
  */
-import type { ArtifactDef, GeometryFrame, GeometryRef, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
+import type { ArtifactDef, ChildModuleRef, GeometryFrame, GeometryRef, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import {
   assemble,
   bodyKey,
@@ -70,6 +70,22 @@ export interface CadModel {
   /** module path key -> def, for every leaf instance */
   defs: Map<string, ModuleDef>;
   manifests: Map<string, GeometryManifest>;
+  /**
+   * Instances drawn inside another module's body rather than placed: the
+   * components of a board whose body (board.glb) shows them (PB-823). Path
+   * key → the body key that holds them.
+   */
+  within: Map<string, string>;
+}
+
+/** The definition at an instance path below `system` ([] is the system itself). */
+export function defAt(system: ModuleDef, lookup: ModuleLookup, path: string[]): ModuleDef | undefined {
+  let def: ModuleDef | undefined = system;
+  for (const id of path) {
+    const ref: ChildModuleRef | undefined = def?.children?.find((c) => c.id === id);
+    def = ref ? lookup(ref.moduleDefId) : undefined;
+  }
+  return def;
 }
 
 /** Artifact id of the GLB for a body: the one generated from `bodyArtifact`, or the module's first body GLB. */
@@ -116,13 +132,23 @@ export function buildCadModel(
   const fixed = Object.fromEntries(hints.map((h) => [bodyKey(h.path), h.matrix]));
   const assembly = assemble(system, lookup, { root: rootPath ?? defaultRoot(system, lookup), fixed });
   const defs = new Map(assembly.instances.map((i) => [bodyKey(i.path), i.def]));
-  const bodies: CadBody[] = assembly.placements.map((p: Placement) => {
-    const def = defs.get(bodyKey(p.path))!;
+  const bodies: CadBody[] = assembly.placements.flatMap((p: Placement) => {
+    // a module with children of its own (a board) is placed by its own mates, and the system itself can be the root
+    const def = defs.get(bodyKey(p.path)) ?? defAt(system, lookup, p.path);
+    if (!def) return [];
+    defs.set(bodyKey(p.path), def);
     const glb = glbFor(def, p.body);
     const hint = hints.find((h) => bodyKey(h.path) === p.key)?.note;
-    return { key: p.key, path: p.path, def, glb, bodyArtifact: p.body ?? sourceOf(def, glb), matrix: p.matrix, via: p.via, hint };
+    // a GLB generated from nothing else (a provider's board.glb) is its own source: its manifest is generated from it
+    return [{ key: p.key, path: p.path, def, glb, bodyArtifact: p.body ?? sourceOf(def, glb) ?? glb?.id, matrix: p.matrix, via: p.via, hint }];
   });
-  return { assembly, bodies, defs, manifests };
+  // instances inside a placed body that has a GLB of its own are drawn by it (a board's components in board.glb)
+  const within = new Map<string, string>();
+  for (const inst of assembly.instances) {
+    const holder = bodies.filter((b) => b.glb && !b.key.includes("#") && b.path.length < inst.path.length && b.path.every((x, i) => inst.path[i] === x)).sort((a, b) => b.path.length - a.path.length)[0];
+    if (holder) within.set(bodyKey(inst.path), holder.key);
+  }
+  return { assembly, bodies, defs, manifests, within };
 }
 
 export function interfaceRows(def: ModuleDef, manifests: Map<string, GeometryManifest>): InterfaceRow[] {
@@ -180,10 +206,12 @@ export function traitParam<T>(iface: InterfaceDef, type: string, key: string): T
 
 /**
  * The instance the assembly is placed from when the display hints don't say:
- * the top-level module with the most interface frames (the structure the
- * others mount to).
+ * the system itself when it has a body of its own, else the top-level module
+ * with the most interface frames (the structure the others mount to).
  */
 export function defaultRoot(system: ModuleDef, lookup: (id: string) => ModuleDef | undefined): string[] {
+  // a system with a body of its own (a board as the bundle's root) is placed from itself
+  if (glbFor(system)) return [];
   let best: { id: string; frames: number } | undefined;
   for (const c of system.children ?? []) {
     const def = lookup(c.moduleDefId);
