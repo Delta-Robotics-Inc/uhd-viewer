@@ -22,10 +22,92 @@ export interface LabelItem {
 
 const SVGNS = "http://www.w3.org/2000/svg";
 
+/** Vertical gap between cards in a column, and the clearance between the model's anchors and a column. */
+export const LABEL_GAP = 6;
+const COLUMN_OFFSET = 56;
+const COLUMN_GAP = 16;
+
+/** A card to place: its anchor on screen (x, y) and its size. */
+export interface LabelBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Where a card goes: its top-left corner, the side of the model, and which column on that side (0 nearest). */
+export interface SolvedLabel {
+  x: number;
+  y: number;
+  side: -1 | 1;
+  column: number;
+}
+
+/**
+ * Callout placement (PB-873): cards in columns either side of the model,
+ * each column ordered by its anchors' screen y so leader lines do not cross,
+ * and stacked so no two cards overlap. Sides are chosen by anchor x and then
+ * balanced by height; a side taller than the view spills into a second,
+ * outer column. Pure: re-solved every frame as the camera moves.
+ */
+export function solveLabels(items: LabelBox[], width: number, height: number, m: { top: number; bottom: number; left: number; right: number }): Map<string, SolvedLabel> {
+  const out = new Map<string, SolvedLabel>();
+  if (!items.length) return out;
+  const minX = Math.min(...items.map((p) => p.x));
+  const maxX = Math.max(...items.map((p) => p.x));
+  const mid = (minX + maxX) / 2;
+  const avail = Math.max(1, height - m.top - m.bottom);
+  const side = new Map<string, -1 | 1>(items.map((p) => [p.id, p.x < mid || (p.x === mid && p.y < 0) ? -1 : 1]));
+  const stack = (s: -1 | 1) => items.filter((p) => side.get(p.id) === s).reduce((t, p) => t + p.h + LABEL_GAP, 0);
+  // balance by height: move the most central anchors across while that evens the columns
+  for (let guard = 0; guard < items.length; guard++) {
+    const from: -1 | 1 = stack(-1) > stack(1) ? -1 : 1;
+    const cand = items.filter((p) => side.get(p.id) === from).sort((a, b) => Math.abs(a.x - mid) - Math.abs(b.x - mid) || a.id.localeCompare(b.id))[0];
+    if (!cand) break;
+    const before = Math.abs(stack(-1) - stack(1));
+    side.set(cand.id, (from * -1) as -1 | 1);
+    if (Math.abs(stack(-1) - stack(1)) >= before) {
+      side.set(cand.id, from);
+      break;
+    }
+  }
+  for (const s of [-1, 1] as const) {
+    const all = items.filter((p) => side.get(p.id) === s).sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+    if (!all.length) continue;
+    // as many columns as the height needs; cards dealt in y order so each column stays ordered
+    const total = all.reduce((t, p) => t + p.h + LABEL_GAP, 0);
+    const n = Math.max(1, Math.ceil(total / avail));
+    const cols: LabelBox[][] = Array.from({ length: n }, () => []);
+    all.forEach((p, i) => cols[n === 1 ? 0 : i % n].push(p));
+    let edge = s < 0 ? minX - COLUMN_OFFSET : maxX + COLUMN_OFFSET;
+    cols.forEach((col, ci) => {
+      const wMax = Math.max(...col.map((p) => p.w));
+      // keep the column on screen: a left column's right edge, a right column's left edge
+      const e = s < 0 ? Math.max(m.left + wMax, Math.min(edge, width - m.right)) : Math.min(width - m.right - wMax, Math.max(edge, m.left));
+      const ys = col.map((p) => p.y - p.h / 2);
+      for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + LABEL_GAP);
+      const overflow = ys[ys.length - 1] + col[col.length - 1].h - (height - m.bottom);
+      if (overflow > 0) for (let i = 0; i < ys.length; i++) ys[i] -= overflow;
+      for (let i = ys.length - 2; i >= 0; i--) ys[i] = Math.min(ys[i], ys[i + 1] - col[i].h - LABEL_GAP);
+      if (ys[0] < m.top) {
+        // taller than the view (a single column that cannot spill): stack from the top, never overlapping
+        ys[0] = m.top;
+        for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + LABEL_GAP);
+      }
+      col.forEach((p, i) => out.set(p.id, { x: s < 0 ? e - p.w : e, y: ys[i], side: s, column: ci }));
+      edge = s < 0 ? e - wMax - COLUMN_GAP : e + wMax + COLUMN_GAP;
+    });
+  }
+  return out;
+}
+
 export class LabelLayer {
   readonly root: HTMLDivElement;
   private svg: SVGSVGElement;
-  private cards = new Map<string, { el: HTMLDivElement; path: SVGPathElement; dot: SVGCircleElement; y: number }>();
+  private cards = new Map<string, { el: HTMLDivElement; path: SVGPathElement; dot: SVGCircleElement; y: number; side: string }>();
+  /** Place the next frame's cards at their solved positions without easing (stills). */
+  snap = false;
   private items: LabelItem[] = [];
   opacity = 0;
   target = 0;
@@ -61,7 +143,7 @@ export class LabelLayer {
         dot.setAttribute("r", "3");
         this.svg.append(path, dot);
         this.root.appendChild(el);
-        c = { el, path, dot, y: NaN };
+        c = { el, path, dot, y: NaN, side: "" };
         this.cards.set(item.id, c);
       }
       const tone = item.tone ? ` tone-${item.tone}` : "";
@@ -86,9 +168,7 @@ export class LabelLayer {
     this.svg.setAttribute("width", String(width));
     this.svg.setAttribute("height", String(height));
 
-    const m = this.margins;
-    type P = { item: LabelItem; x: number; y: number; w: number; h: number; side: -1 | 1 };
-    const placed: P[] = [];
+    const placed: (LabelBox & { item: LabelItem })[] = [];
     for (const item of this.items) {
       const c = this.cards.get(item.id)!;
       const a = item.anchor();
@@ -100,53 +180,39 @@ export class LabelLayer {
       }
       c.el.style.display = "";
       c.path.style.display = c.dot.style.display = "";
-      const x = ((v.x + 1) / 2) * width;
-      const y = ((1 - v.y) / 2) * height;
-      placed.push({ item, x, y, w: c.el.offsetWidth, h: c.el.offsetHeight, side: 1 });
+      placed.push({ item, id: item.id, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height, w: c.el.offsetWidth, h: c.el.offsetHeight });
     }
     if (!placed.length) return;
 
-    // columns hug the model: just outside the anchors' screen bounds
-    const minX = Math.min(...placed.map((p) => p.x));
-    const maxX = Math.max(...placed.map((p) => p.x));
-    const mid = (minX + maxX) / 2;
-    // side by anchor x, then balance the columns by moving the most central anchors
-    for (const p of placed) p.side = p.x < mid ? -1 : 1;
-    const count = (s: -1 | 1) => placed.filter((p) => p.side === s).length;
-    while (Math.abs(count(-1) - count(1)) > 1) {
-      const from: -1 | 1 = count(-1) > count(1) ? -1 : 1;
-      const cand = placed.filter((p) => p.side === from).sort((a, b) => Math.abs(a.x - mid) - Math.abs(b.x - mid))[0];
-      cand.side = (from * -1) as -1 | 1;
+    const solved = solveLabels(placed, width, height, this.margins);
+    // ease towards the solution, then keep each column's order and gaps so cards never overlap while moving
+    const ease = this.snap ? 1 : Math.min(1, k * 2.5);
+    this.snap = false;
+    const columns = new Map<string, { p: LabelBox & { item: LabelItem }; s: SolvedLabel }[]>();
+    for (const p of placed) {
+      const sv = solved.get(p.id)!;
+      const key = `${sv.side}:${sv.column}`;
+      columns.set(key, [...(columns.get(key) ?? []), { p, s: sv }]);
     }
-
-    const gap = 6;
-    for (const side of [-1, 1] as const) {
-      const col = placed.filter((p) => p.side === side).sort((a, b) => a.y - b.y);
-      if (!col.length) continue;
-      const ys = col.map((p) => p.y - p.h / 2);
-      for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + col[i - 1].h + gap);
-      const overflow = ys[ys.length - 1] + col[col.length - 1].h - (height - m.bottom);
-      if (overflow > 0) for (let i = 0; i < ys.length; i++) ys[i] -= overflow;
-      for (let i = ys.length - 2; i >= 0; i--) ys[i] = Math.min(ys[i], ys[i + 1] - col[i].h - gap);
-      if (ys[0] < m.top) {
-        const shift = m.top - ys[0];
-        for (let i = 0; i < ys.length; i++) ys[i] += shift;
-      }
-      const wMax = Math.max(...col.map((p) => p.w));
-      // left column: right-aligned cards ending 56px left of the leftmost anchor
-      const colEdge = side < 0 ? Math.max(m.left + wMax, minX - 56) : Math.min(width - m.right - wMax, maxX + 56);
-      col.forEach((p, i) => {
-        const c = this.cards.get(p.item.id)!;
-        c.y = Number.isNaN(c.y) ? ys[i] : c.y + (ys[i] - c.y) * Math.min(1, k * 2.5);
-        const colX = side < 0 ? colEdge - p.w : colEdge;
-        const lx = side < 0 ? colEdge : colEdge;
-        const ly = c.y + p.h / 2;
-        c.el.style.transform = `translate(${colX.toFixed(1)}px, ${c.y.toFixed(1)}px)`;
-        const ex = side < 0 ? lx + 16 : lx - 16;
+    for (const col of columns.values()) {
+      col.sort((a, b) => a.s.y - b.s.y);
+      let floor = -Infinity;
+      for (const { p, s: sv } of col) {
+        const c = this.cards.get(p.id)!;
+        let y = Number.isNaN(c.y) || c.side !== `${sv.side}:${sv.column}` ? sv.y : c.y + (sv.y - c.y) * ease;
+        y = Math.max(y, floor);
+        c.y = y;
+        c.side = `${sv.side}:${sv.column}`;
+        floor = y + p.h + LABEL_GAP;
+        const ly = y + p.h / 2;
+        // the leader meets the card's inner edge: a short horizontal run, then straight to the anchor
+        const lx = sv.side < 0 ? sv.x + p.w : sv.x;
+        const ex = sv.side < 0 ? lx + 16 : lx - 16;
+        c.el.style.transform = `translate(${sv.x.toFixed(1)}px, ${y.toFixed(1)}px)`;
         c.path.setAttribute("d", `M${p.x.toFixed(1)},${p.y.toFixed(1)} L${ex.toFixed(1)},${ly.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)}`);
         c.dot.setAttribute("cx", p.x.toFixed(1));
         c.dot.setAttribute("cy", p.y.toFixed(1));
-      });
+      }
     }
   }
 

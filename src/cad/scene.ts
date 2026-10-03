@@ -79,7 +79,8 @@ export function materialFor(def: ModuleDef, bodyPart: string, appearance?: Appea
 function fallbackAppearance(def: ModuleDef, bodyPart: string): Omit<Appearance, "parts"> {
   const mech = (def.domains ?? []).find((d) => d.domain === "mechanical") as { material?: { name?: string } } | undefined;
   const text = `${mech?.material?.name ?? ""} ${def.name} ${(def.tags ?? []).join(" ")} ${(def.categories ?? []).join(" ")}`.toLowerCase();
-  if (/carbon/.test(text)) return { color: "#232326", roughness: 0.32, metalness: 0.25 };
+  // satin, not glossy: a flat plate under the key light otherwise shows a broad pale highlight (PB-873)
+  if (/carbon/.test(text)) return { color: "#232326", roughness: 0.62, metalness: 0.08 };
   if (/alumin/.test(text)) return { color: "#9aa0a8", metalness: 0.8, roughness: 0.35 };
   if (/nylon|pa6|plastic|pla\b|abs\b/.test(text)) return { color: "#1c1c1c", roughness: 0.7 };
   if (/stainless|steel|screw|bolt|nut|fastener/.test(text)) return { color: "#c0c4cc", metalness: 0.85, roughness: 0.3 };
@@ -222,6 +223,13 @@ export interface SceneHandle {
   overlay: THREE.Group;
   dispose: () => void;
   frameAll: (box?: THREE.Box3) => void;
+  /**
+   * The model direction drawn up (default +z): the camera's up, the orbit
+   * axis, the ground grid and the lights follow it (a display hint, PB-873).
+   */
+  setUp: (up: THREE.Vector3) => void;
+  /** Put the ground grid under a box (the assembled model), across the up direction. */
+  setGround: (box: THREE.Box3) => void;
   /** Called every frame before rendering, with the frame time in seconds. */
   onFrame: Set<(dt: number) => void>;
   /** When set, the render loop is driven externally (video capture). */
@@ -288,6 +296,33 @@ export function createScene(container: HTMLElement): SceneHandle {
   });
   ro.observe(container);
 
+  const upAxis = new THREE.Vector3(0, 0, 1);
+  const lights: [THREE.Object3D, THREE.Vector3][] = [
+    [key, key.position.clone()],
+    [rim, rim.position.clone()],
+  ];
+  const gridBase = grid.quaternion.clone();
+  const setUp = (up: THREE.Vector3) => {
+    upAxis.copy(up).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), upAxis);
+    camera.up.copy(upAxis);
+    // OrbitControls keeps the rotation from camera.up to +y from its construction
+    const c = controls as unknown as { _quat: THREE.Quaternion; _quatInverse: THREE.Quaternion };
+    c._quat.setFromUnitVectors(upAxis, new THREE.Vector3(0, 1, 0));
+    c._quatInverse.copy(c._quat).invert();
+    for (const [light, base] of lights) light.position.copy(base).applyQuaternion(q);
+    grid.quaternion.copy(q).multiply(gridBase);
+    grid.position.copy(upAxis).multiplyScalar(-0.5);
+  };
+  const setGround = (box: THREE.Box3) => {
+    if (box.isEmpty()) return;
+    // the lowest point of the box along up, half a millimetre below it
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+    const low = Math.min(...corners.map((c) => c.dot(upAxis)));
+    const c = box.getCenter(new THREE.Vector3());
+    grid.position.copy(c.sub(upAxis.clone().multiplyScalar(c.dot(upAxis) - low + 0.5)));
+  };
+
   const frameAll = (box?: THREE.Box3) => {
     const b = box ?? new THREE.Box3().setFromObject(root);
     if (b.isEmpty()) return;
@@ -306,6 +341,8 @@ export function createScene(container: HTMLElement): SceneHandle {
     root,
     overlay,
     frameAll,
+    setUp,
+    setGround,
     onFrame,
     manual,
     renderOnce: () => renderOnce(1 / 30),

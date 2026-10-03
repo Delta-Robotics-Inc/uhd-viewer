@@ -67,7 +67,11 @@ lanes) it also opens or closes it, as its +/− box does.
   - *Open as canvas* drills into a module. Its exports become sheet ports on the canvas edges, and a breadcrumb in the header leads back.
 - **Inspector:** by default it shows the hierarchy of modules and links. Selecting a module shows its details and interfaces; selecting a link shows its child links and diagnostics.
 - **Layout:**
-  - The hand layout lives in `src/layout/quadcopter.ts`; drill-in levels use an automatic layout.
+  - A level's hand layout comes from the bundle's display hints; a level without one lays itself out.
+  - A board (a level with nets) is laid out like a schematic sheet: components in columns by function
+    (connectors, power, processor, sensors, outputs, from their taxonomy category), each passive beside the
+    part it serves, and each net junction at the free spot nearest the parts it joins (`src/layout/board-layout.ts`).
+  - Nodes a hand layout does not name (added since it was saved) are placed next to what they link to, not at the origin.
   - Dragged positions are saved per level in local storage, and the toolbar can reset them.
 
 - **Harness nodes (D2, board 04):** a link carried by a harness module is drawn through the harness pill: the XT60 lead, the DJI 3-in-1 cable, and the M3 stack hardware bus.
@@ -96,7 +100,8 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/model/nets.ts` | Board nets: junction nodes, grouped membership lines, links derived over nets (PB-823). |
 | `src/model/diagnostics.ts` | The viewer's own checks: the root, and each board on its own, re-based onto the root. |
 | `src/model/outputs.ts` | Standard outputs by file name, pick-and-place parsing, component rectangles on PCB drawings. |
-| `src/layout/graph-layout.ts` | Force layout for levels with nets. |
+| `src/layout/board-layout.ts` | Board layout for levels with nets: function columns, passive clusters, junction placement. |
+| `src/cad/labels.ts` | 3D callouts: the label solver (side columns ordered by screen y, no overlaps) and its layer. |
 | `src/chrome/BoardInspector.tsx` | Package facts, pin table, net and derived-link details, board drawings with pan and zoom. |
 | `src/cad/findings.ts` | Where a finding is on the 3D model. |
 | `fixtures/` | Hand-made sample bundles and standard outputs for boards and enclosures (see its README). |
@@ -126,7 +131,10 @@ geometry is resolved per binding direction:
 Click a module to see each interface's frame and binding status; selecting an
 interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
 ASSEMBLED / EXPLODED animates every module along the normal of the mate that placed it (hardware comes apart along its fastener stack);
-LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which);
+a part a display placement holds inside a shell (a board and a cell in a case) comes out through the shell's opening, in
+stacking order, each clear of the one before it;
+LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which), in columns either
+side of the model ordered by screen height so leaders do not cross and cards never overlap, re-solved as the camera moves;
 FRAMES shows every interface frame; CABLES shows the routed wire harnesses;
 HARDWARE places the stack harness's fasteners and checks the screw stack-up;
 FOCUS looks along the selected interface's normal.
@@ -228,6 +236,12 @@ hints, appearance, keyed by instance path). It never imports a project.
 - Without display hints, the diagram lays itself out and 3D labels are derived
   from instance names, harness children and mates; the assembly is placed from
   the top-level module with the most interface frames.
+- The 3D view opens fitted to the whole assembly once every model has loaded.
+  `spatial.view` in the display hints can set how it opens: `up` (the model
+  direction drawn up, default `[0, 0, 1]`; a watch modelled display-down says
+  `[0, 0, -1]`) and `camera` (`azimuth`, `elevation` in degrees about `up`,
+  `distance` in mm, `target`; without a distance the model is still fitted).
+  The URL's `az`, `el` and `dist` override it.
 
 Boundary: `protoboard-cli/docs/specs/uhd-boundary.md`.
 
