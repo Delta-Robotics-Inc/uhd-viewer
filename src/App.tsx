@@ -10,6 +10,7 @@ import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout }
 import type { Pt } from "./canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source";
 import type { ViewerLayout, ViewerOptions } from "./api";
+import { sameLayout } from "./options";
 import { Canvas, type Selection } from "./canvas/Canvas";
 import { ActivityBar, Header, Inspector, Legend, Toolbar, type Panel } from "./chrome/Chrome";
 import { PairView } from "./chrome/PairView";
@@ -45,14 +46,29 @@ function useSaved(key: string, value: unknown, enabled = true) {
   }, [key, value, enabled]);
 }
 
-/** Hand layout edits to a host, debounced like local saves; nothing on mount. */
-function useHostLayout(layout: ViewerLayout, onChange?: (layout: ViewerLayout) => void) {
+/**
+ * Layout edits when a host owns them: edits go to `onChange`, debounced like
+ * local saves, and a different layout the host passes later replaces them.
+ * Nothing is sent that the host already has (on mount, or its own layout back).
+ */
+function useHostLayout(layout: ViewerLayout, host: ViewerLayout | undefined, apply: (layout: ViewerLayout) => void, onChange?: (layout: ViewerLayout) => void) {
   const handler = useRef(onChange);
   handler.current = onChange;
-  const initial = useRef(layout);
+  // the layout the host has: what it passed in, or what it was last sent
+  const known = useRef(host);
+  const current = useRef(layout);
+  current.current = layout;
   useEffect(() => {
-    if (layout === initial.current || !handler.current) return;
-    const t = setTimeout(() => handler.current?.(layout), 250);
+    if (!handler.current || sameLayout(host, known.current)) return;
+    known.current = host;
+    if (!sameLayout(host, current.current)) apply(host ?? { positions: {}, links: {} });
+  }, [host, apply]);
+  useEffect(() => {
+    if (!handler.current || sameLayout(layout, known.current)) return;
+    const t = setTimeout(() => {
+      known.current = layout;
+      handler.current?.(layout);
+    }, 250);
     return () => clearTimeout(t);
   }, [layout]);
 }
@@ -153,7 +169,11 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
   useSaved("uhd-viewer:positions", positions, !hosted);
   useSaved("uhd-viewer:overrides", overrides);
   useSaved("uhd-viewer:links", linkEdits, !hosted);
-  useHostLayout(useMemo(() => ({ positions, links: linkEdits }), [positions, linkEdits]), options.onLayoutChange);
+  const applyHostLayout = useCallback((l: ViewerLayout) => {
+    setPositions(l.positions);
+    setLinkEdits(l.links);
+  }, []);
+  useHostLayout(useMemo(() => ({ positions, links: linkEdits }), [positions, linkEdits]), options.layout, applyHostLayout, options.onLayoutChange);
   const editLink = useCallback(
     (linkId: string, patch: LinkLayout) =>
       setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
@@ -222,7 +242,7 @@ function Viewer({ source, options }: { source: LoadedSource; options: ViewerOpti
   const defFor = useCallback((id?: string) => (id ? scenario.lookup(id) : undefined), [scenario]);
   const onPair = useCallback((l: ViewLink) => setPairLink(l.linkId), []);
 
-  // the producer's findings describe the nominal build
+  // the producer's and the host's findings describe the nominal build
   const hostDiagnostics = useMemo(
     () => (scenario.id === "nominal" ? [...source.hostDiagnostics, ...(options.diagnostics ?? [])].filter((d) => !ownChecks(d)) : []),
     [scenario, source, options.diagnostics],

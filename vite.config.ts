@@ -11,6 +11,14 @@ const uhdRoot = fileURLToPath(new URL("../uhd", import.meta.url));
 // Any other bundle loads with ?bundle=<url>; absolute artifact bases are served via /@fs.
 const protoboardRoot = fileURLToPath(new URL("../protoboard-cli", import.meta.url));
 const defaultBundle = process.env.UHD_BUNDLE ?? `${protoboardRoot}/examples/quadcopter-5in/.protoboard/build/uhd-bundle.json`;
+/** `path` and its real path when it exists (in a worktree the sibling checkouts may be symlinks); nothing when it does not. */
+const withRealPath = (path: string) => {
+  try {
+    return [path, realpathSync(path)];
+  } catch {
+    return [];
+  }
+};
 
 // The production app (dist/app) has no default bundle and no /@fs: it loads
 // ?bundle=<url> or the bundle `uhd-viewer serve` injects, with relative asset
@@ -27,9 +35,9 @@ export default defineConfig(({ command }) => ({
   build: { outDir: "dist/app", emptyOutDir: true, chunkSizeWarningLimit: 2500 },
   server: {
     port: 5178,
-    // bundles may reference artifacts anywhere in the sibling checkouts during development
-    // (real paths too: in a worktree the sibling checkouts may be symlinks)
-    fs: { allow: [".", uhdRoot, protoboardRoot, ...[uhdRoot, protoboardRoot].map((p) => realpathSync(p))] },
+    // bundles may reference artifacts anywhere in the sibling checkouts during development;
+    // only the dev server reads this, and neither checkout has to exist (build and tests need ../uhd only)
+    fs: { allow: command === "serve" ? [".", ...withRealPath(uhdRoot), ...withRealPath(protoboardRoot)] : ["."] },
   },
   test: { include: ["test/**/*.test.ts"], environment: "node" },
 }));

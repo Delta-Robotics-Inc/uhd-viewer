@@ -42,10 +42,12 @@ try {
         module: "ESNext",
         moduleResolution: "Bundler",
         skipLibCheck: false,
-        types: [],
+        // bin/serve.d.mts (the "./serve" export) needs Node's types
+        typeRoots: [join(root, "node_modules/@types")],
+        types: ["node"],
         paths: { "@deltarobotics/uhd": [join(root, "../uhd/src/types/index.ts")] },
       },
-      files: [join(out, "uhd-viewer.d.ts")],
+      files: [join(out, "uhd-viewer.d.ts"), join(root, "bin/serve.d.mts")],
     }),
   );
   const tsc = spawnSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", join(tmp, "tsconfig.json")], { encoding: "utf8" });
@@ -53,4 +55,4 @@ try {
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }
-console.log("dist/lib/uhd-viewer.d.ts written and checked");
+console.log("dist/lib/uhd-viewer.d.ts written; it and bin/serve.d.mts checked");

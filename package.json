@@ -14,7 +14,10 @@
     },
     "./style.css": "./dist/lib/uhd-viewer.css",
     "./app/*": "./dist/app/*",
-    "./serve": "./bin/serve.mjs",
+    "./serve": {
+      "types": "./bin/serve.d.mts",
+      "import": "./bin/serve.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [

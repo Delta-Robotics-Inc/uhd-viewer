@@ -20,9 +20,13 @@ The viewer imports UHD source and library parts from a sibling checkout
 npm install
 npm run dev          # http://localhost:5178
 npm run build        # type-check, the app (dist/app) and the library (dist/lib)
-npm test             # vitest: bundle loading and the serve entrypoint
+npm test             # vitest: bundle loading, the serve entrypoint, host options
 npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
 ```
+
+Building and testing need `../uhd` only. The dev server's default bundle is the
+quadcopter example in a sibling `../protoboard-cli` checkout (or `UHD_BUNDLE`);
+without one, open the dev server with `?bundle=<url>`.
 
 To open a particular view, pass URL parameters:
 
@@ -212,7 +216,9 @@ bundle and its artifacts:
   `--host 0.0.0.0` exposes the artifacts to the network and accepts any host.
 
 Hosts with their own server can use the same handler for the viewer's routes:
-`viewerHandler({ bundleFile })` from `@deltarobotics/uhd-viewer/serve`.
+`viewerHandler({ bundleFile })` from `@deltarobotics/uhd-viewer/serve`. Its
+types are in `bin/serve.d.mts` (written by hand; a test checks they name
+exactly what the module exports).
 
 ### `mountViewer`
 
@@ -224,21 +230,31 @@ const viewer = mountViewer(document.getElementById("viewer")!, {
   bundleUrl: "/uhd-bundle.json",          // or bundle: <a parsed UhdBundle>
   resolveArtifact: (definitionId, filePath, fallback) => fallback(definitionId, filePath),
   diagnostics: hostFindings,              // UhdBundleDiagnostic[], listed with the producer's
-  layout: savedEdits,                     // ViewerLayout to start from
+  layout: savedEdits,                     // ViewerLayout to show
   onLayoutChange: (layout) => save(layout),
 });
 viewer.update({ bundle: rebuilt });       // e.g. after a rebuild
+viewer.update({ layout: reloaded });      // e.g. the saved layout changed on disk
 viewer.unmount();
 ```
 
 - The element needs a height; the viewer fills it.
 - `resolveArtifact` replaces or extends the default resolver (the bundle's
   artifact bases); `fallback` is the default.
+- `diagnostics` are listed with the bundle's own under *FROM THE PRODUCER*.
+  Like those, they describe the nominal build, so they show for the nominal
+  scenario only.
+- `update` merges its options into the current ones. Giving `bundleUrl`
+  without `bundle` drops a bundle given earlier and loads from the URL.
 - `onLayoutChange` receives, debounced, every layout edit the user makes:
   dragged node positions and link waypoints / label positions, per drill level
   (`ViewerLayout`). With a handler the host owns the layout: the viewer neither
   reads nor writes it in local storage. Without one, local storage is used as
   before. Child-link remaps (*REMAP*) stay in local storage either way.
+- A different `layout` given to `update` replaces the viewer's edits (an edit
+  still waiting for its debounce is dropped). The same layout coming back, as
+  after the host saves what it was sent and reloads it, changes nothing and is
+  not sent again.
 - View state still comes from the page's URL parameters (the table under
   "Run").
 - The stylesheet is not scoped yet: it sets `html`, `body`, `button` and the
@@ -255,3 +271,12 @@ failed (a missing favicon aside). `node scripts/check-render.mjs compare
 against `uhd-viewer serve` on the same bundle. On the quadcopter bundle the
 two match except for the evidence audit line, which only development shows
 (see "Input").
+
+`node scripts/check-render.mjs host <bundle.json> <out-dir>` checks the library
+build as a host uses it: a page that mounts `dist/lib` with its own
+diagnostics, resolver and `onLayoutChange`, next to `viewerHandler`. It checks
+that the host's diagnostics are listed and replaced by `update`, that a dragged
+node reaches `onLayoutChange` and not local storage, that a layout passed back
+through `update` moves the node and is not sent again, that the 3D view
+resolves its artifacts through the host's resolver, and that no request fails.
+It writes two PNGs and `host-summary.json`, and exits 1 on any failure.

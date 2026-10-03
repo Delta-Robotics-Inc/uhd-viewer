@@ -9,6 +9,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import App, { type AppProps } from "./App";
 import type { ViewerHandle } from "./api";
+import { mergeOptions } from "./options";
 
 export function render(element: HTMLElement, props: AppProps): ViewerHandle {
   const root = createRoot(element);
@@ -22,7 +23,7 @@ export function render(element: HTMLElement, props: AppProps): ViewerHandle {
   draw();
   return {
     update(options) {
-      current = { ...current, ...options };
+      current = mergeOptions(current, options);
       draw();
     },
     unmount: () => root.unmount(),

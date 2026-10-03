@@ -46,9 +46,18 @@ export interface ViewerOptions {
    * resolver (the bundle's per-definition artifact bases).
    */
   resolveArtifact?: (definitionId: string, filePath: string, fallback: ArtifactResolver) => string | undefined;
-  /** Findings from the host, listed in the checks panel next to the bundle's own. */
+  /**
+   * Findings from the host, listed in the checks panel next to the bundle's
+   * own. Like the bundle's, they describe the nominal build and are shown for
+   * the nominal scenario only.
+   */
   diagnostics?: UhdBundleDiagnostic[];
-  /** Layout edits to start from (only used together with `onLayoutChange`). */
+  /**
+   * The layout edits to show (only used together with `onLayoutChange`). A
+   * different layout passed later through `update` replaces the viewer's
+   * current edits, for example after the host's saved layout changed on disk.
+   * Passing back what `onLayoutChange` sent changes nothing.
+   */
   layout?: ViewerLayout;
   /**
    * Called (debounced) with the whole edited layout after every change. When
@@ -59,7 +68,12 @@ export interface ViewerOptions {
 }
 
 export interface ViewerHandle {
-  /** Re-renders with changed options (a rebuilt bundle, new host diagnostics). */
+  /**
+   * Re-renders with changed options (a rebuilt bundle, new host diagnostics, a
+   * changed layout). The change is merged into the current options; giving
+   * `bundleUrl` without `bundle` drops a bundle given earlier and loads from
+   * the URL.
+   */
   update(options: Partial<ViewerOptions>): void;
   unmount(): void;
 }
