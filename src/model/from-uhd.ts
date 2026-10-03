@@ -34,22 +34,43 @@ import type {
   ViewPort,
 } from "./types";
 
+/**
+ * UHD taxonomy paths (UHD docs/taxonomy.md) and their icons, matched by whole
+ * segments in the definition's category order, before the words below:
+ * `actuator.motor_controller` (an ESC) is not under `actuator.motor`.
+ */
+const TAXONOMY_ICONS: [string, string][] = [
+  ["actuator.motor_controller", "zap"],
+  ["actuator.motor", "rotate-cw"],
+  ["mechanical.propeller", "fan"],
+  ["microcontroller.flight_controller", "cpu"],
+  ["power.battery", "battery-full"],
+  ["connectivity.wireless.video", "video"],
+  ["sensor.gnss", "satellite"],
+  ["mechanical.structure", "hexagon"],
+  ["component.passive.capacitor", "battery-medium"],
+];
+
+const underPath = (path: string, root: string) => path === root || path.startsWith(`${root}.`);
+
+/** Words in categories and tags (strap before battery: a battery strap is a strap). */
 const CATEGORY_ICONS: Record<string, string> = {
   "flight-controller": "cpu",
   esc: "zap",
   motor: "rotate-cw",
   propeller: "fan",
+  strap: "link",
   battery: "battery-full",
   receiver: "radio",
   video: "video",
   gnss: "satellite",
   structure: "hexagon",
-  strap: "link",
   capacitor: "battery-medium",
 };
 
 function iconFor(def: ModuleDef): string {
   if (def.display?.icon) return def.display.icon;
+  for (const path of def.categories ?? []) for (const [root, icon] of TAXONOMY_ICONS) if (underPath(path, root)) return icon;
   const words = [...(def.categories ?? []), ...(def.tags ?? [])].map((w) => w.toLowerCase());
   for (const word of words) {
     for (const [key, icon] of Object.entries(CATEGORY_ICONS)) {
@@ -72,7 +93,9 @@ function iconFor(def: ModuleDef): string {
 function shapeFor(def: ModuleDef): ViewNode["shape"] {
   if (def.kind === "harness") return "pill";
   if (def.display?.shape === "circle") return "circle";
-  return /motor|propeller|\bprop\b/i.test(`${def.name} ${(def.categories ?? []).join(" ")} ${(def.tags ?? []).join(" ")}`) &&
+  // a motor controller (taxonomy actuator.motor_controller) is not a motor
+  const categories = (def.categories ?? []).filter((c) => !underPath(c, "actuator.motor_controller"));
+  return /motor|propeller|\bprop\b/i.test(`${def.name} ${categories.join(" ")} ${(def.tags ?? []).join(" ")}`) &&
     !def.children?.length
     ? "circle"
     : "rect";
