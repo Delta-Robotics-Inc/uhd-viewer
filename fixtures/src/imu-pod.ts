@@ -178,8 +178,7 @@ export function buildFixtures(): Fixtures {
     links: [{ id: "board_mount", name: "Board on bosses", a: { child: "board", interfaceId: "mount" }, b: { child: "enclosure", interfaceId: "board_mount" } }],
   });
 
-  // the fixture's parts as UHD defines them, without their artifacts: those files live in the UHD part
-  // library, which these bundles do not ship (the 3D view draws them inside board.glb)
+  // the fixture's parts as UHD defines them, without their artifacts (the 3D view draws them inside board.glb)
   const parts = (board.children ?? [])
     .map((c) => lookup(c.moduleDefId)!)
     .filter((d, i, all) => all.indexOf(d) === i)

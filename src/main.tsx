@@ -10,7 +10,6 @@
  * writes the frame's URL, so it could allow itself. The Vite dev server alone
  * also takes `?hostOrigin=<origin>[,<origin>…]`, for trying a host locally.
  */
-import { registerEvidenceFiles } from "./model/evidence";
 import { pickBundleUrl } from "./source/source";
 import { render } from "./mount";
 import { originList } from "./host/protocol";
@@ -27,8 +26,6 @@ function injectedConfig(): { bundleUrl?: string; hostOrigins?: string[] } {
 }
 
 async function start() {
-  // the part library's evidence files exist only next to a development checkout
-  if (import.meta.env.DEV) registerEvidenceFiles((await import("./model/library-evidence")).libraryEvidence);
   const config = injectedConfig();
   render(document.getElementById("root")!, {
     bundleUrl: pickBundleUrl(window.location.search, config.bundleUrl, __DEFAULT_BUNDLE__),
