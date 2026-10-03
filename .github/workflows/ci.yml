@@ -1,7 +1,8 @@
 # Type-check and build the viewer against UHD checked out beside it
 # (vite.config.ts and tsconfig.json resolve @uhd/* to ../uhd/src).
-# UHD is public, so no token is needed. Its branch is the one with this
-# branch's name when it exists, otherwise main.
+# UHD is public, so no token is needed. It is checked out at the first branch
+# it has of: this branch's name, the pull request's base branch, the
+# STACK_BASE_BRANCH repository variable, main.
 name: CI
 
 on:
@@ -13,8 +14,10 @@ on:
 permissions:
   contents: read
 
+# One run per branch: a push and the pull request from the same branch share
+# a group, so the later one cancels the earlier.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -30,17 +33,24 @@ jobs:
         id: uhd
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
+          BASE_REF: ${{ github.base_ref }}
+          STACK_BASE_BRANCH: ${{ vars.STACK_BASE_BRANCH }}
+          GIT_TERMINAL_PROMPT: "0"
         run: |
-          # bash -e: keep the status (2 means no such branch)
-          status=0
-          git ls-remote --exit-code --heads https://github.com/Delta-Robotics-Inc/uhd.git "$BRANCH" >/dev/null || status=$?
-          case $status in
-            0) ref="$BRANCH" ;;
-            2) ref=main ;;
-            *) echo "::error::cannot list Delta-Robotics-Inc/uhd branches"; exit 1 ;;
-          esac
-          echo "UHD at $ref"
-          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+          # The first candidate UHD has. git ls-remote --exit-code returns 2
+          # for no such branch (bash -e: keep the status).
+          for ref in "$BRANCH" "$BASE_REF" "$STACK_BASE_BRANCH" main; do
+            if [ -z "$ref" ]; then continue; fi
+            status=0
+            git ls-remote --exit-code --heads https://github.com/Delta-Robotics-Inc/uhd.git "refs/heads/$ref" >/dev/null || status=$?
+            case $status in
+              0) echo "UHD at $ref"; echo "ref=$ref" >>"$GITHUB_OUTPUT"; exit 0 ;;
+              2) echo "UHD has no branch $ref" ;;
+              *) echo "::error::cannot list Delta-Robotics-Inc/uhd branches"; exit 1 ;;
+            esac
+          done
+          echo "::error::UHD has none of the candidate branches"
+          exit 1
       - uses: actions/checkout@v5
         with:
           repository: Delta-Robotics-Inc/uhd
