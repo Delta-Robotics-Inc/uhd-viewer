@@ -371,6 +371,16 @@ against `uhd-viewer serve` on the same bundle. On the quadcopter bundle the
 two match except for the evidence audit line, which only development shows
 (see "Input").
 
+The `<bundle.json>` the `host` and `messages` forms take (and the bundle a
+viewer URL serves) is the project's build bundle,
+`<project>/.protoboard/build/uhd-bundle.json`, written by `protoboard build`
+with absolute artifact bases on this machine, which the viewer's server
+resolves. Not
+the release's model bundle (`release/<version>/system/files/model/uhd-bundle.json`):
+that one records artifact bases relative to the project for the package's
+readers, so the 3D view and the artifact previews find no files and the
+check fails on missing requests.
+
 `node scripts/check-render.mjs host <bundle.json> <out-dir>` checks the library
 build as a host uses it: a page that mounts `dist/lib` with its own
 diagnostics, resolver and `onLayoutChange`, next to `viewerHandler`. It checks
