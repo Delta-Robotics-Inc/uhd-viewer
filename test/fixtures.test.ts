@@ -91,8 +91,8 @@ describe("standard outputs in the viewer", () => {
   it("size each component from its package, else the manifest", () => {
     const fps = footprints(fx.board, lookup, parsePnp(text("board/out/pnp.csv")), boardManifest);
     const u2 = fps.find((f) => f.instance === "u2")!;
-    // BMI270: 3.0 × 2.5 mm, turned 90°
-    expect([u2.w, u2.h, u2.size]).toEqual([2.5, 3, "package"]);
+    // the fixture IMU: 2.5 × 2.0 mm, turned 90°
+    expect([u2.w, u2.h, u2.size]).toEqual([2, 2.5, "package"]);
     const r1 = fps.find((f) => f.instance === "r1")!;
     expect([r1.side, r1.size]).toEqual(["bottom", "manifest"]);
     expect(r1.w).toBeCloseTo(Math.sqrt(0.5));

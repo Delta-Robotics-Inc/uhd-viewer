@@ -1,9 +1,9 @@
 instance,name,definition,manufacturer,part_number,package,quantity
-u1,MCU,rp2040,Raspberry Pi,RP2040,QFN-56,1
-u2,IMU,bosch-bmi270,Bosch Sensortec,BMI270,LGA-14,1
-u3,3V3 buck-boost,ti-tps63020dsjr,Texas Instruments,TPS63020DSJR,VSON-14,1
-l1,Inductor 1.5 µH,fixture-l-1u5,,,,1
+u1,MCU,fixture-mcu-qfn32,,,QFN-32,1
+u2,IMU,fixture-imu-lga12,,,LGA-12,1
+u3,3V3 buck-boost,fixture-buck-boost-son12,,,SON-12,1
+l1,Inductor 2.2 µH,fixture-l-2u2,,,,1
 r1,FB upper,fixture-r-1m-0402,,,0402,1
-r2,FB lower,fixture-r-180k-0402,,,0402,1
+r2,FB lower,fixture-r-220k-0402,,,0402,1
 r3,SDA pull-up,fixture-r-4k7-0402,,,0402,1
 r4,SCL pull-up,fixture-r-4k7-0402,,,0402,1

@@ -27,12 +27,12 @@
 <line x1="9.5" y1="-9" x2="15.5" y2="-14" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
 <line x1="15.5" y1="-14" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
 <line x1="9.5" y1="-9" x2="19" y2="-13" stroke="#9ca3af" stroke-width="0.08" stroke-dasharray="0.4 0.3" opacity="0.7"/>
-<rect x="6" y="-12.5" width="7" height="7" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
-<text x="9.5" y="-12.75" font-size="1.1" fill="#e7e5e4" text-anchor="middle">U1</text>
-<rect x="17.75" y="-14.5" width="2.5" height="3" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
-<text x="19" y="-14.75" font-size="0.8" fill="#e7e5e4" text-anchor="middle">U2</text>
-<rect x="17.5" y="-6.5" width="4" height="3" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
-<text x="19.5" y="-6.75" font-size="1.1" fill="#e7e5e4" text-anchor="middle">U3</text>
+<rect x="7" y="-11.5" width="5" height="5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="9.5" y="-11.75" font-size="1.1" fill="#e7e5e4" text-anchor="middle">U1</text>
+<rect x="18" y="-14.25" width="2" height="2.5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="19" y="-14.5" font-size="0.64" fill="#e7e5e4" text-anchor="middle">U2</text>
+<rect x="18" y="-6.5" width="3" height="3" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
+<text x="19.5" y="-6.75" font-size="0.96" fill="#e7e5e4" text-anchor="middle">U3</text>
 <rect x="23" y="-6.25" width="2" height="2.5" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
 <text x="24" y="-6.5" font-size="0.64" fill="#e7e5e4" text-anchor="middle">L1</text>
 <rect x="14.25" y="-14.5" width="0.5" height="1" fill="#18181b" stroke="#e7e5e4" stroke-width="0.1"/>
