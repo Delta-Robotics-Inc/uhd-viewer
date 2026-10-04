@@ -164,14 +164,14 @@ describe("handle and callbacks", () => {
       onOpenArtifact: (r: unknown) => calls.push(["artifact", r]),
     };
     deliver(options, { type: "uhd-viewer:ready" });
-    deliver(options, { type: "uhd-viewer:selectionChanged", selection: { kind: "node", id: "board/u2", defId: "bosch-bmi270" } });
-    deliver(options, { type: "uhd-viewer:openSource", defId: "bosch-bmi270", instancePath: "board/u2" });
+    deliver(options, { type: "uhd-viewer:selectionChanged", selection: { kind: "node", id: "board/u2", defId: "fixture-imu-lga12" } });
+    deliver(options, { type: "uhd-viewer:openSource", defId: "fixture-imu-lga12", instancePath: "board/u2" });
     deliver(options, { type: "uhd-viewer:openArtifact", defId: "sample-imu-board", artifactId: "bom" });
     deliver({}, { type: "uhd-viewer:ready" });
     expect(calls).toEqual([
       "ready",
-      ["selection", { kind: "node", id: "board/u2", defId: "bosch-bmi270" }],
-      ["source", { defId: "bosch-bmi270", instancePath: "board/u2" }],
+      ["selection", { kind: "node", id: "board/u2", defId: "fixture-imu-lga12" }],
+      ["source", { defId: "fixture-imu-lga12", instancePath: "board/u2" }],
       ["artifact", { defId: "sample-imu-board", artifactId: "bom" }],
     ]);
   });
@@ -218,7 +218,7 @@ describe("focus, select and drill on the model", () => {
   it("reports selections as canonical paths with their definitions, round-tripping through select", () => {
     const board = view(["board"]);
     const u2 = hostSelection(board, ["board"], { kind: "node", id: "u2" }, "sample-imu-board");
-    expect(u2).toEqual({ kind: "node", id: "board/u2", defId: "bosch-bmi270" });
+    expect(u2).toEqual({ kind: "node", id: "board/u2", defId: "fixture-imu-lga12" });
     expect(hostSelection(board, ["board"], { kind: "node", id: ":v3v3" }, "sample-imu-board")).toEqual({ kind: "node", id: "board:v3v3" });
     expect(selectTarget(board, ["board"], [u2!.id])).toEqual({ kind: "node", id: "u2" });
     const pod = view([]);
@@ -232,8 +232,8 @@ describe("focus, select and drill on the model", () => {
   });
 
   it("reports 3D selections by instance path", () => {
-    const defAt = (path: string[]) => (path.join("/") === "board/u2" ? lookup("bosch-bmi270") : path.length === 0 ? root : lookup("sample-imu-board"));
-    expect(cadHostSelection({ body: "board#board_glb", component: "board/u2" }, defAt)).toEqual({ kind: "node", id: "board/u2", defId: "bosch-bmi270" });
+    const defAt = (path: string[]) => (path.join("/") === "board/u2" ? lookup("fixture-imu-lga12") : path.length === 0 ? root : lookup("sample-imu-board"));
+    expect(cadHostSelection({ body: "board#board_glb", component: "board/u2" }, defAt)).toEqual({ kind: "node", id: "board/u2", defId: "fixture-imu-lga12" });
     expect(cadHostSelection({ body: "board#board_glb" }, defAt)).toEqual({ kind: "node", id: "board", defId: "sample-imu-board" });
     // a mate carries its owner's definition, as the same link does in the diagram
     const mate = cadHostSelection({ mate: "board_mount" }, defAt);

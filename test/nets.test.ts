@@ -12,10 +12,10 @@ describe("board nets in the diagram", () => {
   it("draws each net as a junction node, ground nets only with GND wires on", () => {
     const vm = view();
     const nets = vm.nodes.filter((n) => n.kind === "net").map((n) => n.id);
-    expect(nets).toEqual([":vin", ":v3v3", ":v1v1", ":fb", ":sw1", ":sw2", ":sda", ":scl", ":imu_int1"]);
+    expect(nets).toEqual([":vin", ":v3v3", ":vcore", ":fb", ":sw1", ":sw2", ":sda", ":scl", ":imu_int1"]);
     expect(view(IMU_BOARD, [], true).nodes.some((n) => n.id === ":gnd")).toBe(true);
     const v3v3 = vm.nodes.find((n) => n.id === ":v3v3")!;
-    expect(v3v3.net).toMatchObject({ name: "3V3", signal: "power", voltage: "3.3 V", ground: false, pins: 17 });
+    expect(v3v3.net).toMatchObject({ name: "3V3", signal: "power", voltage: "3.3 V", ground: false, pins: 13 });
     // one port per component on the net, not per pin
     expect(v3v3.ports.map((p) => p.id)).toEqual(["u3", "r1", "u1", "u2", "r3", "r4"]);
   });
@@ -26,13 +26,13 @@ describe("board nets in the diagram", () => {
     const u1 = vm.links.find((l) => l.id === "v3v3.u1")!;
     expect(u1.source).toEqual({ node: "u1", port: "net:v3v3" });
     expect(u1.target).toEqual({ node: ":v3v3", port: "u1" });
-    expect(u1.children.map((c) => c.aPin)).toEqual(["1", "10", "22", "33", "42", "49", "43", "44", "48"]);
-    expect(u1.alsoIds).toContain("v3v3.u1.pin_49");
-    expect(u1.lanes).toHaveLength(9);
-    expect(u1.name).toBe("IOVDD +3");
+    expect(u1.children.map((c) => c.aPin)).toEqual(["1", "9", "19", "24", "25"]);
+    expect(u1.alsoIds).toContain("v3v3.u1.pin_25");
+    expect(u1.lanes).toHaveLength(5);
+    expect(u1.name).toBe("VDDIO +2");
     // the component's port for the net carries the same pins, with designators
     const port = vm.nodes.find((n) => n.id === "u1")!.ports.find((p) => p.id === "net:v3v3")!;
-    expect(port.children.map((c) => c.pin)).toEqual(["1", "10", "22", "33", "42", "49", "43", "44", "48"]);
+    expect(port.children.map((c) => c.pin)).toEqual(["1", "9", "19", "24", "25"]);
     // a ground net's lines are ground symbols at the pins
     expect(vm.links.find((l) => l.id === "gnd.u2")).toMatchObject({ ground: true, net: { id: "gnd", name: "GND" } });
   });
@@ -40,7 +40,7 @@ describe("board nets in the diagram", () => {
   it("names the links derived over nets and lets the lines they run over carry them", () => {
     const vm = view();
     const i2c = vm.derived.find((d) => d.protocol === "i2c")!;
-    expect(i2c.name).toBe("I2C 0 ↔ Primary I2C (target)");
+    expect(i2c.name).toBe("I2C 0 ↔ I2C (target)");
     expect(i2c.id.length).toBeGreaterThan(40); // the id names every membership it runs over
     expect(i2c.a.node).toBe("u1");
     expect(i2c.b.node).toBe("u2");
@@ -62,7 +62,7 @@ describe("board nets in the diagram", () => {
     // the pins of both ends are marked wherever they landed: the MCU's SDA, and the IMU's SDx on the INT1 net
     expect(i2c.via.sort()).toEqual(["imu_int1.u2", "scl.u1", "scl.u2", "sda.u1"]);
     // lines the bus does not run over keep their own state
-    expect(vm.links.find((l) => l.id === "v1v1.u1")!.state).toBe("configured");
+    expect(vm.links.find((l) => l.id === "vcore.u1")!.state).toBe("configured");
   });
 
   it("labels grouped lines by pin name", () => {
@@ -78,7 +78,7 @@ describe("boards inside a system", () => {
 
   it("checks each board on its own and re-bases its findings onto the root", () => {
     expect(rebase("link:sda.u1.pin_2", "board")).toBe("link:board/sda.u1.pin_2");
-    expect(rebase("u2:pin_14", "board")).toBe("board/u2:pin_14");
+    expect(rebase("u2:pin_1", "board")).toBe("board/u2:pin_1");
     expect(rebase(":sda", "board")).toBe("board:sda");
     const broken = { ...fx.pod };
     const lookupBroken = (id: string) => (id === fx.board.id ? sdaOnInterrupt(fx.board) : lookup(id));
@@ -101,6 +101,6 @@ describe("boards inside a system", () => {
     const diagnostics = systemDiagnostics(fx.pod, lookupBroken);
     const vm = buildView(fx.pod, lookupBroken, ["board"], { expanded: new Set(), diagnostics });
     const i2c = vm.derived.find((d) => d.protocol === "i2c")!;
-    expect(i2c.diagnostics.some((m) => /^I2C 0 ↔ Primary I2C \(target\): incompatible/.test(m))).toBe(true);
+    expect(i2c.diagnostics.some((m) => /^I2C 0 ↔ I2C \(target\): incompatible/.test(m))).toBe(true);
   });
 });

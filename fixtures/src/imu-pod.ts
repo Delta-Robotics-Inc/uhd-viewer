@@ -42,13 +42,13 @@ export interface Fixtures {
 }
 
 /**
- * The scenario variant: the IMU's SDx (u2 pin 14) and INT1 (u2 pin 4) swapped
+ * The scenario variant: the IMU's SDx (u2 pin 1) and INT1 (u2 pin 5) swapped
  * onto each other's nets, as in UHD's own test of `bus_incomplete`.
  */
 export function sdaOnInterrupt(board: ModuleDef): ModuleDef {
   const moved: Record<string, { id: string; net: string }> = {
-    "sda.u2.pin_14": { id: "imu_int1.u2.pin_14", net: "imu_int1" },
-    "imu_int1.u2.pin_4": { id: "sda.u2.pin_4", net: "sda" },
+    "sda.u2.pin_1": { id: "imu_int1.u2.pin_1", net: "imu_int1" },
+    "imu_int1.u2.pin_5": { id: "sda.u2.pin_5", net: "sda" },
   };
   return {
     ...board,
@@ -216,7 +216,7 @@ export function buildFixtures(): Fixtures {
   const scenario = (root?: ModuleDef) => ({
     id: "imu-sdx-int1-swapped",
     label: "IMU SDx and INT1 swapped",
-    description: "The IMU's SDx (u2 pin 14) is on the IMU_INT1 net and its INT1 (pin 4) on SDA: the I2C bus between the MCU and the IMU is incomplete.",
+    description: "The IMU's SDx (u2 pin 1) is on the IMU_INT1 net and its INT1 (pin 5) on SDA: the I2C bus between the MCU and the IMU is incomplete.",
     ...(root ? { root } : { definitions: [sdaOnInterrupt(board)] }),
   });
 

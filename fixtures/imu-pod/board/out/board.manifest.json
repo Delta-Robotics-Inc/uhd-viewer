@@ -17,7 +17,7 @@
       "faces": 1
     },
     "u1": {
-      "area_mm2": 49,
+      "area_mm2": 25,
       "centroid": [
         9.5,
         9,
@@ -31,11 +31,11 @@
       "faces": 1
     },
     "u2": {
-      "area_mm2": 7.5,
+      "area_mm2": 5,
       "centroid": [
         19,
         13,
-        2.43
+        2.4
       ],
       "normal": [
         0,
@@ -45,7 +45,7 @@
       "faces": 1
     },
     "u3": {
-      "area_mm2": 12,
+      "area_mm2": 9,
       "centroid": [
         19.5,
         5,

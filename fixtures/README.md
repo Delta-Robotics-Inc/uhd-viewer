@@ -23,15 +23,16 @@ Open one with the dev server:
 `http://localhost:5178/?bundle=/@fs/<this checkout>/fixtures/imu-pod/uhd-bundle.json`
 (or `npm run build && npm run serve -- fixtures/imu-pod/uhd-bundle.json`).
 
-Both have a scenario, *IMU SDx and INT1 swapped*: the IMU's SDx (pin 14)
-and INT1 (pin 4) are joined to each other's nets, the case UHD's own
+Both have a scenario, *IMU SDx and INT1 swapped*: the IMU's SDx (pin 1)
+and INT1 (pin 5) are joined to each other's nets, the case UHD's own
 `bus_incomplete` test uses. The I2C link derived over the nets is then
 incomplete.
 
 ## What is the UHD fixture and what is added
 
 - **The board** is UHD's `fixture-imu-board` (`uhd/test/fixtures/imu-board.ts`:
-  RP2040 + BMI270 on I2C, TPS63020 buck-boost, its sources cited there),
+  a synthetic MCU and IMU on I2C and a synthetic buck-boost regulator,
+  invented parts with no real device behind them),
   unchanged except for what a project adds once a board is designed: a
   mounting-hole interface (`mount`, two M2 holes 23 mm apart, with its frame
   and a feature ref into `board.glb`), its size (28 × 18 × 1.6 mm), the

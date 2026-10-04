@@ -4,60 +4,56 @@
     {
       "id": "vin",
       "pins": [
-        "u3:pin_10",
-        "u3:pin_11",
         "u3:pin_1",
-        "u3:pin_12",
-        "u3:pin_13"
+        "u3:pin_2",
+        "u3:pin_3",
+        "u3:pin_4",
+        "u3:pin_5"
       ]
     },
     {
       "id": "v3v3",
       "pins": [
-        "u3:pin_4",
-        "u3:pin_5",
+        "u3:pin_8",
+        "u3:pin_9",
         "r1:pin_1",
         "u1:pin_1",
-        "u1:pin_10",
-        "u1:pin_22",
-        "u1:pin_33",
-        "u1:pin_42",
-        "u1:pin_49",
-        "u1:pin_43",
-        "u1:pin_44",
-        "u1:pin_48",
+        "u1:pin_9",
+        "u1:pin_19",
+        "u1:pin_24",
+        "u1:pin_25",
+        "u2:pin_7",
         "u2:pin_8",
-        "u2:pin_5",
-        "u2:pin_12",
+        "u2:pin_3",
         "r3:pin_1",
         "r4:pin_1"
       ]
     },
     {
-      "id": "v1v1",
+      "id": "vcore",
       "pins": [
-        "u1:pin_45",
-        "u1:pin_23",
-        "u1:pin_50"
+        "u1:pin_26",
+        "u1:pin_27",
+        "u1:pin_28"
       ]
     },
     {
       "id": "gnd",
       "pins": [
-        "u3:pin_2",
+        "u3:pin_11",
         "u3:pgnd",
         "r2:pin_2",
         "u1:pad_gnd",
-        "u1:pin_19",
-        "u2:pin_6",
-        "u2:pin_7",
-        "u2:pin_1"
+        "u1:pin_10",
+        "u2:pin_9",
+        "u2:pin_10",
+        "u2:pin_4"
       ]
     },
     {
       "id": "fb",
       "pins": [
-        "u3:pin_3",
+        "u3:pin_10",
         "r1:pin_2",
         "r2:pin_1"
       ]
@@ -65,15 +61,13 @@
     {
       "id": "sw1",
       "pins": [
-        "u3:pin_8",
-        "u3:pin_9",
+        "u3:pin_6",
         "l1:pin_1"
       ]
     },
     {
       "id": "sw2",
       "pins": [
-        "u3:pin_6",
         "u3:pin_7",
         "l1:pin_2"
       ]
@@ -82,7 +76,7 @@
       "id": "sda",
       "pins": [
         "u1:pin_2",
-        "u2:pin_14",
+        "u2:pin_1",
         "r3:pin_2"
       ]
     },
@@ -90,7 +84,7 @@
       "id": "scl",
       "pins": [
         "u1:pin_3",
-        "u2:pin_13",
+        "u2:pin_2",
         "r4:pin_2"
       ]
     },
@@ -98,7 +92,7 @@
       "id": "imu_int1",
       "pins": [
         "u1:pin_4",
-        "u2:pin_4"
+        "u2:pin_5"
       ]
     }
   ]

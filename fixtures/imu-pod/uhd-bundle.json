@@ -37,7 +37,7 @@
   {
    "id": "sample-imu-board",
    "name": "IMU board (fixture + sample outputs)",
-   "description": "RP2040 + BMI270 on I2C0, 3.3 V from a TPS63020 buck-boost. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
+   "description": "Synthetic MCU + IMU on I2C 0, 3.3 V from a synthetic buck-boost regulator. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
    "interfaces": [
     {
      "id": "vin",
@@ -87,8 +87,8 @@
      ]
     },
     {
-     "id": "v1v1",
-     "name": "1V1",
+     "id": "vcore",
+     "name": "VCORE",
      "domain": "electrical",
      "exposed": false,
      "default_active": true,
@@ -104,7 +104,7 @@
       {
        "id": "voltage",
        "unit": "V",
-       "value": 1.1
+       "value": 1.2
       }
      ]
     },
@@ -297,22 +297,22 @@
    "children": [
     {
      "id": "u1",
-     "moduleDefId": "rp2040",
+     "moduleDefId": "fixture-mcu-qfn32",
      "name": "MCU"
     },
     {
      "id": "u2",
-     "moduleDefId": "bosch-bmi270",
+     "moduleDefId": "fixture-imu-lga12",
      "name": "IMU"
     },
     {
      "id": "u3",
-     "moduleDefId": "ti-tps63020dsjr",
+     "moduleDefId": "fixture-buck-boost-son12",
      "name": "3V3 buck-boost"
     },
     {
      "id": "l1",
-     "moduleDefId": "fixture-l-1u5"
+     "moduleDefId": "fixture-l-2u2"
     },
     {
      "id": "r1",
@@ -321,7 +321,7 @@
     },
     {
      "id": "r2",
-     "moduleDefId": "fixture-r-180k-0402",
+     "moduleDefId": "fixture-r-220k-0402",
      "name": "FB lower"
     },
     {
@@ -337,28 +337,6 @@
    ],
    "links": [
     {
-     "id": "vin.u3.pin_10",
-     "a": {
-      "child": "u3",
-      "interfaceId": "pin_10"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "vin"
-     }
-    },
-    {
-     "id": "vin.u3.pin_11",
-     "a": {
-      "child": "u3",
-      "interfaceId": "pin_11"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "vin"
-     }
-    },
-    {
      "id": "vin.u3.pin_1",
      "a": {
       "child": "u3",
@@ -370,10 +348,10 @@
      }
     },
     {
-     "id": "vin.u3.pin_12",
+     "id": "vin.u3.pin_2",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_12"
+      "interfaceId": "pin_2"
      },
      "b": {
       "self": true,
@@ -381,10 +359,10 @@
      }
     },
     {
-     "id": "vin.u3.pin_13",
+     "id": "vin.u3.pin_3",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_13"
+      "interfaceId": "pin_3"
      },
      "b": {
       "self": true,
@@ -392,21 +370,32 @@
      }
     },
     {
-     "id": "sw1.u3.pin_8",
+     "id": "vin.u3.pin_4",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_8"
+      "interfaceId": "pin_4"
      },
      "b": {
       "self": true,
-      "interfaceId": "sw1"
+      "interfaceId": "vin"
      }
     },
     {
-     "id": "sw1.u3.pin_9",
+     "id": "vin.u3.pin_5",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_9"
+      "interfaceId": "pin_5"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "sw1.u3.pin_6",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_6"
      },
      "b": {
       "self": true,
@@ -422,17 +411,6 @@
      "b": {
       "self": true,
       "interfaceId": "sw1"
-     }
-    },
-    {
-     "id": "sw2.u3.pin_6",
-     "a": {
-      "child": "u3",
-      "interfaceId": "pin_6"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "sw2"
      }
     },
     {
@@ -458,10 +436,10 @@
      }
     },
     {
-     "id": "fb.u3.pin_3",
+     "id": "fb.u3.pin_10",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_3"
+      "interfaceId": "pin_10"
      },
      "b": {
       "self": true,
@@ -491,10 +469,10 @@
      }
     },
     {
-     "id": "v3v3.u3.pin_4",
+     "id": "v3v3.u3.pin_8",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_4"
+      "interfaceId": "pin_8"
      },
      "b": {
       "self": true,
@@ -502,10 +480,10 @@
      }
     },
     {
-     "id": "v3v3.u3.pin_5",
+     "id": "v3v3.u3.pin_9",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_5"
+      "interfaceId": "pin_9"
      },
      "b": {
       "self": true,
@@ -535,10 +513,10 @@
      }
     },
     {
-     "id": "v3v3.u1.pin_10",
+     "id": "v3v3.u1.pin_9",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_10"
+      "interfaceId": "pin_9"
      },
      "b": {
       "self": true,
@@ -546,10 +524,10 @@
      }
     },
     {
-     "id": "v3v3.u1.pin_22",
+     "id": "v3v3.u1.pin_19",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_22"
+      "interfaceId": "pin_19"
      },
      "b": {
       "self": true,
@@ -557,10 +535,10 @@
      }
     },
     {
-     "id": "v3v3.u1.pin_33",
+     "id": "v3v3.u1.pin_24",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_33"
+      "interfaceId": "pin_24"
      },
      "b": {
       "self": true,
@@ -568,10 +546,10 @@
      }
     },
     {
-     "id": "v3v3.u1.pin_42",
+     "id": "v3v3.u1.pin_25",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_42"
+      "interfaceId": "pin_25"
      },
      "b": {
       "self": true,
@@ -579,43 +557,10 @@
      }
     },
     {
-     "id": "v3v3.u1.pin_49",
+     "id": "v3v3.u2.pin_7",
      "a": {
-      "child": "u1",
-      "interfaceId": "pin_49"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "v3v3"
-     }
-    },
-    {
-     "id": "v3v3.u1.pin_43",
-     "a": {
-      "child": "u1",
-      "interfaceId": "pin_43"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "v3v3"
-     }
-    },
-    {
-     "id": "v3v3.u1.pin_44",
-     "a": {
-      "child": "u1",
-      "interfaceId": "pin_44"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "v3v3"
-     }
-    },
-    {
-     "id": "v3v3.u1.pin_48",
-     "a": {
-      "child": "u1",
-      "interfaceId": "pin_48"
+      "child": "u2",
+      "interfaceId": "pin_7"
      },
      "b": {
       "self": true,
@@ -634,21 +579,10 @@
      }
     },
     {
-     "id": "v3v3.u2.pin_5",
+     "id": "v3v3.u2.pin_3",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_5"
-     },
-     "b": {
-      "self": true,
-      "interfaceId": "v3v3"
-     }
-    },
-    {
-     "id": "v3v3.u2.pin_12",
-     "a": {
-      "child": "u2",
-      "interfaceId": "pin_12"
+      "interfaceId": "pin_3"
      },
      "b": {
       "self": true,
@@ -678,43 +612,43 @@
      }
     },
     {
-     "id": "v1v1.u1.pin_45",
+     "id": "vcore.u1.pin_26",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_45"
+      "interfaceId": "pin_26"
      },
      "b": {
       "self": true,
-      "interfaceId": "v1v1"
+      "interfaceId": "vcore"
      }
     },
     {
-     "id": "v1v1.u1.pin_23",
+     "id": "vcore.u1.pin_27",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_23"
+      "interfaceId": "pin_27"
      },
      "b": {
       "self": true,
-      "interfaceId": "v1v1"
+      "interfaceId": "vcore"
      }
     },
     {
-     "id": "v1v1.u1.pin_50",
+     "id": "vcore.u1.pin_28",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_50"
+      "interfaceId": "pin_28"
      },
      "b": {
       "self": true,
-      "interfaceId": "v1v1"
+      "interfaceId": "vcore"
      }
     },
     {
-     "id": "gnd.u3.pin_2",
+     "id": "gnd.u3.pin_11",
      "a": {
       "child": "u3",
-      "interfaceId": "pin_2"
+      "interfaceId": "pin_11"
      },
      "b": {
       "self": true,
@@ -755,10 +689,10 @@
      }
     },
     {
-     "id": "gnd.u1.pin_19",
+     "id": "gnd.u1.pin_10",
      "a": {
       "child": "u1",
-      "interfaceId": "pin_19"
+      "interfaceId": "pin_10"
      },
      "b": {
       "self": true,
@@ -766,10 +700,10 @@
      }
     },
     {
-     "id": "gnd.u2.pin_6",
+     "id": "gnd.u2.pin_9",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_6"
+      "interfaceId": "pin_9"
      },
      "b": {
       "self": true,
@@ -777,10 +711,10 @@
      }
     },
     {
-     "id": "gnd.u2.pin_7",
+     "id": "gnd.u2.pin_10",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_7"
+      "interfaceId": "pin_10"
      },
      "b": {
       "self": true,
@@ -788,10 +722,10 @@
      }
     },
     {
-     "id": "gnd.u2.pin_1",
+     "id": "gnd.u2.pin_4",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_1"
+      "interfaceId": "pin_4"
      },
      "b": {
       "self": true,
@@ -810,10 +744,10 @@
      }
     },
     {
-     "id": "sda.u2.pin_14",
+     "id": "sda.u2.pin_1",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_14"
+      "interfaceId": "pin_1"
      },
      "b": {
       "self": true,
@@ -843,10 +777,10 @@
      }
     },
     {
-     "id": "scl.u2.pin_13",
+     "id": "scl.u2.pin_2",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_13"
+      "interfaceId": "pin_2"
      },
      "b": {
       "self": true,
@@ -876,10 +810,10 @@
      }
     },
     {
-     "id": "imu_int1.u2.pin_4",
+     "id": "imu_int1.u2.pin_5",
      "a": {
       "child": "u2",
-      "interfaceId": "pin_4"
+      "interfaceId": "pin_5"
      },
      "b": {
       "self": true,
@@ -893,7 +827,7 @@
      "name": "VIN",
      "from": {
       "child": "u3",
-      "interfaceId": "pin_10"
+      "interfaceId": "pin_1"
      }
     },
     {
@@ -901,7 +835,7 @@
      "name": "GND",
      "from": {
       "child": "u3",
-      "interfaceId": "pin_2"
+      "interfaceId": "pin_11"
      }
     },
     {
@@ -1334,30 +1268,17 @@
    ]
   },
   {
-   "id": "rp2040",
-   "name": "Raspberry Pi RP2040",
-   "version": "2.1.0",
-   "manufacturer": "Raspberry Pi",
-   "part_number": "RP2040",
-   "description": "Bare-chip dual-core Arm Cortex-M0+ microcontroller in QFN-56 7×7 mm package. 264 KB SRAM with NO internal flash (external QSPI flash required for code execution via XIP). 30 multi-function GPIOs (GPIO0..GPIO29), 2x UART, 2x I2C, 2x SPI, 16 PWM channels (8 slices), 4-channel 12-bit ADC, USB 1.1 host/device PHY, and 8 user-programmable I/O state machines (PIO) across two PIO blocks. Flexible system clock up to 133 MHz default.",
-   "tags": [
-    "rp2040",
-    "raspberry-pi",
-    "microcontroller",
-    "arm-cortex-m0",
-    "dual-core",
-    "qfn-56",
-    "pio",
-    "usb",
-    "bare-chip"
-   ],
+   "id": "fixture-mcu-qfn32",
+   "name": "Fixture microcontroller (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented microcontroller for tests: 24 I/O pins, one I2C controller on PA0/PA1, SWD, VDDIO 1.62-3.6 V, an internal 1.2 V core regulator (VREG_IN to VREG_OUT) that feeds its VCORE pins, 32-pin QFN with exposed pad. Not a real part.",
    "categories": [
-    "microcontroller.raspberry_pi"
+    "microcontroller"
    ],
    "interfaces": [
     {
      "id": "pin_1",
-     "name": "IOVDD",
+     "name": "VDDIO",
      "pin": 1,
      "domain": "electrical",
      "exposed": true,
@@ -1376,19 +1297,24 @@
        "unit": "V",
        "value": 3.3,
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
       }
      ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ]
     },
     {
      "id": "pin_2",
-     "name": "GPIO0",
+     "name": "PA0",
      "pin": 2,
      "domain": "electrical",
      "exposed": true,
@@ -1401,44 +1327,35 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
       "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio0",
-      "spi0_rx",
-      "uart0_tx",
-      "i2c0_sda",
-      "pwm0_a",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
+      "i2c_sda"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA0",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_3",
-     "name": "GPIO1",
+     "name": "PA1",
      "pin": 3,
      "domain": "electrical",
      "exposed": true,
@@ -1451,44 +1368,35 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
       "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio1",
-      "spi0_csn",
-      "uart0_rx",
-      "i2c0_scl",
-      "pwm0_b",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
+      "i2c_scl"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA1",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_4",
-     "name": "GPIO2",
+     "name": "PA2",
      "pin": 4,
      "domain": "electrical",
      "exposed": true,
@@ -1501,44 +1409,35 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
       "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio2",
-      "spi0_sck",
-      "uart0_cts",
-      "i2c1_sda",
-      "pwm1_a",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
+      "interrupt"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA2",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_5",
-     "name": "GPIO3",
+     "name": "PA3",
      "pin": 5,
      "domain": "electrical",
      "exposed": true,
@@ -1551,44 +1450,34 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio3",
-      "spi0_tx",
-      "uart0_rts",
-      "i2c1_scl",
-      "pwm1_b",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA3",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_6",
-     "name": "GPIO4",
+     "name": "PA4",
      "pin": 6,
      "domain": "electrical",
      "exposed": true,
@@ -1601,44 +1490,34 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio4",
-      "spi0_rx",
-      "uart1_tx",
-      "i2c0_sda",
-      "pwm2_a",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA4",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_7",
-     "name": "GPIO5",
+     "name": "PA5",
      "pin": 7,
      "domain": "electrical",
      "exposed": true,
@@ -1651,44 +1530,34 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio5",
-      "spi0_csn",
-      "uart1_rx",
-      "i2c0_scl",
-      "pwm2_b",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA5",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_8",
-     "name": "GPIO6",
+     "name": "PA6",
      "pin": 8,
      "domain": "electrical",
      "exposed": true,
@@ -1701,1559 +1570,35 @@
         "output",
         "bidirectional"
        ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio6",
-      "spi0_sck",
-      "uart1_cts",
-      "i2c1_sda",
-      "pwm3_a",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA6",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pin_9",
-     "name": "GPIO7",
+     "name": "VDDIO",
      "pin": 9,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio7",
-      "spi0_tx",
-      "uart1_rts",
-      "i2c1_scl",
-      "pwm3_b",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_10",
-     "name": "IOVDD",
-     "pin": 10,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 3.3,
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
-     ]
-    },
-    {
-     "id": "pin_11",
-     "name": "GPIO8",
-     "pin": 11,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio8",
-      "spi1_rx",
-      "uart1_tx",
-      "i2c0_sda",
-      "pwm4_a",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_12",
-     "name": "GPIO9",
-     "pin": 12,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio9",
-      "spi1_csn",
-      "uart1_rx",
-      "i2c0_scl",
-      "pwm4_b",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_13",
-     "name": "GPIO10",
-     "pin": 13,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio10",
-      "spi1_sck",
-      "uart1_cts",
-      "i2c1_sda",
-      "pwm5_a",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_14",
-     "name": "GPIO11",
-     "pin": 14,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio11",
-      "spi1_tx",
-      "uart1_rts",
-      "i2c1_scl",
-      "pwm5_b",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_15",
-     "name": "GPIO12",
-     "pin": 15,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio12",
-      "spi1_rx",
-      "uart0_tx",
-      "i2c0_sda",
-      "pwm6_a",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_16",
-     "name": "GPIO13",
-     "pin": 16,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio13",
-      "spi1_csn",
-      "uart0_rx",
-      "i2c0_scl",
-      "pwm6_b",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_17",
-     "name": "GPIO14",
-     "pin": 17,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio14",
-      "spi1_sck",
-      "uart0_cts",
-      "i2c1_sda",
-      "pwm7_a",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_18",
-     "name": "GPIO15",
-     "pin": 18,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio15",
-      "spi1_tx",
-      "uart0_rts",
-      "i2c1_scl",
-      "pwm7_b",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_19",
-     "name": "TESTEN",
-     "pin": 19,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "testen",
-      "factory_test"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_20",
-     "name": "XIN",
-     "pin": 20,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "clock",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "xtal_in"
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "value": 12000000
-      }
-     ]
-    },
-    {
-     "id": "pin_21",
-     "name": "XOUT",
-     "pin": 21,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "clock",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "xtal_out"
-     ]
-    },
-    {
-     "id": "pin_22",
-     "name": "IOVDD",
-     "pin": 22,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 3.3,
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
-     ]
-    },
-    {
-     "id": "pin_23",
-     "name": "DVDD",
-     "pin": 23,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 1.1,
-       "range": [
-        1.05,
-        1.16
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "dvdd"
-     ]
-    },
-    {
-     "id": "pin_24",
-     "name": "SWCLK",
-     "pin": 24,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "swd_clk"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_25",
-     "name": "SWDIO",
-     "pin": 25,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      }
-     ],
-     "capabilities": [
-      "swd_io"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_26",
-     "name": "RUN",
-     "pin": 26,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "run_reset",
-      "reset_input"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_27",
-     "name": "GPIO16",
-     "pin": 27,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio16",
-      "spi0_rx",
-      "uart0_tx",
-      "i2c0_sda",
-      "pwm0_a",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_28",
-     "name": "GPIO17",
-     "pin": 28,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio17",
-      "spi0_csn",
-      "uart0_rx",
-      "i2c0_scl",
-      "pwm0_b",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_29",
-     "name": "GPIO18",
-     "pin": 29,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio18",
-      "spi0_sck",
-      "uart0_cts",
-      "i2c1_sda",
-      "pwm1_a",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_30",
-     "name": "GPIO19",
-     "pin": 30,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio19",
-      "spi0_tx",
-      "uart0_rts",
-      "i2c1_scl",
-      "pwm1_b",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_31",
-     "name": "GPIO20",
-     "pin": 31,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio20",
-      "spi0_rx",
-      "uart1_tx",
-      "i2c0_sda",
-      "pwm2_a",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpin0",
-      "clock_gpin"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_32",
-     "name": "GPIO21",
-     "pin": 32,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio21",
-      "spi0_csn",
-      "uart1_rx",
-      "i2c0_scl",
-      "pwm2_b",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpout0",
-      "clock_gpout"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_33",
-     "name": "IOVDD",
-     "pin": 33,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 3.3,
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
-     ]
-    },
-    {
-     "id": "pin_34",
-     "name": "GPIO22",
-     "pin": 34,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio22",
-      "spi0_sck",
-      "uart1_cts",
-      "i2c1_sda",
-      "pwm3_a",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpin1",
-      "clock_gpin"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_35",
-     "name": "GPIO23",
-     "pin": 35,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio23",
-      "spi0_tx",
-      "uart1_rts",
-      "i2c1_scl",
-      "pwm3_b",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpout1",
-      "clock_gpout"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_36",
-     "name": "GPIO24",
-     "pin": 36,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio24",
-      "spi1_rx",
-      "uart1_tx",
-      "i2c0_sda",
-      "pwm4_a",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpout2",
-      "clock_gpout"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_37",
-     "name": "GPIO25",
-     "pin": 37,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio25",
-      "spi1_csn",
-      "uart1_rx",
-      "i2c0_scl",
-      "pwm4_b",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "clock_gpout3",
-      "clock_gpout"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_38",
-     "name": "GPIO26",
-     "pin": 38,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      },
-      {
-       "type": "analog",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "analog_in",
-      "i2c_sda",
-      "spi_sck",
-      "uart_cts",
-      "gpio26",
-      "spi1_sck",
-      "uart1_cts",
-      "i2c1_sda",
-      "pwm5_a",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1",
-      "adc_ch0"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_39",
-     "name": "GPIO27",
-     "pin": 39,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      },
-      {
-       "type": "analog",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "analog_in",
-      "i2c_scl",
-      "spi_mosi",
-      "uart_rts",
-      "gpio27",
-      "spi1_tx",
-      "uart1_rts",
-      "i2c1_scl",
-      "pwm5_b",
-      "usb_ovcur_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "adc_ch1"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_40",
-     "name": "GPIO28",
-     "pin": 40,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      },
-      {
-       "type": "analog",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "analog_in",
-      "i2c_sda",
-      "spi_miso",
-      "uart_tx",
-      "gpio28",
-      "spi1_rx",
-      "uart0_tx",
-      "i2c0_sda",
-      "pwm6_a",
-      "usb_vbus_det",
-      "sio",
-      "pio0",
-      "pio1",
-      "adc_ch2"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_41",
-     "name": "GPIO29",
-     "pin": 41,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      },
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      },
-      {
-       "type": "analog",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "pwm_out",
-      "analog_in",
-      "i2c_scl",
-      "spi_ss",
-      "uart_rx",
-      "gpio29",
-      "spi1_csn",
-      "uart0_rx",
-      "i2c0_scl",
-      "pwm6_b",
-      "usb_vbus_en",
-      "sio",
-      "pio0",
-      "pio1",
-      "adc_ch3"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_42",
-     "name": "IOVDD",
-     "pin": 42,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 3.3,
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
-     ]
-    },
-    {
-     "id": "pin_43",
-     "name": "ADC_AVDD",
-     "pin": 43,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3272,20 +1617,381 @@
        "value": 3.3,
        "range": [
         1.62,
-        3.63
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_10",
+     "name": "TEST",
+     "pin": 10,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
        ]
       }
      ],
      "capabilities": [
-      "power_in",
-      "adc_avdd",
-      "analog_supply"
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Factory test mode; tie to GND",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ]
     },
     {
-     "id": "pin_44",
-     "name": "VREG_VIN",
-     "pin": 44,
+     "id": "pin_11",
+     "name": "PA7",
+     "pin": 11,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA7",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_12",
+     "name": "PB0",
+     "pin": 12,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB0",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_13",
+     "name": "PB1",
+     "pin": 13,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB1",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_14",
+     "name": "PB2",
+     "pin": 14,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB2",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_15",
+     "name": "PB3",
+     "pin": 15,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB3",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_16",
+     "name": "SWCLK",
+     "pin": 16,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "swd_clk"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Debug clock",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_17",
+     "name": "SWDIO",
+     "pin": 17,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "swd_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Debug data",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_18",
+     "name": "NRST",
+     "pin": 18,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "reset_input"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Reset, active low",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_19",
+     "name": "VDDIO",
+     "pin": 19,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3303,23 +2009,260 @@
        "unit": "V",
        "value": 3.3,
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_20",
+     "name": "PB4",
+     "pin": 20,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
        ]
       }
      ],
      "capabilities": [
-      "power_in",
-      "vreg_vin"
+      "digital_io"
      ],
-     "bridgesTo": [
-      "pin_45"
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB4",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ]
     },
     {
-     "id": "pin_45",
-     "name": "VREG_VOUT",
-     "pin": 45,
+     "id": "pin_21",
+     "name": "PB5",
+     "pin": 21,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB5",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_22",
+     "name": "PB6",
+     "pin": 22,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB6",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_23",
+     "name": "PB7",
+     "pin": 23,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB7",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_24",
+     "name": "VDDA",
+     "pin": 24,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Analog supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_25",
+     "name": "VREG_IN",
+     "pin": 25,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core regulator input",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ],
+     "bridgesTo": [
+      "pin_26"
+     ]
+    },
+    {
+     "id": "pin_26",
+     "name": "VREG_OUT",
+     "pin": 26,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3335,7 +2278,7 @@
       {
        "id": "voltage",
        "unit": "V",
-       "value": 1.1
+       "value": 1.2
       },
       {
        "id": "max_current",
@@ -3343,57 +2286,24 @@
        "value": 0.1
       }
      ],
-     "capabilities": [
-      "power_out",
-      "vreg_vout"
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core regulator output, 1.2 V",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ],
      "bridgesTo": [
-      "pin_23",
-      "pin_50"
+      "pin_27",
+      "pin_28"
      ]
     },
     {
-     "id": "pin_46",
-     "name": "USB_DM",
-     "pin": 46,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "usb",
-       "roles": [
-        "data_minus"
-       ]
-      }
-     ],
-     "capabilities": [
-      "usb_dm"
-     ]
-    },
-    {
-     "id": "pin_47",
-     "name": "USB_DP",
-     "pin": 47,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "usb",
-       "roles": [
-        "data_plus"
-       ]
-      }
-     ],
-     "capabilities": [
-      "usb_dp"
-     ]
-    },
-    {
-     "id": "pin_48",
-     "name": "USB_VDD",
-     "pin": 48,
+     "id": "pin_27",
+     "name": "VCORE",
+     "pin": 27,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3409,22 +2319,27 @@
       {
        "id": "voltage",
        "unit": "V",
-       "value": 3.3,
+       "value": 1.2,
        "range": [
-        3.135,
-        3.63
+        1.1,
+        1.3
        ]
       }
      ],
-     "capabilities": [
-      "power_in",
-      "usb_vdd"
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core supply, from VREG_OUT",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ]
     },
     {
-     "id": "pin_49",
-     "name": "IOVDD",
-     "pin": 49,
+     "id": "pin_28",
+     "name": "VCORE",
+     "pin": 28,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3440,53 +2355,27 @@
       {
        "id": "voltage",
        "unit": "V",
-       "value": 3.3,
+       "value": 1.2,
        "range": [
-        1.8,
-        3.3
+        1.1,
+        1.3
        ]
       }
      ],
-     "capabilities": [
-      "power_in",
-      "iovdd"
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core supply, from VREG_OUT",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
      ]
     },
     {
-     "id": "pin_50",
-     "name": "DVDD",
-     "pin": 50,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "value": 1.1,
-       "range": [
-        1.05,
-        1.16
-       ]
-      }
-     ],
-     "capabilities": [
-      "power_in",
-      "dvdd"
-     ]
-    },
-    {
-     "id": "pin_51",
-     "name": "QSPI_SD3",
-     "pin": 51,
+     "id": "pin_29",
+     "name": "PC0",
+     "pin": 29,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3501,24 +2390,32 @@
       }
      ],
      "capabilities": [
-      "digital_io",
-      "qspi_sd3"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC0",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
-     "id": "pin_52",
-     "name": "QSPI_SCLK",
-     "pin": 52,
+     "id": "pin_30",
+     "name": "PC1",
+     "pin": 30,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3533,24 +2430,32 @@
       }
      ],
      "capabilities": [
-      "digital_io",
-      "qspi_sclk"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC1",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
-     "id": "pin_53",
-     "name": "QSPI_SD0",
-     "pin": 53,
+     "id": "pin_31",
+     "name": "PC2",
+     "pin": 31,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3565,24 +2470,32 @@
       }
      ],
      "capabilities": [
-      "digital_io",
-      "qspi_sd0"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
+        1.62,
+        3.6
        ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC2",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
-     "id": "pin_54",
-     "name": "QSPI_SD2",
-     "pin": 54,
+     "id": "pin_32",
+     "name": "PC3",
+     "pin": 32,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3597,88 +2510,32 @@
       }
      ],
      "capabilities": [
-      "digital_io",
-      "qspi_sd2"
+      "digital_io"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_55",
-     "name": "QSPI_SD1",
-     "pin": 55,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
+        1.62,
+        3.6
        ]
       }
      ],
-     "capabilities": [
-      "digital_io",
-      "qspi_sd1"
-     ],
-     "parameters": [
+     "traits": [
       {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
-      }
-     ]
-    },
-    {
-     "id": "pin_56",
-     "name": "QSPI_SS_N",
-     "pin": 56,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "qspi_ss_n"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        3.3
-       ]
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC3",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
     },
     {
      "id": "pad_gnd",
-     "name": "GND (Exposed Pad)",
-     "pin": 57,
+     "name": "GND",
+     "pin": 33,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -3693,456 +2550,15 @@
      "capabilities": [
       "ground"
      ],
-     "parameters": [
+     "traits": [
       {
-       "id": "max_current",
-       "unit": "A",
-       "value": 1
+       "type": "pin_functions",
+       "params": {
+        "description": "Ground, exposed pad",
+        "source": "fixture: invented part, no datasheet"
+       }
       }
      ]
-    },
-    {
-     "id": "adc_in",
-     "name": "ADC",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "analog",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "channel",
-       "required": true,
-       "count": 4,
-       "match": {
-        "protocol": "analog",
-        "role": "input",
-        "capability": "analog_in"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "adc_channels",
-       "label": "ADC0-ADC3 (GPIO26-29, pins 38-41)",
-       "bindings": {
-        "channel": [
-         "pin_38",
-         "pin_39",
-         "pin_40",
-         "pin_41"
-        ]
-       }
-      }
-     ],
-     "parameters": [
-      {
-       "id": "resolution",
-       "unit": "dimensionless",
-       "value": 12
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "spi_0",
-     "name": "SPI 0",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "spi",
-       "roles": [
-        "master"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "range": [
-        0,
-        62500000
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "mosi",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_out",
-        "capability": "spi_mosi"
-       }
-      },
-      {
-       "id": "miso",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_in",
-        "capability": "spi_miso"
-       }
-      },
-      {
-       "id": "sck",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "clock",
-        "capability": "spi_sck"
-       }
-      },
-      {
-       "id": "ss",
-       "required": false,
-       "match": {
-        "protocol": "spi",
-        "role": "select",
-        "capability": "spi_ss"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "spi0_gpio0",
-       "label": "SPI0 on GPIO0-3 (pins 2-5)",
-       "bindings": {
-        "mosi": "pin_5",
-        "miso": "pin_2",
-        "sck": "pin_4",
-        "ss": "pin_3"
-       }
-      },
-      {
-       "id": "spi0_gpio4",
-       "label": "SPI0 on GPIO4-7 (pins 6-9)",
-       "bindings": {
-        "mosi": "pin_9",
-        "miso": "pin_6",
-        "sck": "pin_8",
-        "ss": "pin_7"
-       }
-      },
-      {
-       "id": "spi0_gpio16",
-       "label": "SPI0 on GPIO16-19 (pins 27-30)",
-       "bindings": {
-        "mosi": "pin_30",
-        "miso": "pin_27",
-        "sck": "pin_29",
-        "ss": "pin_28"
-       }
-      },
-      {
-       "id": "spi0_gpio20",
-       "label": "SPI0 on GPIO20-23 (pins 31-35)",
-       "bindings": {
-        "mosi": "pin_35",
-        "miso": "pin_31",
-        "sck": "pin_34",
-        "ss": "pin_32"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "spi_1",
-     "name": "SPI 1",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "spi",
-       "roles": [
-        "master"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "range": [
-        0,
-        62500000
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "mosi",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_out",
-        "capability": "spi_mosi"
-       }
-      },
-      {
-       "id": "miso",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_in",
-        "capability": "spi_miso"
-       }
-      },
-      {
-       "id": "sck",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "clock",
-        "capability": "spi_sck"
-       }
-      },
-      {
-       "id": "ss",
-       "required": false,
-       "match": {
-        "protocol": "spi",
-        "role": "select",
-        "capability": "spi_ss"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "spi1_gpio8",
-       "label": "SPI1 on GPIO8-11 (pins 11-14)",
-       "bindings": {
-        "mosi": "pin_14",
-        "miso": "pin_11",
-        "sck": "pin_13",
-        "ss": "pin_12"
-       }
-      },
-      {
-       "id": "spi1_gpio12",
-       "label": "SPI1 on GPIO12-15 (pins 15-18)",
-       "bindings": {
-        "mosi": "pin_18",
-        "miso": "pin_15",
-        "sck": "pin_17",
-        "ss": "pin_16"
-       }
-      },
-      {
-       "id": "spi1_gpio24",
-       "label": "SPI1 on GPIO24-27 (pins 36-39)",
-       "bindings": {
-        "mosi": "pin_39",
-        "miso": "pin_36",
-        "sck": "pin_38",
-        "ss": "pin_37"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "uart_0",
-     "name": "UART 0",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "uart",
-       "roles": [
-        "host",
-        "device"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "rx",
-       "required": true,
-       "match": {
-        "protocol": "uart",
-        "role": "receiver",
-        "capability": "uart_rx"
-       }
-      },
-      {
-       "id": "tx",
-       "required": true,
-       "match": {
-        "protocol": "uart",
-        "role": "transmitter",
-        "capability": "uart_tx"
-       }
-      },
-      {
-       "id": "rts",
-       "required": false,
-       "match": {
-        "protocol": "uart",
-        "role": "transmitter",
-        "capability": "uart_rts"
-       }
-      },
-      {
-       "id": "cts",
-       "required": false,
-       "match": {
-        "protocol": "uart",
-        "role": "receiver",
-        "capability": "uart_cts"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "uart0_gpio0",
-       "label": "UART0 on GPIO0-3 (pins 2-5)",
-       "bindings": {
-        "rx": "pin_3",
-        "tx": "pin_2",
-        "rts": "pin_5",
-        "cts": "pin_4"
-       }
-      },
-      {
-       "id": "uart0_gpio12",
-       "label": "UART0 on GPIO12-15 (pins 15-18)",
-       "bindings": {
-        "rx": "pin_16",
-        "tx": "pin_15",
-        "rts": "pin_18",
-        "cts": "pin_17"
-       }
-      },
-      {
-       "id": "uart0_gpio16",
-       "label": "UART0 on GPIO16-19 (pins 27-30)",
-       "bindings": {
-        "rx": "pin_28",
-        "tx": "pin_27",
-        "rts": "pin_30",
-        "cts": "pin_29"
-       }
-      },
-      {
-       "id": "uart0_gpio28",
-       "label": "UART0 on GPIO28/29 (pins 40/41, no flow control)",
-       "bindings": {
-        "rx": "pin_41",
-        "tx": "pin_40"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "uart_1",
-     "name": "UART 1",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "uart",
-       "roles": [
-        "host",
-        "device"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "rx",
-       "required": true,
-       "match": {
-        "protocol": "uart",
-        "role": "receiver",
-        "capability": "uart_rx"
-       }
-      },
-      {
-       "id": "tx",
-       "required": true,
-       "match": {
-        "protocol": "uart",
-        "role": "transmitter",
-        "capability": "uart_tx"
-       }
-      },
-      {
-       "id": "rts",
-       "required": false,
-       "match": {
-        "protocol": "uart",
-        "role": "transmitter",
-        "capability": "uart_rts"
-       }
-      },
-      {
-       "id": "cts",
-       "required": false,
-       "match": {
-        "protocol": "uart",
-        "role": "receiver",
-        "capability": "uart_cts"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "uart1_gpio4",
-       "label": "UART1 on GPIO4-7 (pins 6-9)",
-       "bindings": {
-        "rx": "pin_7",
-        "tx": "pin_6",
-        "rts": "pin_9",
-        "cts": "pin_8"
-       }
-      },
-      {
-       "id": "uart1_gpio8",
-       "label": "UART1 on GPIO8-11 (pins 11-14)",
-       "bindings": {
-        "rx": "pin_12",
-        "tx": "pin_11",
-        "rts": "pin_14",
-        "cts": "pin_13"
-       }
-      },
-      {
-       "id": "uart1_gpio20",
-       "label": "UART1 on GPIO20-23 (pins 31-35)",
-       "bindings": {
-        "rx": "pin_32",
-        "tx": "pin_31",
-        "rts": "pin_35",
-        "cts": "pin_34"
-       }
-      },
-      {
-       "id": "uart1_gpio24",
-       "label": "UART1 on GPIO24-27 (pins 36-39)",
-       "bindings": {
-        "rx": "pin_37",
-        "tx": "pin_36",
-        "rts": "pin_39",
-        "cts": "pin_38"
-       }
-      }
-     ],
-     "max_instances": 1
     },
     {
      "id": "i2c_0",
@@ -4191,835 +2607,18 @@
      ],
      "profiles": [
       {
-       "id": "i2c0_gpio0",
-       "label": "I2C0 on GPIO0/1 (pins 2/3)",
+       "id": "i2c_0_default",
+       "label": "I2C 0",
        "bindings": {
         "sda": "pin_2",
         "scl": "pin_3"
        }
-      },
-      {
-       "id": "i2c0_gpio4",
-       "label": "I2C0 on GPIO4/5 (pins 6/7)",
-       "bindings": {
-        "sda": "pin_6",
-        "scl": "pin_7"
-       }
-      },
-      {
-       "id": "i2c0_gpio8",
-       "label": "I2C0 on GPIO8/9 (pins 11/12)",
-       "bindings": {
-        "sda": "pin_11",
-        "scl": "pin_12"
-       }
-      },
-      {
-       "id": "i2c0_gpio12",
-       "label": "I2C0 on GPIO12/13 (pins 15/16)",
-       "bindings": {
-        "sda": "pin_15",
-        "scl": "pin_16"
-       }
-      },
-      {
-       "id": "i2c0_gpio16",
-       "label": "I2C0 on GPIO16/17 (pins 27/28)",
-       "bindings": {
-        "sda": "pin_27",
-        "scl": "pin_28"
-       }
-      },
-      {
-       "id": "i2c0_gpio20",
-       "label": "I2C0 on GPIO20/21 (pins 31/32)",
-       "bindings": {
-        "sda": "pin_31",
-        "scl": "pin_32"
-       }
-      },
-      {
-       "id": "i2c0_gpio24",
-       "label": "I2C0 on GPIO24/25 (pins 36/37)",
-       "bindings": {
-        "sda": "pin_36",
-        "scl": "pin_37"
-       }
-      },
-      {
-       "id": "i2c0_gpio28",
-       "label": "I2C0 on GPIO28/29 (pins 40/41)",
-       "bindings": {
-        "sda": "pin_40",
-        "scl": "pin_41"
-       }
       }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "i2c_1",
-     "name": "I2C 1",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "i2c",
-       "roles": [
-        "master",
-        "slave"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "range": [
-        100000,
-        1000000
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "sda",
-       "required": true,
-       "match": {
-        "protocol": "i2c",
-        "role": "data",
-        "capability": "i2c_sda"
-       }
-      },
-      {
-       "id": "scl",
-       "required": true,
-       "match": {
-        "protocol": "i2c",
-        "role": "clock",
-        "capability": "i2c_scl"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "i2c1_gpio2",
-       "label": "I2C1 on GPIO2/3 (pins 4/5)",
-       "bindings": {
-        "sda": "pin_4",
-        "scl": "pin_5"
-       }
-      },
-      {
-       "id": "i2c1_gpio6",
-       "label": "I2C1 on GPIO6/7 (pins 8/9)",
-       "bindings": {
-        "sda": "pin_8",
-        "scl": "pin_9"
-       }
-      },
-      {
-       "id": "i2c1_gpio10",
-       "label": "I2C1 on GPIO10/11 (pins 13/14)",
-       "bindings": {
-        "sda": "pin_13",
-        "scl": "pin_14"
-       }
-      },
-      {
-       "id": "i2c1_gpio14",
-       "label": "I2C1 on GPIO14/15 (pins 17/18)",
-       "bindings": {
-        "sda": "pin_17",
-        "scl": "pin_18"
-       }
-      },
-      {
-       "id": "i2c1_gpio18",
-       "label": "I2C1 on GPIO18/19 (pins 29/30)",
-       "bindings": {
-        "sda": "pin_29",
-        "scl": "pin_30"
-       }
-      },
-      {
-       "id": "i2c1_gpio22",
-       "label": "I2C1 on GPIO22/23 (pins 34/35)",
-       "bindings": {
-        "sda": "pin_34",
-        "scl": "pin_35"
-       }
-      },
-      {
-       "id": "i2c1_gpio26",
-       "label": "I2C1 on GPIO26/27 (pins 38/39)",
-       "bindings": {
-        "sda": "pin_38",
-        "scl": "pin_39"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "qspi_flash",
-     "name": "Quad-SPI (XIP Flash Bus)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "spi",
-       "roles": [
-        "master"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "sclk",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "clock",
-        "capability": "qspi_sclk"
-       }
-      },
-      {
-       "id": "ss_n",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "select",
-        "capability": "qspi_ss_n"
-       }
-      },
-      {
-       "id": "sd0",
-       "required": true,
-       "match": {
-        "capability": "qspi_sd0"
-       }
-      },
-      {
-       "id": "sd1",
-       "required": true,
-       "match": {
-        "capability": "qspi_sd1"
-       }
-      },
-      {
-       "id": "sd2",
-       "required": true,
-       "match": {
-        "capability": "qspi_sd2"
-       }
-      },
-      {
-       "id": "sd3",
-       "required": true,
-       "match": {
-        "capability": "qspi_sd3"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "qspi_flash_fixed",
-       "label": "Dedicated QSPI pads (pins 51-56)",
-       "default_active": true,
-       "bindings": {
-        "sclk": "pin_52",
-        "ss_n": "pin_56",
-        "sd0": "pin_53",
-        "sd1": "pin_55",
-        "sd2": "pin_54",
-        "sd3": "pin_51"
-       }
-      }
-     ],
-     "parameters": [
-      {
-       "id": "max_data_rate",
-       "name": "Max data rate (QSPI quad-SDR)",
-       "unit": "bit/s",
-       "value": 133000000
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "pwm",
-     "name": "PWM",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "pwm",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "pwm0_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm0_a"
-       }
-      },
-      {
-       "id": "pwm0_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm0_b"
-       }
-      },
-      {
-       "id": "pwm1_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm1_a"
-       }
-      },
-      {
-       "id": "pwm1_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm1_b"
-       }
-      },
-      {
-       "id": "pwm2_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm2_a"
-       }
-      },
-      {
-       "id": "pwm2_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm2_b"
-       }
-      },
-      {
-       "id": "pwm3_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm3_a"
-       }
-      },
-      {
-       "id": "pwm3_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm3_b"
-       }
-      },
-      {
-       "id": "pwm4_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm4_a"
-       }
-      },
-      {
-       "id": "pwm4_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm4_b"
-       }
-      },
-      {
-       "id": "pwm5_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm5_a"
-       }
-      },
-      {
-       "id": "pwm5_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm5_b"
-       }
-      },
-      {
-       "id": "pwm6_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm6_a"
-       }
-      },
-      {
-       "id": "pwm6_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm6_b"
-       }
-      },
-      {
-       "id": "pwm7_a",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm7_a"
-       }
-      },
-      {
-       "id": "pwm7_b",
-       "required": false,
-       "match": {
-        "protocol": "pwm",
-        "role": "output",
-        "capability": "pwm7_b"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "pio0",
-     "name": "PIO0 (Programmable I/O Block 0)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "pio",
-       "roles": [
-        "input",
-        "output"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "gpio",
-       "required": false,
-       "count": 30,
-       "match": {
-        "capability": "pio0"
-       }
-      }
-     ],
-     "max_instances": 4
-    },
-    {
-     "id": "pio1",
-     "name": "PIO1 (Programmable I/O Block 1)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "pio",
-       "roles": [
-        "input",
-        "output"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "gpio",
-       "required": false,
-       "count": 30,
-       "match": {
-        "capability": "pio1"
-       }
-      }
-     ],
-     "max_instances": 4
-    },
-    {
-     "id": "ws2812",
-     "name": "NeoPixel / WS2812B LED Control",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "transmitter"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "data",
-       "required": true,
-       "match": {
-        "protocol": "digital",
-        "role": "output",
-        "capability": "pio0"
-       }
-      }
-     ],
-     "parameters": [
-      {
-       "id": "bit_rate",
-       "name": "NRZ wire bit rate",
-       "unit": "Hz",
-       "value": 800000
-      }
-     ],
-     "max_instances": 8
-    },
-    {
-     "id": "usb_device",
-     "name": "USB 1.1 Device",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "usb",
-       "roles": [
-        "device"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "dp",
-       "required": true,
-       "match": {
-        "protocol": "usb",
-        "role": "data_plus",
-        "capability": "usb_dp"
-       }
-      },
-      {
-       "id": "dm",
-       "required": true,
-       "match": {
-        "protocol": "usb",
-        "role": "data_minus",
-        "capability": "usb_dm"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "usb_device_pins",
-       "label": "USB_DP / USB_DM (pins 47/46)",
-       "bindings": {
-        "dp": "pin_47",
-        "dm": "pin_46"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "usb_host",
-     "name": "USB 1.1 Host",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "usb",
-       "roles": [
-        "host"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "dp",
-       "required": true,
-       "match": {
-        "protocol": "usb",
-        "role": "data_plus",
-        "capability": "usb_dp"
-       }
-      },
-      {
-       "id": "dm",
-       "required": true,
-       "match": {
-        "protocol": "usb",
-        "role": "data_minus",
-        "capability": "usb_dm"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "usb_host_pins",
-       "label": "USB_DP / USB_DM (pins 47/46)",
-       "bindings": {
-        "dp": "pin_47",
-        "dm": "pin_46"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "usb_vbus_detect",
-     "name": "USB VBUS Detect",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "signal",
-       "required": true,
-       "match": {
-        "capability": "usb_vbus_det"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "usb_vbus_enable",
-     "name": "USB VBUS Enable",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "signal",
-       "required": true,
-       "match": {
-        "capability": "usb_vbus_en"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "usb_overcurrent_detect",
-     "name": "USB Over-current Detect",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "signal",
-       "required": true,
-       "match": {
-        "capability": "usb_ovcur_det"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "clock_gp_input",
-     "name": "Clock GP Input",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "clock",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "in",
-       "required": true,
-       "match": {
-        "capability": "clock_gpin"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "clock_gpin0",
-       "label": "CLOCK_GPIN0 (GPIO20, pin 31)",
-       "bindings": {
-        "in": "pin_31"
-       }
-      },
-      {
-       "id": "clock_gpin1",
-       "label": "CLOCK_GPIN1 (GPIO22, pin 34)",
-       "bindings": {
-        "in": "pin_34"
-       }
-      }
-     ],
-     "max_instances": 2
-    },
-    {
-     "id": "clock_gp_output",
-     "name": "Clock GP Output",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "clock",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "out",
-       "required": true,
-       "match": {
-        "capability": "clock_gpout"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "clock_gpout0",
-       "label": "CLOCK_GPOUT0 (GPIO21, pin 32)",
-       "bindings": {
-        "out": "pin_32"
-       }
-      },
-      {
-       "id": "clock_gpout1",
-       "label": "CLOCK_GPOUT1 (GPIO23, pin 35)",
-       "bindings": {
-        "out": "pin_35"
-       }
-      },
-      {
-       "id": "clock_gpout2",
-       "label": "CLOCK_GPOUT2 (GPIO24, pin 36)",
-       "bindings": {
-        "out": "pin_36"
-       }
-      },
-      {
-       "id": "clock_gpout3",
-       "label": "CLOCK_GPOUT3 (GPIO25, pin 37)",
-       "bindings": {
-        "out": "pin_37"
-       }
-      }
-     ],
-     "max_instances": 4
-    },
-    {
-     "id": "crystal_oscillator",
-     "name": "External Crystal Oscillator (XOSC)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "clock",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "xin",
-       "required": true,
-       "match": {
-        "protocol": "clock",
-        "role": "input",
-        "capability": "xtal_in"
-       }
-      },
-      {
-       "id": "xout",
-       "required": false,
-       "match": {
-        "protocol": "clock",
-        "role": "output",
-        "capability": "xtal_out"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "xosc_pins",
-       "label": "XIN/XOUT (pins 20/21)",
-       "default_active": true,
-       "bindings": {
-        "xin": "pin_20",
-        "xout": "pin_21"
-       }
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "value": 12000000
-      }
-     ],
-     "max_instances": 1
+     ]
     },
     {
      "id": "swd",
-     "name": "SWD (Serial Wire Debug)",
+     "name": "SWD (serial wire debug)",
      "domain": "electrical",
      "exposed": true,
      "default_active": false,
@@ -5050,313 +2649,44 @@
      "profiles": [
       {
        "id": "swd_pins",
-       "label": "SWCLK/SWDIO (pins 24/25)",
+       "label": "SWCLK/SWDIO (pins 16/17)",
        "bindings": {
-        "swclk": "pin_24",
-        "swdio": "pin_25"
+        "swclk": "pin_16",
+        "swdio": "pin_17"
        }
       }
      ],
      "max_instances": 1
-    },
-    {
-     "id": "reset_input",
-     "name": "RUN Reset",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "run",
-       "required": true,
-       "match": {
-        "capability": "run_reset"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "run_pin",
-       "label": "RUN (pin 26)",
-       "default_active": true,
-       "bindings": {
-        "run": "pin_26"
-       }
-      }
-     ],
-     "max_instances": 1
-    },
-    {
-     "id": "footprint_mounting",
-     "name": "QFN-56 7×7 mm Surface-Mount Footprint",
-     "domain": "mechanical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "mechanical_connection",
-       "roles": [
-        "mounting_point"
-       ]
-      }
-     ],
-     "capabilities": [
-      "qfn56_7x7_0p4mm",
-      "surface_mount"
-     ]
-    },
-    {
-     "id": "thermal_pad",
-     "name": "Exposed Thermal Pad",
-     "pin": 57,
-     "domain": "thermal",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "thermal_connection",
-       "roles": [
-        "thermal_source"
-       ]
-      }
-     ],
-     "capabilities": [
-      "heat_sink",
-      "pcb_thermal_plane"
-     ]
-    }
-   ],
-   "interfaceGroups": [
-    {
-     "id": "required_power_pins",
-     "label": "Required Power Pins",
-     "members": [
-      "pin_1",
-      "pin_10",
-      "pin_22",
-      "pin_23",
-      "pin_33",
-      "pin_42",
-      "pin_48",
-      "pin_49",
-      "pin_50",
-      "pad_gnd"
-     ],
-     "policy": "all_of"
-    },
-    {
-     "id": "iovdd_common_net",
-     "label": "IOVDD Pins (one 1.8-3.3 V rail)",
-     "members": [
-      "pin_1",
-      "pin_10",
-      "pin_22",
-      "pin_33",
-      "pin_42",
-      "pin_49"
-     ],
-     "policy": "all_of"
-    },
-    {
-     "id": "dvdd_common_net",
-     "label": "DVDD Pins (one 1.1 V core rail)",
-     "members": [
-      "pin_23",
-      "pin_50"
-     ],
-     "policy": "all_of"
-    },
-    {
-     "id": "qspi_flash_pins",
-     "label": "Dedicated QSPI Flash Pins",
-     "members": [
-      "pin_51",
-      "pin_52",
-      "pin_53",
-      "pin_54",
-      "pin_55",
-      "pin_56"
-     ],
-     "policy": "all_of"
-    },
-    {
-     "id": "usb_phy_mode",
-     "label": "USB PHY Mode (one PHY: device or host)",
-     "members": [
-      "usb_device",
-      "usb_host"
-     ],
-     "policy": "one_of"
-    }
-   ],
-   "requirements": [
-    {
-     "type": "power",
-     "description": "IOVDD digital I/O ring: six pins (1, 10, 22, 33, 42, 49) tied to one 1.8-3.3 V rail (typical 3.3 V) — mixing rails is not supported. Sets the logic level for all GPIOs and the QSPI interface.",
-     "voltage_V": [
-      1.8,
-      3.3
-     ],
-     "current_mA": 50
-    },
-    {
-     "type": "power",
-     "description": "DVDD digital core: 1.05-1.16 V (typ 1.1 V, Table 634) on pins 23 and 50 — from VREG_VOUT (typical; VREG_VIN accepts 1.8-3.3 V) or an external 1.1 V regulator. Must not be left floating.",
-     "voltage_V": [
-      1.05,
-      1.16
-     ],
-     "current_mA": 100
-    },
-    {
-     "type": "power",
-     "description": "USB_VDD: dedicated 3.135-3.63 V (typ 3.3 V) supply for the USB 1.1 PHY (pin 48). Must be supplied even if USB is unused.",
-     "voltage_V": [
-      3.135,
-      3.63
-     ],
-     "current_mA": 30
-    },
-    {
-     "type": "interface",
-     "description": "No internal flash: the chip cannot boot or run user code without an external QSPI flash (typically 2-16 MB, Winbond W25Q-series compatible with the XIP boot ROM) on the dedicated QSPI pads (pins 51-56).",
-     "interface_protocol": "spi"
-    },
-    {
-     "type": "interface",
-     "description": "A 12 MHz crystal between XIN/XOUT (or a 12 MHz CMOS clock into XIN with XOUT open) is required for the USB bootloader.",
-     "interface_protocol": "clock"
     }
    ],
    "domains": [
     {
-     "domain": "electrical",
-     "power_domains": [
-      {
-       "id": "iovdd",
-       "name": "IOVDD Digital I/O Supply",
-       "nominal_voltage_V": 3.3,
-       "voltage_range_V": [
-        1.8,
-        3.3
-       ],
-       "max_current_mA": 50
-      },
-      {
-       "id": "dvdd",
-       "name": "DVDD Digital Core Supply",
-       "nominal_voltage_V": 1.1,
-       "voltage_range_V": [
-        1.05,
-        1.16
-       ],
-       "max_current_mA": 100
-      },
-      {
-       "id": "vreg_vin",
-       "name": "Core LDO Input",
-       "nominal_voltage_V": 3.3,
-       "voltage_range_V": [
-        1.8,
-        3.3
-       ],
-       "max_current_mA": 100,
-       "regulation_type": "regulated"
-      },
-      {
-       "id": "usb_vdd",
-       "name": "USB PHY Supply",
-       "nominal_voltage_V": 3.3,
-       "voltage_range_V": [
-        3.135,
-        3.63
-       ],
-       "max_current_mA": 30
-      },
-      {
-       "id": "adc_avdd",
-       "name": "ADC Analog Supply",
-       "nominal_voltage_V": 3.3,
-       "voltage_range_V": [
-        1.62,
-        3.63
-       ],
-       "max_current_mA": 5
-      },
-      {
-       "id": "gnd",
-       "name": "Ground (exposed pad)",
-       "nominal_voltage_V": 0,
-       "voltage_range_V": [
-        0,
-        0
-       ],
-       "max_current_mA": 1000
-      }
-     ]
-    },
-    {
      "domain": "mechanical",
      "dimensions_mm": {
-      "length": 7,
-      "width": 7,
+      "length": 5,
+      "width": 5,
       "height": 0.9
      },
      "package": {
-      "name": "QFN-56",
-      "pin_count": 56,
-      "pitch_mm": 0.4,
+      "name": "QFN-32",
+      "pin_count": 32,
+      "pitch_mm": 0.5,
       "exposed_pad": true,
-      "exposed_pad_pin": 57,
+      "exposed_pad_pin": 33,
       "exposed_pad_mm": [
-       3.1,
-       3.1
+       3.5,
+       3.5
       ],
-      "source": "https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf (build-date 2025-02-20: §5.1 \"The RP2040 7×7 mm QFN-56 package\", \"0.4mm QFN-56\", central GND pad (ePad), D2/E2 3.0-3.2 mm, nominal 3.1; §5.5 Pinout, Table 621: GND 57, \"Common ground connection via central pad\")"
+      "source": "fixture: invented part, no datasheet"
      }
-    },
-    {
-     "domain": "thermal",
-     "operating_temperature_C": [
-      -40,
-      85
-     ]
     }
-   ],
-   "geometry": {
-    "xScale": 1,
-    "yScale": 1,
-    "outline": {
-     "preset": "rectangle"
-    }
-   }
+   ]
   },
   {
-   "id": "bosch-bmi270",
-   "name": "Bosch BMI270",
-   "version": "1.2.0",
-   "manufacturer": "Bosch Sensortec",
-   "part_number": "BMI270",
-   "description": "6-axis IMU (16-bit accelerometer ±2/4/8/16 g, 16-bit gyroscope ±125-2000 dps) in a 14-pad LGA, 3.0 x 2.5 x 0.83 mm. Primary I2C (0x68/0x69, up to 1 MHz) or SPI (up to 10 MHz) target interface; secondary AUX I2C / OIS SPI. VDD 1.71-3.6 V, VDDIO 1.2-3.6 V.",
-   "tags": [
-    "bmi270",
-    "bosch",
-    "imu",
-    "accelerometer",
-    "gyroscope",
-    "6-axis",
-    "i2c",
-    "spi",
-    "lga-14"
-   ],
+   "id": "fixture-imu-lga12",
+   "name": "Fixture 6-axis IMU (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented 6-axis IMU for tests: I2C target at 0x6A/0x6B (ADDR strap) or SPI target on the same pads, VDD 1.71-3.6 V, VDDIO 1.2-3.6 V, 12-pad LGA. Not a real part.",
    "categories": [
     "sensor",
     "sensor.motion"
@@ -5364,64 +2694,8 @@
    "interfaces": [
     {
      "id": "pin_1",
-     "name": "SDO",
+     "name": "SDA",
      "pin": 1,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "spi_miso"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "SDO — primary interface: serial data output in SPI 4W; I2C address bit-0 select in I2C mode.",
-        "connect_to": "SPI4W: SDO; SPI3W: DNC; I2C: GND for default I2C address",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
-      },
-      {
-       "type": "strap",
-       "params": {
-        "function": "I2C address bit 0",
-        "when": [
-         "i2c"
-        ],
-        "levels": {
-         "low": "address 0x68 (SDO to GND)",
-         "high": "address 0x69 (SDO to VDDIO)"
-        },
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§6.5, Table 22)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_2",
-     "name": "ASDx",
-     "pin": 2,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -5454,17 +2728,16 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "ASDx — secondary interface: Aux interface / OIS interface data (Aux SDA or OIS SDI).",
-        "connect_to": "VDDIO or DNC or Aux SDA or OIS SDI; do not connect to GND if unused",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Serial data (I2C SDA, SPI SDI)",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
-     "id": "pin_3",
-     "name": "ASCx",
-     "pin": 3,
+     "id": "pin_2",
+     "name": "SCL",
+     "pin": 2,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -5472,9 +2745,7 @@
       {
        "type": "digital",
        "roles": [
-        "input",
-        "output",
-        "bidirectional"
+        "input"
        ]
       }
      ],
@@ -5497,33 +2768,126 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "ASCx — secondary interface: Aux interface / OIS interface clock (Aux SCL or OIS SCK).",
-        "connect_to": "VDDIO or DNC or Aux SCL or OIS SCK; do not connect to GND if unused",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Serial clock (I2C SCL, SPI SCK)",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_3",
+     "name": "CS",
+     "pin": 3,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "spi_ss"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "SPI chip select; tie high for I2C",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_4",
-     "name": "INT1",
+     "name": "ADDR",
      "pin": 4,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "interrupt",
+       "type": "digital",
        "roles": [
-        "output"
+        "input",
+        "output",
+        "bidirectional"
        ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "spi_miso"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "SPI SDO; I2C address bit 0",
+        "source": "fixture: invented part, no datasheet"
+       }
       },
+      {
+       "type": "strap",
+       "params": {
+        "function": "I2C address bit 0",
+        "when": [
+         "i2c"
+        ],
+        "levels": {
+         "low": "address 0x6A (ADDR to GND)",
+         "high": "address 0x6B (ADDR to VDDIO)"
+        },
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_5",
+     "name": "INT1",
+     "pin": 5,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
       {
        "type": "digital",
        "roles": [
         "input",
         "output",
         "bidirectional"
+       ]
+      },
+      {
+       "type": "interrupt",
+       "roles": [
+        "output"
        ]
       }
      ],
@@ -5545,32 +2909,43 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "INT1 — interrupt pin 1. If unused, do not connect. Can be configured as input for FIFO external data synchronization.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Interrupt output 1",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
-     "id": "pin_5",
-     "name": "VDDIO",
-     "pin": 5,
+     "id": "pin_6",
+     "name": "INT2",
+     "pin": 6,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "power",
+       "type": "digital",
        "roles": [
-        "input"
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      },
+      {
+       "type": "interrupt",
+       "roles": [
+        "output"
        ]
       }
+     ],
+     "capabilities": [
+      "digital_io",
+      "interrupt"
      ],
      "parameters": [
       {
        "id": "voltage",
        "unit": "V",
-       "value": 1.8,
        "range": [
         1.2,
         3.6
@@ -5581,72 +2956,16 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "VDDIO — digital I/O supply voltage (1.2 … 3.6V).",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_6",
-     "name": "GNDIO",
-     "pin": 6,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "ground"
-       ]
-      }
-     ],
-     "capabilities": [
-      "ground"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "GNDIO — ground for I/O.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Interrupt output 2",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_7",
-     "name": "GND",
-     "pin": 7,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "ground"
-       ]
-      }
-     ],
-     "capabilities": [
-      "ground"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "GND — ground for digital & analog.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_8",
      "name": "VDD",
-     "pin": 8,
+     "pin": 7,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -5673,264 +2992,139 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "VDD — power supply analog & digital domain (1.71V – 3.6V).",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Core supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_8",
+     "name": "VDDIO",
+     "pin": 8,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.8,
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_9",
-     "name": "INT2",
+     "name": "GND",
      "pin": 9,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "interrupt",
+       "type": "power",
        "roles": [
-        "output"
-       ]
-      },
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
+        "ground"
        ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "interrupt"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
+      "ground"
      ],
      "traits": [
       {
        "type": "pin_functions",
        "params": {
-        "description": "INT2 — interrupt pin 2. If unused, do not connect. Can be configured as input for FIFO external data synchronization.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "Ground",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_10",
-     "name": "OCSB",
+     "name": "GNDIO",
      "pin": 10,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "digital",
+       "type": "power",
        "roles": [
-        "input"
+        "ground"
        ]
       }
      ],
      "capabilities": [
-      "digital_io",
-      "spi_ss"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
+      "ground"
      ],
      "traits": [
       {
        "type": "pin_functions",
        "params": {
-        "description": "OCSB — secondary OIS interface chip select (digital in).",
-        "connect_to": "DNC or OIS CSB; tie to GND only if IF_CONF.ois_en = 0",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
+        "description": "I/O ground",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_11",
-     "name": "OSDO",
+     "name": "NC",
      "pin": 11,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "digital",
+       "type": "custom",
        "roles": [
-        "output"
+        "no_connect"
        ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "spi_miso"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "OSDO — secondary OIS interface serial data out (digital out).",
-        "connect_to": "DNC or OIS SDO; tie to GND only if IF_CONF.ois_en = 0",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
       }
      ]
     },
     {
      "id": "pin_12",
-     "name": "CSB",
+     "name": "NC",
      "pin": 12,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "digital",
+       "type": "custom",
        "roles": [
-        "input"
+        "no_connect"
        ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "spi_ss"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "CSB — primary interface chip select for SPI mode.",
-        "connect_to": "SPI: CSB; I2C: VDDIO (DNC possible with internal pull-up, not recommended)",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_13",
-     "name": "SCx",
-     "pin": 13,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "spi_sck",
-      "i2c_scl"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "SCx — primary interface: SCK for SPI serial clock, SCL for I2C serial clock.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_14",
-     "name": "SDx",
-     "pin": 14,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "digital",
-       "roles": [
-        "input",
-        "output",
-        "bidirectional"
-       ]
-      }
-     ],
-     "capabilities": [
-      "digital_io",
-      "spi_mosi",
-      "i2c_sda"
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        3.6
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "SDx — primary interface: SDA serial data I/O in I2C; SDI serial data input in SPI 4W; SDA (SDIO) serial data I/O in SPI 3W.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 22)"
-       }
       }
      ]
     },
     {
      "id": "i2c",
-     "name": "Primary I2C (target)",
+     "name": "I2C (target)",
      "domain": "electrical",
      "exposed": true,
      "default_active": false,
@@ -5954,7 +3148,7 @@
       {
        "id": "i2c_address",
        "unit": "dimensionless",
-       "value": 104
+       "value": 106
       }
      ],
      "slots": [
@@ -5980,17 +3174,17 @@
      "profiles": [
       {
        "id": "i2c_default",
-       "label": "Primary I2C (target)",
+       "label": "I2C (target)",
        "bindings": {
-        "sda": "pin_14",
-        "scl": "pin_13"
+        "sda": "pin_1",
+        "scl": "pin_2"
        }
       }
      ]
     },
     {
-     "id": "spi_4wire",
-     "name": "Primary SPI 4-wire (target)",
+     "id": "spi",
+     "name": "SPI (target)",
      "domain": "electrical",
      "exposed": true,
      "default_active": false,
@@ -6052,172 +3246,13 @@
      ],
      "profiles": [
       {
-       "id": "spi_4wire_default",
-       "label": "Primary SPI 4-wire (target)",
+       "id": "spi_default",
+       "label": "SPI (target)",
        "bindings": {
-        "mosi": "pin_14",
-        "miso": "pin_1",
-        "sck": "pin_13",
-        "ss": "pin_12"
-       }
-      }
-     ]
-    },
-    {
-     "id": "aux_i2c",
-     "name": "Secondary AUX I2C (controller)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "i2c",
-       "roles": [
-        "master"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "range": [
-        0,
-        1000000
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "sda",
-       "required": true,
-       "match": {
-        "protocol": "i2c",
-        "role": "data",
-        "capability": "i2c_sda"
-       }
-      },
-      {
-       "id": "scl",
-       "required": true,
-       "match": {
-        "protocol": "i2c",
-        "role": "clock",
-        "capability": "i2c_scl"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "aux_i2c_default",
-       "label": "Secondary AUX I2C (controller)",
-       "bindings": {
-        "sda": "pin_2",
-        "scl": "pin_3"
-       }
-      }
-     ]
-    },
-    {
-     "id": "ois_spi",
-     "name": "Secondary OIS SPI (target)",
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": false,
-     "protocols": [
-      {
-       "type": "spi",
-       "roles": [
-        "slave"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "clock_freq",
-       "unit": "Hz",
-       "range": [
-        0,
-        10000000
-       ]
-      }
-     ],
-     "slots": [
-      {
-       "id": "mosi",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_out",
-        "capability": "spi_mosi"
-       }
-      },
-      {
-       "id": "miso",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "data_in",
-        "capability": "spi_miso"
-       }
-      },
-      {
-       "id": "sck",
-       "required": true,
-       "match": {
-        "protocol": "spi",
-        "role": "clock",
-        "capability": "spi_sck"
-       }
-      },
-      {
-       "id": "ss",
-       "required": false,
-       "match": {
-        "protocol": "spi",
-        "role": "select",
-        "capability": "spi_ss"
-       }
-      }
-     ],
-     "profiles": [
-      {
-       "id": "ois_spi_default",
-       "label": "Secondary OIS SPI (target)",
-       "bindings": {
-        "mosi": "pin_2",
-        "miso": "pin_11",
-        "sck": "pin_3",
-        "ss": "pin_10"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pcb_mount",
-     "name": "LGA-14 pads (SMD)",
-     "domain": "mechanical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "mechanical_connection",
-       "roles": [
-        "mounting_point"
-       ]
-      }
-     ],
-     "capabilities": [
-      "surface_mount",
-      "lga14_2p5x3p0_0p5mm"
-     ],
-     "traits": [
-      {
-       "type": "connector",
-       "params": {
-        "connector_type": "lga_14",
-        "note": "14 metallized Cu pads on the underside, pitch 0.5 mm; side pads 0.475 x 0.25 mm, top/bottom pads 0.25 x 0.475 mm; package 3.00 x 2.50 x 0.83 mm.",
-        "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (§8.1)"
+        "mosi": "pin_1",
+        "miso": "pin_4",
+        "sck": "pin_2",
+        "ss": "pin_3"
        }
       }
      ]
@@ -6225,142 +3260,38 @@
    ],
    "interfaceGroups": [
     {
-     "id": "primary_host_interface",
-     "label": "Primary host interface (I2C or SPI, shared pads)",
+     "id": "host_interface",
+     "label": "Host interface (I2C or SPI, shared pads)",
      "members": [
       "i2c",
-      "spi_4wire"
+      "spi"
      ],
      "policy": "one_of"
-    },
-    {
-     "id": "secondary_interface",
-     "label": "Secondary interface (AUX I2C or OIS SPI, shared pads)",
-     "members": [
-      "aux_i2c",
-      "ois_spi"
-     ],
-     "policy": "one_of"
-    },
-    {
-     "id": "required_power_pins",
-     "label": "Supply pads",
-     "members": [
-      "pin_5",
-      "pin_6",
-      "pin_7",
-      "pin_8"
-     ],
-     "policy": "all_of"
     }
    ],
    "domains": [
     {
-     "domain": "electrical",
-     "power_domains": [
-      {
-       "id": "vdd",
-       "name": "VDD (analog & digital)",
-       "nominal_voltage_V": 1.8,
-       "voltage_range_V": [
-        1.71,
-        3.6
-       ]
-      },
-      {
-       "id": "vddio",
-       "name": "VDDIO (digital I/O)",
-       "nominal_voltage_V": 1.8,
-       "voltage_range_V": [
-        1.2,
-        3.6
-       ]
-      }
-     ]
-    },
-    {
      "domain": "mechanical",
      "dimensions_mm": {
-      "length": 3,
-      "width": 2.5,
-      "height": 0.83
+      "length": 2.5,
+      "width": 2,
+      "height": 0.8
      },
      "package": {
-      "name": "LGA-14",
-      "pin_count": 14,
+      "name": "LGA-12",
+      "pin_count": 12,
       "pitch_mm": 0.5,
       "exposed_pad": false,
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Basic description: \"LGA mold package, 14 pins, footprint 2.5x3.0mm², height 0.83mm\"; §8.1 package outline)"
-     }
-    },
-    {
-     "domain": "thermal",
-     "operating_temperature_C": [
-      -40,
-      85
-     ]
-    }
-   ],
-   "traits": [
-    {
-     "type": "operating_conditions",
-     "params": {
-      "vdd_V": [
-       1.71,
-       3.6
-      ],
-      "vddio_V": [
-       1.2,
-       3.6
-      ],
-      "temperature_C": [
-       -40,
-       85
-      ],
-      "power_on_time_ms": 2,
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 1)"
-     }
-    },
-    {
-     "type": "absolute_maximum",
-     "params": {
-      "vdd_V": [
-       -0.3,
-       4
-      ],
-      "vddio_V": [
-       -0.3,
-       4
-      ],
-      "logic_pin_V": "-0.3 to VDDIO+0.3, < 4",
-      "storage_temperature_C": [
-       -50,
-       150
-      ],
-      "esd": "HBM 2 kV, CDM 500 V, MM 200 V",
-      "mechanical_shock": "20,000 g (<= 200 us), 2,000 g (<= 1.0 ms)",
-      "source": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi270-ds000.pdf (Table 5)"
+      "source": "fixture: invented part, no datasheet"
      }
     }
    ]
   },
   {
-   "id": "ti-tps63020dsjr",
-   "name": "TI TPS63020DSJR buck-boost converter",
-   "version": "1.1.0",
-   "manufacturer": "Texas Instruments",
-   "part_number": "TPS63020DSJR",
-   "description": "Single-inductor buck-boost converter with 4 A switches: VIN 1.8-5.5 V, adjustable VOUT 1.2-5.5 V (500 mV feedback), 2 A at VOUT 3.3 V for VIN > 2.5 V, 2.4 MHz, 25 uA quiescent, power-good output, VSON-14 (DSJ) 4 x 3 mm with exposed pad.",
-   "tags": [
-    "tps63020",
-    "ti",
-    "buck-boost",
-    "dc-dc",
-    "regulator",
-    "adjustable",
-    "vson-14",
-    "li-ion"
-   ],
+   "id": "fixture-buck-boost-son12",
+   "name": "Fixture buck-boost regulator (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented adjustable buck-boost regulator for tests: VIN 2.0-5.5 V, VOUT 1.0-5.5 V set by a divider to a 0.6 V reference, 1.5 A output, 12-pin SON with exposed pad. Not a real part.",
    "categories": [
     "power",
     "power.regulator"
@@ -6368,7 +3299,7 @@
    "interfaces": [
     {
      "id": "pin_1",
-     "name": "VINA",
+     "name": "VIN",
      "pin": 1,
      "domain": "electrical",
      "exposed": true,
@@ -6385,8 +3316,9 @@
       {
        "id": "voltage",
        "unit": "V",
+       "value": 3.6,
        "range": [
-        1.8,
+        2,
         5.5
        ]
       }
@@ -6395,15 +3327,15 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "VINA — supply voltage for control stage.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Power stage input",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_2",
-     "name": "GND",
+     "name": "VIN",
      "pin": 2,
      "domain": "electrical",
      "exposed": true,
@@ -6412,307 +3344,71 @@
       {
        "type": "power",
        "roles": [
-        "ground"
+        "input"
        ]
       }
      ],
-     "capabilities": [
-      "ground"
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
      ],
      "traits": [
       {
        "type": "pin_functions",
        "params": {
-        "description": "GND — control / logic ground.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Power stage input",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_3",
-     "name": "FB",
+     "name": "VAUX",
      "pin": 3,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
      "protocols": [
       {
-       "type": "analog",
+       "type": "power",
        "roles": [
         "input"
        ]
       }
      ],
-     "capabilities": [
-      "analog_in"
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
      ],
      "traits": [
       {
        "type": "pin_functions",
        "params": {
-        "description": "FB — voltage feedback of adjustable versions, must be connected to VOUT on fixed output voltage versions.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Control supply",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pin_4",
-     "name": "VOUT",
-     "pin": 4,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        5.5
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "VOUT — buck-boost converter output (pins 4, 5).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_5",
-     "name": "VOUT",
-     "pin": 5,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "output"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.2,
-        5.5
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "VOUT — buck-boost converter output (pins 4, 5).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_6",
-     "name": "L2",
-     "pin": 6,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "custom",
-       "roles": [
-        "peer"
-       ]
-      }
-     ],
-     "capabilities": [
-      "inductor_l2"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "L2 — connection for inductor (pins 6, 7).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_7",
-     "name": "L2",
-     "pin": 7,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "custom",
-       "roles": [
-        "peer"
-       ]
-      }
-     ],
-     "capabilities": [
-      "inductor_l2"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "L2 — connection for inductor (pins 6, 7).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_8",
-     "name": "L1",
-     "pin": 8,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "custom",
-       "roles": [
-        "peer"
-       ]
-      }
-     ],
-     "capabilities": [
-      "inductor_l1"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "L1 — connection for inductor (pins 8, 9).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_9",
-     "name": "L1",
-     "pin": 9,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "custom",
-       "roles": [
-        "peer"
-       ]
-      }
-     ],
-     "capabilities": [
-      "inductor_l1"
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "L1 — connection for inductor (pins 8, 9).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_10",
-     "name": "VIN",
-     "pin": 10,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        5.5
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "VIN — supply voltage for power stage (pins 10, 11).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_11",
-     "name": "VIN",
-     "pin": 11,
-     "domain": "electrical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "power",
-       "roles": [
-        "input"
-       ]
-      }
-     ],
-     "parameters": [
-      {
-       "id": "voltage",
-       "unit": "V",
-       "range": [
-        1.8,
-        5.5
-       ]
-      }
-     ],
-     "traits": [
-      {
-       "type": "pin_functions",
-       "params": {
-        "description": "VIN — supply voltage for power stage (pins 10, 11).",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
-       }
-      }
-     ]
-    },
-    {
-     "id": "pin_12",
      "name": "EN",
-     "pin": 12,
+     "pin": 4,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -6742,16 +3438,16 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "EN — enable input (1 enabled, 0 disabled), must not be left open. VIL <= 0.4 V, VIH >= 1.2 V.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Enable, active high",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
-     "id": "pin_13",
-     "name": "PS/SYNC",
-     "pin": 13,
+     "id": "pin_5",
+     "name": "MODE",
+     "pin": 5,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -6764,8 +3460,7 @@
       }
      ],
      "capabilities": [
-      "digital_io",
-      "clock_in"
+      "digital_io"
      ],
      "parameters": [
       {
@@ -6781,16 +3476,192 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "PS/SYNC — enable / disable power save mode (1 disabled, 0 enabled, clock signal for synchronization), must not be left open. Sync range 2200-2600 kHz.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "High: forced PWM; low: power save",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
-     "id": "pin_14",
+     "id": "pin_6",
+     "name": "LX1",
+     "pin": 6,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Inductor, input side",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_7",
+     "name": "LX2",
+     "pin": 7,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Inductor, output side",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_8",
+     "name": "VOUT",
+     "pin": 8,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Regulated output",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_9",
+     "name": "VOUT",
+     "pin": 9,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Regulated output",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_10",
+     "name": "FB",
+     "pin": 10,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "analog",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "analog_in"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Feedback, 0.6 V reference",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_11",
+     "name": "GND",
+     "pin": 11,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Control ground",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_12",
      "name": "PG",
-     "pin": 14,
+     "pin": 12,
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -6811,15 +3682,15 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "PG — output power good (1 good, 0 failure; open-drain), can be left open. VOL 0.04 V typ / 0.4 V max at 10 uA.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Power good, open drain",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "pgnd",
-     "name": "PGND (exposed thermal pad)",
+     "name": "PGND",
      "pin": "EP",
      "domain": "electrical",
      "exposed": true,
@@ -6839,15 +3710,15 @@
       {
        "type": "pin_functions",
        "params": {
-        "description": "PGND — power ground. The exposed thermal pad is connected to PGND.",
-        "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5 Pin Functions)"
+        "description": "Power ground, exposed pad",
+        "source": "fixture: invented part, no datasheet"
        }
       }
      ]
     },
     {
      "id": "vin",
-     "name": "Input supply (VIN + VINA)",
+     "name": "Input supply (VIN + VAUX)",
      "domain": "electrical",
      "exposed": true,
      "default_active": true,
@@ -6865,7 +3736,7 @@
        "unit": "V",
        "value": 3.6,
        "range": [
-        1.8,
+        2,
         5.5
        ]
       }
@@ -6888,7 +3759,7 @@
        }
       },
       {
-       "id": "vina",
+       "id": "vaux",
        "required": true,
        "match": {
         "protocol": "power",
@@ -6908,12 +3779,12 @@
      "profiles": [
       {
        "id": "vin_pins",
-       "label": "VIN 10/11, VINA 1, PGND",
+       "label": "VIN 1/2, VAUX 3, PGND",
        "default_active": true,
        "bindings": {
-        "vin_a": "pin_10",
-        "vin_b": "pin_11",
-        "vina": "pin_1",
+        "vin_a": "pin_1",
+        "vin_b": "pin_2",
+        "vaux": "pin_3",
         "gnd": "pgnd"
        }
       }
@@ -6938,14 +3809,14 @@
        "id": "voltage",
        "unit": "V",
        "range": [
-        1.2,
+        1,
         5.5
        ]
       },
       {
        "id": "max_current",
        "unit": "A",
-       "value": 2
+       "value": 1.5
       }
      ],
      "slots": [
@@ -6978,92 +3849,31 @@
      "profiles": [
       {
        "id": "vout_pins",
-       "label": "VOUT 4/5, PGND",
+       "label": "VOUT 8/9, PGND",
        "default_active": true,
        "bindings": {
-        "vout_a": "pin_4",
-        "vout_b": "pin_5",
+        "vout_a": "pin_8",
+        "vout_b": "pin_9",
         "gnd": "pgnd"
        }
       }
-     ]
-    },
-    {
-     "id": "pcb_mount",
-     "name": "VSON-14 (DSJ) leads (SMD)",
-     "domain": "mechanical",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "mechanical_connection",
-       "roles": [
-        "mounting_point"
-       ]
-      }
-     ],
-     "capabilities": [
-      "surface_mount",
-      "vson14_dsj_4x3_0p5mm"
-     ],
-     "traits": [
-      {
-       "type": "connector",
-       "params": {
-        "connector_type": "vson_14_dsj",
-        "note": "14 leads, pitch 0.50 mm, lead width 0.18-0.30, length 0.30-0.50; body 3.85-4.15 x 2.85-3.15 x 0.80-1.00 mm; exposed pad 2.85 x 1.58 mm. MSL Level-1-260C-UNLIM, NIPDAU finish.",
-        "source": [
-         "https://www.ti.com/lit/pdf/MPSS014A",
-         "https://www.ti.com/lit/ds/symlink/tps63020.pdf (p.27 package option addendum, pp.31-32)"
-        ]
-       }
-      }
-     ]
-    },
-    {
-     "id": "thermal_pad",
-     "name": "Exposed thermal pad (heat path to PCB)",
-     "domain": "thermal",
-     "exposed": true,
-     "default_active": true,
-     "protocols": [
-      {
-       "type": "thermal_connection",
-       "roles": [
-        "thermal_source"
-       ]
-      }
-     ],
-     "capabilities": [
-      "exposed_pad"
      ]
     }
    ],
    "interfaceGroups": [
     {
      "id": "vin_pair",
-     "label": "VIN pins 10 and 11 (both must be connected)",
+     "label": "VIN pins 1 and 2 (both must be connected)",
      "members": [
-      "pin_10",
-      "pin_11"
+      "pin_1",
+      "pin_2"
      ],
      "policy": "all_of"
     },
     {
      "id": "vout_pair",
-     "label": "VOUT pins 4 and 5 (both must be connected)",
+     "label": "VOUT pins 8 and 9 (both must be connected)",
      "members": [
-      "pin_4",
-      "pin_5"
-     ],
-     "policy": "all_of"
-    },
-    {
-     "id": "inductor_pads",
-     "label": "Inductor pads L1 (8, 9) and L2 (6, 7)",
-     "members": [
-      "pin_6",
-      "pin_7",
       "pin_8",
       "pin_9"
      ],
@@ -7072,110 +3882,30 @@
    ],
    "domains": [
     {
-     "domain": "electrical",
-     "power_domains": [
-      {
-       "id": "vin",
-       "name": "Input (VIN/VINA)",
-       "nominal_voltage_V": 3.6,
-       "voltage_range_V": [
-        1.8,
-        5.5
-       ]
-      },
-      {
-       "id": "vout",
-       "name": "Output (VOUT, adjustable)",
-       "voltage_range_V": [
-        1.2,
-        5.5
-       ],
-       "max_current_mA": 2000,
-       "regulation_type": "regulated"
-      }
-     ]
-    },
-    {
      "domain": "mechanical",
      "dimensions_mm": {
-      "length": 4,
+      "length": 3,
       "width": 3,
       "height": 0.9
      },
      "package": {
-      "name": "VSON-14",
-      "code": "DSJ (R-PVSON-N14)",
-      "pin_count": 14,
+      "name": "SON-12",
+      "pin_count": 12,
       "pitch_mm": 0.5,
       "exposed_pad": true,
       "exposed_pad_pin": "EP",
       "exposed_pad_mm": [
-       2.85,
-       1.58
+       2.4,
+       1.7
       ],
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§5: \"DSJ Package, 14-Pin VSON with Exposed Thermal Pad\"; p.32 exposed pad 2.85 x 1.58 mm); https://www.ti.com/lit/pdf/MPSS014A (body 3.85-4.15 x 2.85-3.15 x 0.80-1.00 mm, pitch 0.50)",
-      "assumption": "TI numbers no exposed pad; \"EP\" is this part's label for it. Height 0.9 mm is the midpoint of 0.80-1.00 mm (see the assumption trait)."
-     }
-    },
-    {
-     "domain": "thermal",
-     "operating_temperature_C": [
-      -40,
-      85
-     ]
-    }
-   ],
-   "traits": [
-    {
-     "type": "operating_conditions",
-     "params": {
-      "vin_V": [
-       1.8,
-       5.5
-      ],
-      "ambient_C": [
-       -40,
-       85
-      ],
-      "junction_C": [
-       -40,
-       125
-      ],
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.3)"
-     }
-    },
-    {
-     "type": "absolute_maximum",
-     "params": {
-      "vin_vina_vout_ps_en_fb_pg_V": [
-       -0.3,
-       7
-      ],
-      "l1_l2_dc_V": [
-       -0.3,
-       7
-      ],
-      "l1_l2_ac_10ns_V": [
-       -3,
-       10
-      ],
-      "junction_C": [
-       -40,
-       150
-      ],
-      "storage_C": [
-       -65,
-       150
-      ],
-      "esd": "HBM ±500 V (VIN, VINA, L1), ±2000 V other pins; CDM ±1500 V",
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§6.1-6.2)"
+      "source": "fixture: invented part, no datasheet"
      }
     }
    ]
   },
   {
-   "id": "fixture-l-1u5",
-   "name": "Inductor 1.5 µH",
+   "id": "fixture-l-2u2",
+   "name": "Inductor 2.2 µH",
    "categories": [
     "component.passive.inductor"
    ],
@@ -7218,9 +3948,9 @@
      "type": "passive",
      "params": {
       "kind": "inductor",
-      "value": 0.0000015,
+      "value": 0.0000022,
       "unit": "H",
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (§8.2 Figure 7, §8.2.2.2)"
+      "assumption": "Inductor value chosen for the fixture regulator."
      }
     }
    ]
@@ -7285,14 +4015,14 @@
       "value": 1000000,
       "unit": "Ω",
       "tolerance": 0.01,
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (Table 3, VOUT 3.3 V: R1)"
+      "assumption": "Feedback divider for 3.3 V on the fixture regulator's 0.6 V reference. Upper resistor."
      }
     }
    ]
   },
   {
-   "id": "fixture-r-180k-0402",
-   "name": "Resistor 180 kΩ 1 % 0402",
+   "id": "fixture-r-220k-0402",
+   "name": "Resistor 220 kΩ 1 % 0402",
    "categories": [
     "component.passive.resistor"
    ],
@@ -7347,10 +4077,10 @@
      "type": "passive",
      "params": {
       "kind": "resistor",
-      "value": 180000,
+      "value": 220000,
       "unit": "Ω",
       "tolerance": 0.01,
-      "source": "https://www.ti.com/lit/ds/symlink/tps63020.pdf (Table 3, VOUT 3.3 V: R2)"
+      "assumption": "Feedback divider for 3.3 V on the fixture regulator's 0.6 V reference. Lower resistor."
      }
     }
    ]
@@ -7425,12 +4155,12 @@
   {
    "id": "imu-sdx-int1-swapped",
    "label": "IMU SDx and INT1 swapped",
-   "description": "The IMU's SDx (u2 pin 14) is on the IMU_INT1 net and its INT1 (pin 4) on SDA: the I2C bus between the MCU and the IMU is incomplete.",
+   "description": "The IMU's SDx (u2 pin 1) is on the IMU_INT1 net and its INT1 (pin 5) on SDA: the I2C bus between the MCU and the IMU is incomplete.",
    "definitions": [
     {
      "id": "sample-imu-board",
      "name": "IMU board (fixture + sample outputs)",
-     "description": "RP2040 + BMI270 on I2C0, 3.3 V from a TPS63020 buck-boost. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
+     "description": "Synthetic MCU + IMU on I2C 0, 3.3 V from a synthetic buck-boost regulator. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
      "interfaces": [
       {
        "id": "vin",
@@ -7480,8 +4210,8 @@
        ]
       },
       {
-       "id": "v1v1",
-       "name": "1V1",
+       "id": "vcore",
+       "name": "VCORE",
        "domain": "electrical",
        "exposed": false,
        "default_active": true,
@@ -7497,7 +4227,7 @@
         {
          "id": "voltage",
          "unit": "V",
-         "value": 1.1
+         "value": 1.2
         }
        ]
       },
@@ -7690,22 +4420,22 @@
      "children": [
       {
        "id": "u1",
-       "moduleDefId": "rp2040",
+       "moduleDefId": "fixture-mcu-qfn32",
        "name": "MCU"
       },
       {
        "id": "u2",
-       "moduleDefId": "bosch-bmi270",
+       "moduleDefId": "fixture-imu-lga12",
        "name": "IMU"
       },
       {
        "id": "u3",
-       "moduleDefId": "ti-tps63020dsjr",
+       "moduleDefId": "fixture-buck-boost-son12",
        "name": "3V3 buck-boost"
       },
       {
        "id": "l1",
-       "moduleDefId": "fixture-l-1u5"
+       "moduleDefId": "fixture-l-2u2"
       },
       {
        "id": "r1",
@@ -7714,7 +4444,7 @@
       },
       {
        "id": "r2",
-       "moduleDefId": "fixture-r-180k-0402",
+       "moduleDefId": "fixture-r-220k-0402",
        "name": "FB lower"
       },
       {
@@ -7730,28 +4460,6 @@
      ],
      "links": [
       {
-       "id": "vin.u3.pin_10",
-       "a": {
-        "child": "u3",
-        "interfaceId": "pin_10"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "vin"
-       }
-      },
-      {
-       "id": "vin.u3.pin_11",
-       "a": {
-        "child": "u3",
-        "interfaceId": "pin_11"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "vin"
-       }
-      },
-      {
        "id": "vin.u3.pin_1",
        "a": {
         "child": "u3",
@@ -7763,10 +4471,10 @@
        }
       },
       {
-       "id": "vin.u3.pin_12",
+       "id": "vin.u3.pin_2",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_12"
+        "interfaceId": "pin_2"
        },
        "b": {
         "self": true,
@@ -7774,10 +4482,10 @@
        }
       },
       {
-       "id": "vin.u3.pin_13",
+       "id": "vin.u3.pin_3",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_13"
+        "interfaceId": "pin_3"
        },
        "b": {
         "self": true,
@@ -7785,21 +4493,32 @@
        }
       },
       {
-       "id": "sw1.u3.pin_8",
+       "id": "vin.u3.pin_4",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_8"
+        "interfaceId": "pin_4"
        },
        "b": {
         "self": true,
-        "interfaceId": "sw1"
+        "interfaceId": "vin"
        }
       },
       {
-       "id": "sw1.u3.pin_9",
+       "id": "vin.u3.pin_5",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_9"
+        "interfaceId": "pin_5"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "sw1.u3.pin_6",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_6"
        },
        "b": {
         "self": true,
@@ -7815,17 +4534,6 @@
        "b": {
         "self": true,
         "interfaceId": "sw1"
-       }
-      },
-      {
-       "id": "sw2.u3.pin_6",
-       "a": {
-        "child": "u3",
-        "interfaceId": "pin_6"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "sw2"
        }
       },
       {
@@ -7851,10 +4559,10 @@
        }
       },
       {
-       "id": "fb.u3.pin_3",
+       "id": "fb.u3.pin_10",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_3"
+        "interfaceId": "pin_10"
        },
        "b": {
         "self": true,
@@ -7884,10 +4592,10 @@
        }
       },
       {
-       "id": "v3v3.u3.pin_4",
+       "id": "v3v3.u3.pin_8",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_4"
+        "interfaceId": "pin_8"
        },
        "b": {
         "self": true,
@@ -7895,10 +4603,10 @@
        }
       },
       {
-       "id": "v3v3.u3.pin_5",
+       "id": "v3v3.u3.pin_9",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_5"
+        "interfaceId": "pin_9"
        },
        "b": {
         "self": true,
@@ -7928,10 +4636,10 @@
        }
       },
       {
-       "id": "v3v3.u1.pin_10",
+       "id": "v3v3.u1.pin_9",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_10"
+        "interfaceId": "pin_9"
        },
        "b": {
         "self": true,
@@ -7939,10 +4647,10 @@
        }
       },
       {
-       "id": "v3v3.u1.pin_22",
+       "id": "v3v3.u1.pin_19",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_22"
+        "interfaceId": "pin_19"
        },
        "b": {
         "self": true,
@@ -7950,10 +4658,10 @@
        }
       },
       {
-       "id": "v3v3.u1.pin_33",
+       "id": "v3v3.u1.pin_24",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_33"
+        "interfaceId": "pin_24"
        },
        "b": {
         "self": true,
@@ -7961,10 +4669,10 @@
        }
       },
       {
-       "id": "v3v3.u1.pin_42",
+       "id": "v3v3.u1.pin_25",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_42"
+        "interfaceId": "pin_25"
        },
        "b": {
         "self": true,
@@ -7972,43 +4680,10 @@
        }
       },
       {
-       "id": "v3v3.u1.pin_49",
+       "id": "v3v3.u2.pin_7",
        "a": {
-        "child": "u1",
-        "interfaceId": "pin_49"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "v3v3"
-       }
-      },
-      {
-       "id": "v3v3.u1.pin_43",
-       "a": {
-        "child": "u1",
-        "interfaceId": "pin_43"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "v3v3"
-       }
-      },
-      {
-       "id": "v3v3.u1.pin_44",
-       "a": {
-        "child": "u1",
-        "interfaceId": "pin_44"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "v3v3"
-       }
-      },
-      {
-       "id": "v3v3.u1.pin_48",
-       "a": {
-        "child": "u1",
-        "interfaceId": "pin_48"
+        "child": "u2",
+        "interfaceId": "pin_7"
        },
        "b": {
         "self": true,
@@ -8027,21 +4702,10 @@
        }
       },
       {
-       "id": "v3v3.u2.pin_5",
+       "id": "v3v3.u2.pin_3",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_5"
-       },
-       "b": {
-        "self": true,
-        "interfaceId": "v3v3"
-       }
-      },
-      {
-       "id": "v3v3.u2.pin_12",
-       "a": {
-        "child": "u2",
-        "interfaceId": "pin_12"
+        "interfaceId": "pin_3"
        },
        "b": {
         "self": true,
@@ -8071,43 +4735,43 @@
        }
       },
       {
-       "id": "v1v1.u1.pin_45",
+       "id": "vcore.u1.pin_26",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_45"
+        "interfaceId": "pin_26"
        },
        "b": {
         "self": true,
-        "interfaceId": "v1v1"
+        "interfaceId": "vcore"
        }
       },
       {
-       "id": "v1v1.u1.pin_23",
+       "id": "vcore.u1.pin_27",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_23"
+        "interfaceId": "pin_27"
        },
        "b": {
         "self": true,
-        "interfaceId": "v1v1"
+        "interfaceId": "vcore"
        }
       },
       {
-       "id": "v1v1.u1.pin_50",
+       "id": "vcore.u1.pin_28",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_50"
+        "interfaceId": "pin_28"
        },
        "b": {
         "self": true,
-        "interfaceId": "v1v1"
+        "interfaceId": "vcore"
        }
       },
       {
-       "id": "gnd.u3.pin_2",
+       "id": "gnd.u3.pin_11",
        "a": {
         "child": "u3",
-        "interfaceId": "pin_2"
+        "interfaceId": "pin_11"
        },
        "b": {
         "self": true,
@@ -8148,10 +4812,10 @@
        }
       },
       {
-       "id": "gnd.u1.pin_19",
+       "id": "gnd.u1.pin_10",
        "a": {
         "child": "u1",
-        "interfaceId": "pin_19"
+        "interfaceId": "pin_10"
        },
        "b": {
         "self": true,
@@ -8159,10 +4823,10 @@
        }
       },
       {
-       "id": "gnd.u2.pin_6",
+       "id": "gnd.u2.pin_9",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_6"
+        "interfaceId": "pin_9"
        },
        "b": {
         "self": true,
@@ -8170,10 +4834,10 @@
        }
       },
       {
-       "id": "gnd.u2.pin_7",
+       "id": "gnd.u2.pin_10",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_7"
+        "interfaceId": "pin_10"
        },
        "b": {
         "self": true,
@@ -8181,10 +4845,10 @@
        }
       },
       {
-       "id": "gnd.u2.pin_1",
+       "id": "gnd.u2.pin_4",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_1"
+        "interfaceId": "pin_4"
        },
        "b": {
         "self": true,
@@ -8203,10 +4867,10 @@
        }
       },
       {
-       "id": "imu_int1.u2.pin_14",
+       "id": "imu_int1.u2.pin_1",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_14"
+        "interfaceId": "pin_1"
        },
        "b": {
         "self": true,
@@ -8236,10 +4900,10 @@
        }
       },
       {
-       "id": "scl.u2.pin_13",
+       "id": "scl.u2.pin_2",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_13"
+        "interfaceId": "pin_2"
        },
        "b": {
         "self": true,
@@ -8269,10 +4933,10 @@
        }
       },
       {
-       "id": "sda.u2.pin_4",
+       "id": "sda.u2.pin_5",
        "a": {
         "child": "u2",
-        "interfaceId": "pin_4"
+        "interfaceId": "pin_5"
        },
        "b": {
         "self": true,
@@ -8286,7 +4950,7 @@
        "name": "VIN",
        "from": {
         "child": "u3",
-        "interfaceId": "pin_10"
+        "interfaceId": "pin_1"
        }
       },
       {
@@ -8294,7 +4958,7 @@
        "name": "GND",
        "from": {
         "child": "u3",
-        "interfaceId": "pin_2"
+        "interfaceId": "pin_11"
        }
       },
       {
