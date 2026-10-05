@@ -50,6 +50,7 @@ describe("host messages", () => {
 
   it("tells viewer events from other messages", () => {
     expect(isViewerEvent({ type: "uhd-viewer:openSource", defId: "x" })).toBe(true);
+    expect(isViewerEvent({ type: "uhd-viewer:openPair", linkId: "l", a: "x", b: "y" })).toBe(true);
     expect(isViewerEvent({ type: "uhd-viewer:focus", path: "x" })).toBe(false);
   });
 });
@@ -162,17 +163,20 @@ describe("handle and callbacks", () => {
       onSelectionChanged: (s: unknown) => calls.push(["selection", s]),
       onOpenSource: (r: unknown) => calls.push(["source", r]),
       onOpenArtifact: (r: unknown) => calls.push(["artifact", r]),
+      onOpenPair: (r: unknown) => calls.push(["pair", r]),
     };
     deliver(options, { type: "uhd-viewer:ready" });
     deliver(options, { type: "uhd-viewer:selectionChanged", selection: { kind: "node", id: "board/u2", defId: "fixture-imu-lga12" } });
     deliver(options, { type: "uhd-viewer:openSource", defId: "fixture-imu-lga12", instancePath: "board/u2" });
     deliver(options, { type: "uhd-viewer:openArtifact", defId: "sample-imu-board", artifactId: "bom" });
+    deliver(options, { type: "uhd-viewer:openPair", linkId: "imu_bus", a: "board", b: "enclosure" });
     deliver({}, { type: "uhd-viewer:ready" });
     expect(calls).toEqual([
       "ready",
       ["selection", { kind: "node", id: "board/u2", defId: "fixture-imu-lga12" }],
       ["source", { defId: "fixture-imu-lga12", instancePath: "board/u2" }],
       ["artifact", { defId: "sample-imu-board", artifactId: "bom" }],
+      ["pair", { linkId: "imu_bus", a: "board", b: "enclosure" }],
     ]);
   });
 });

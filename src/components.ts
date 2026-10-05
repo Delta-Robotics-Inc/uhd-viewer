@@ -35,6 +35,7 @@ export type { Panel, Goto } from "./chrome/Chrome";
 
 // ---- views
 export { DiagramCanvas, DiagramToolbar, DiagramLegend, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps } from "./viewer/views";
+export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
 
 // ---- primitives
 export { ScrollArea, type ScrollAreaProps } from "./ui/ScrollArea";

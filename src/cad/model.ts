@@ -29,10 +29,10 @@ import type { ArtifactResolver } from "../api";
 export type { ArtifactResolver };
 
 export type Direction = "feature" | "artifact" | "procedural";
-export const DIRECTIONS: { id: Direction; label: string; hint: string }[] = [
-  { id: "feature", label: "D1 FEATURE", hint: "Named sub-shape inside the module's artifact (STEP/GLB name, KCL tag)" },
-  { id: "artifact", label: "D2 ARTIFACT", hint: "One artifact file per interface" },
-  { id: "procedural", label: "D3 PROCEDURAL", hint: "No file: derived from the interface's parameters at its frame" },
+export const DIRECTIONS: { id: Direction; label: string; hint: string; icon: string }[] = [
+  { id: "feature", label: "D1 FEATURE", hint: "Named sub-shape inside the module's artifact (STEP/GLB name, KCL tag)", icon: "shapes" },
+  { id: "artifact", label: "D2 ARTIFACT", hint: "One artifact file per interface", icon: "file-box" },
+  { id: "procedural", label: "D3 PROCEDURAL", hint: "No file: derived from the interface's parameters at its frame", icon: "square-function" },
 ];
 
 export interface CadBody {
@@ -155,16 +155,22 @@ export function buildCadModel(
 /**
  * The named bodies a GLB comes apart into when exploded (D17): the largest
  * stays, the rest move away from it. Only a cad standard output does this:
- * `body.glb` with a `body.manifest.json` generated from it, whose `bodies`
- * lists two or more (an enclosure's back and lid). A vendor or library part's
- * GLB stays rigid even when its manifest names several bodies (a motor's bell
- * and stator, a prop's hub and blades).
+ * `body.glb` with a `body.manifest.json` whose `bodies` lists two or more (an
+ * enclosure's back and lid), when the manifest was generated from the GLB, or
+ * when the module's print or cut exports make those bodies as separate pieces
+ * (`lid.stl` beside `base.stl`: both came from the same export). A vendor or
+ * library part's GLB stays rigid even when its manifest names several bodies
+ * (a motor's bell and stator, a prop's hub and blades).
  */
 export function explodeParts(def: ModuleDef, glb: ArtifactDef | undefined, manifest: GeometryManifest | undefined): { fixed: string; moving: string[] } | undefined {
   const cad = cadOutputs(def);
-  if (!glb || !cad?.glb || cad.glb.id !== glb.id || cad.manifest?.provenance?.generatedFrom !== glb.id) return undefined;
+  if (!glb || !cad?.glb || cad.glb.id !== glb.id) return undefined;
   const named = Object.entries(manifest?.bodies ?? {}).sort((a, b) => b[1] - a[1]);
   if (named.length < 2) return undefined;
+  const from = cad.manifest?.provenance?.generatedFrom;
+  const pieces = new Set(cad.exports.map((a) => (a.filePath ?? a.url ?? "").split("/").pop()!.replace(/\.[^.]+$/, "")));
+  const separate = from !== undefined && from === glb.provenance?.generatedFrom && named.every(([n]) => pieces.has(n));
+  if (from !== glb.id && !separate) return undefined;
   return { fixed: named[0][0], moving: named.slice(1).map(([n]) => n) };
 }
 

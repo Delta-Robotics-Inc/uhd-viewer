@@ -15,6 +15,7 @@ import { fullId, linkOwner, selectableLink } from "../host/targets";
 import { useHost } from "../host/context";
 import { ScrollArea } from "../ui/ScrollArea";
 import { IconButton } from "../ui/Toolbar";
+import { PairPreview } from "./PairView";
 
 export type Panel = "hierarchy" | "checks";
 
@@ -212,9 +213,12 @@ function LinkDetails({
   harness,
   derived,
   onOpenSource,
+  preview,
 }: {
   /** Ask the host to open the source that declares the link (only when a host takes it). */
   onOpenSource?: () => void;
+  /** The pair the link joins, small (its button opens the pair view). */
+  preview?: React.ReactNode;
   /** The harness carrying the link: its artifacts (thumbnail, CAD). */
   harness?: React.ReactNode;
   /** Functional links that run over this line (a grouped net membership). */
@@ -251,8 +255,9 @@ function LinkDetails({
       <Row k="STATE" v={STATE_LABEL[link.state]} />
       <Row k="HARNESS" v={link.run?.name ?? link.harness} />
       <Row k="NET" v={link.net?.name} />
+      {preview}
       <div className="actions">
-        {!link.net && <button onClick={onPair}>PAIR VIEW</button>}
+        {!link.net && !preview && <button onClick={onPair}>PAIR VIEW</button>}
         {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
         {onOpenSource && (
           <button className="open-source" onClick={onOpenSource}>
@@ -609,6 +614,7 @@ function InspectorView(props: {
             open={props.openLinks.has(link.linkId)}
             onToggle={props.onToggleLink}
             onPair={() => props.onPair(link)}
+            preview={!link.net && <PairPreview vm={vm} link={link} mode={props.mode} onOpen={() => props.onPair(link)} />}
             bSlots={props.bSlotsFor(link)}
             onOpenSource={(() => {
               const owner = linkOwner(vm, link.linkId, levelDefId);

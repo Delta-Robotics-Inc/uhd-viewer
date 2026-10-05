@@ -162,6 +162,13 @@ import "@deltarobotics/uhd-viewer/components.css";
 `renderViewer(element, options, Shell)` mounts a shell of the host's own with
 the same handle and host messages as `mountViewer`.
 
+`ModelView` shows one model on its own, outside an assembly (an artifact file
+opened by itself): a GLB by `url`, or a scene the host built (`object`, in
+millimetres with Z up: a STEP it converted), in the 3D view's scene, lights,
+materials and theme colours, with a floating icon toolbar (fit, isometric,
+top, front and right views, wireframe, x-ray, ground grid, turn) and a card
+with its name and size.
+
 **Theming.** Every colour, surface, shadow and face is a semantic token, read
 as a CSS variable `--uhd-<name>` (`src/theme/tokens.ts`: surfaces, text,
 borders, accents, domains, signals, DRC and severity, focus and selection,
@@ -197,9 +204,17 @@ geometry is resolved per binding direction:
 
 Click a module to see each interface's frame and binding status; selecting an
 interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
-ASSEMBLED / EXPLODED animates every module along the normal of the mate that placed it (hardware comes apart along its fastener stack);
-a part a display placement holds inside a shell (a board and a cell in a case) comes out through the shell's opening, in
-stacking order, each clear of the one before it;
+ASSEMBLED / EXPLODED takes the model apart in assembly order along its up direction (PB-899, `src/cad/explode.ts`):
+the part at the bottom of each column stays and every part above rises until it clears what it sits on. Two parts
+interact only where one lies over the other, so each motor lifts off its own arm. A part held inside another (the other
+surrounds it across the axis) comes out through the side the holder leaves open: a cell and a board out of the top of
+their case, a seal seated under a cap's ceiling out of its bottom, a probe through the cap's floor out of the side it
+sticks out of further; a closed case gives up its parts upward. Otherwise the lower part where they meet comes first
+(never the lowest point alone: a cap whose skirt reaches below the bottle's lip comes after the bottle). The heights come
+from rays along the axis over each part's outline. A module placed by a mate across the up direction (a camera on the
+front) comes off along that mate; an enclosure's bodies made as separate pieces (its exports include `lid.stl`) come
+apart, each in the stack; hardware comes apart along its fastener stack. The toolbar is icons only, each named in its
+tooltip (the interface-geometry directions too: feature, artifact, procedural);
 LABELS shows callouts with leaders for modules, harnesses/hardware and interfaces (menu to pick which), in columns either
 side of the model ordered by screen height (then untangled where two would still cross) so leaders do not cross and
 cards never overlap, re-solved as the camera moves; a view opened with a section is framed on the part the section keeps;
@@ -414,12 +429,18 @@ messages are the same either way:
 | | `{type: "uhd-viewer:selectionChanged", selection}` | Every change of the selection, in the diagram or the 3D view: `{kind: "node" \| "link", id, defId?}` or `null`. Ids are canonical paths from the root: a module's instance path, a net or boundary interface as `board:v3v3`, a link as its owner's path and id (`stack/fc_esc`, as UHD's system checks name links). `defId` is the module's definition (for a link, the module that declares it). |
 | | `{type: "uhd-viewer:openSource", defId, instancePath?}` | The user asked for a module's source: *OPEN SOURCE* in the inspector (modules and links) or a module's context menu (right-click, on the canvas or in the hierarchy). Offered only when a host takes it. |
 | | `{type: "uhd-viewer:openArtifact", defId, artifactId}` | The user picked an artifact file row in the inspector. Without a host the row opens the file in a new tab, as before. |
+| | `{type: "uhd-viewer:openPair", linkId, a, b}` | The user asked for the pair view of a link (the button on the inspector's pair preview). `linkId` as `selectionChanged` names links; `a` and `b` are the instance paths of the two modules it joins. Sent only when the host takes it (`onOpenPair`); otherwise the viewer opens its own pair view over the diagram. |
 
 With `mountViewer`, the handle has `focus(path)`, `select(ids, { reveal? })`,
 `drill(path)` and `setView(view)`, and `post(message)` for a message object as
-it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`
-and `onOpenArtifact`. Giving `onOpenSource` turns on the *OPEN SOURCE* actions;
-giving `onOpenArtifact` hands artifact rows to the host.
+it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`,
+`onOpenArtifact` and `onOpenPair`. Giving `onOpenSource` turns on the *OPEN SOURCE* actions;
+giving `onOpenArtifact` hands artifact rows to the host; giving `onOpenPair`
+hands the pair view to the host (a tab of its own).
+
+Selecting a link shows a small preview of the pair in the inspector: the two
+modules and the link's conductors from one to the other (a crossover
+crosses), with a button that opens the pair view.
 
 `parentWindow: true | { origins }` connects a mounted viewer to its parent
 window instead (or as well): host messages are taken from `window.parent`

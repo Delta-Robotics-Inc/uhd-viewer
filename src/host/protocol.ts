@@ -40,7 +40,7 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
 
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
-  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact"].includes((data as { type?: string }).type ?? "");
+  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openPair"].includes((data as { type?: string }).type ?? "");
 
 /**
  * `origin` is one of `allowed`: an exact origin, `scheme://*` (any origin

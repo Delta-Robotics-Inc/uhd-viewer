@@ -82,6 +82,14 @@ export interface ViewerOptions {
    */
   onOpenArtifact?: (request: { defId: string; artifactId: string }) => void;
   /**
+   * The user asked for the pair view of a link (the inspector's pair
+   * preview). Given: the host shows it (its own tab or window); otherwise
+   * the viewer opens it over the diagram. `linkId` is the link as a
+   * selection names it, `a` and `b` the instance paths of the two modules it
+   * joins.
+   */
+  onOpenPair?: (request: { linkId: string; a: string; b: string }) => void;
+  /**
    * Talk to the parent window over `postMessage` (the viewer in a frame):
    * host messages are accepted from `window.parent` only, and only from the
    * listed origins (exact origins, `scheme://*`, or `*`; default: the page's
@@ -152,7 +160,8 @@ export type ViewerEvent =
   | { type: "uhd-viewer:ready" }
   | { type: "uhd-viewer:selectionChanged"; selection: ViewerSelection | null }
   | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
-  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string };
+  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string }
+  | { type: "uhd-viewer:openPair"; linkId: string; a: string; b: string };
 
 export interface ViewerHandle {
   /**

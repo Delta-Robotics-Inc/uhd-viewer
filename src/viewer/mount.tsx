@@ -33,7 +33,9 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   const hostLink = (): HostLink => {
     const source = Boolean(current.onOpenSource || parent);
     const artifact = Boolean(current.onOpenArtifact || parent);
-    if (!host || host.source !== source || host.artifact !== artifact) host = { bus, emit, source, artifact };
+    // a pair view of the host's own only when the host takes it (a frame's parent keeps the viewer's)
+    const pair = Boolean(current.onOpenPair);
+    if (!host || host.source !== source || host.artifact !== artifact || Boolean(host.pair) !== pair) host = { bus, emit, source, artifact, pair };
     return host;
   };
   const draw = () =>
