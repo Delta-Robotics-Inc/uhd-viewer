@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import type { PlacedPort } from "../layout/layout";
+import { portLabelText } from "../layout/card-body";
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
@@ -73,7 +74,7 @@ export function Port({ placed, x, y, color, faded, exported, label, ground, sele
       {ground && <GroundGlyph side={placed.side} x={x} y={y} color={color} />}
       {label && (
         <span className="port-label" style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>
-          {placed.port.name.replace(/\s*\(.*?\)/g, "").replace(/\s+[—–-]\s+.*$/, "")}
+          {portLabelText(placed.port.name)}
         </span>
       )}
     </>

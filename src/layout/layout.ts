@@ -3,6 +3,7 @@
  * Layout data lives outside UHD (design D3, D6); a level can ship a hand
  * layout (from the bundle's display hints) and the user's drags override it.
  */
+import { cardHeight, cardInsets } from "./card-body";
 import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
@@ -328,16 +329,19 @@ export function computeLayout(
   };
   // containers without a hand size wrap their children
   for (const node of vm.nodes) place(node);
-  for (const node of vm.nodes.filter((n) => n.expanded)) {
-    if (hand?.nodes[node.id]?.w) continue;
-    const kids = vm.nodes.filter((n) => n.parent === node.id).map((n) => boxes[n.id]);
-    if (!kids.length) continue;
-    const b = boxes[node.id];
-    const maxX = Math.max(...kids.map((k) => k.x + k.w));
-    const maxY = Math.max(...kids.map((k) => k.y + k.h));
-    b.w = Math.ceil(Math.max(b.w, maxX - b.x + 28) / GRID) * GRID;
-    b.h = Math.ceil(Math.max(b.h, maxY - b.y + 24) / GRID) * GRID;
-  }
+  const wrapContainers = () => {
+    for (const node of vm.nodes.filter((n) => n.expanded)) {
+      if (hand?.nodes[node.id]?.w) continue;
+      const kids = vm.nodes.filter((n) => n.parent === node.id).map((n) => boxes[n.id]);
+      if (!kids.length) continue;
+      const b = boxes[node.id];
+      const maxX = Math.max(...kids.map((k) => k.x + k.w));
+      const maxY = Math.max(...kids.map((k) => k.y + k.h));
+      b.w = Math.ceil(Math.max(b.w, maxX - b.x + 28) / GRID) * GRID;
+      b.h = Math.ceil(Math.max(b.h, maxY - b.y + 24) / GRID) * GRID;
+    }
+  };
+  wrapContainers();
 
   // port sides
   const ports: Record<string, PlacedPort> = {};
@@ -401,6 +405,21 @@ export function computeLayout(
     if (hand?.nodes[nodeId]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness" || node.kind === "net") continue;
     boxes[nodeId].h = Math.ceil(Math.max(boxes[nodeId].h, 44 + count * PORT_PITCH) / GRID) * GRID;
   }
+  // grow module cards (without a hand-set height) so the body (icon, title, protocol chips) clears the
+  // labels of the ports on the top and bottom edges; a container then still wraps its grown children
+  let grew = false;
+  const labelsOf = new Map<string, { side: Side; name: string }[]>();
+  for (const p of Object.values(ports)) labelsOf.set(p.node, [...(labelsOf.get(p.node) ?? []), { side: p.side, name: p.port.name }]);
+  for (const node of vm.nodes) {
+    if (hand?.nodes[node.id]?.h || node.shape === "circle" || node.sheetPort || node.expanded || node.kind === "harness" || node.kind === "net") continue;
+    const b = boxes[node.id];
+    const need = Math.ceil(cardHeight(node.label, b.w, groups[node.id] ?? [], cardInsets(labelsOf.get(node.id) ?? [], b.w)) / GRID) * GRID;
+    if (need > b.h) {
+      b.h = need;
+      grew = true;
+    }
+  }
+  if (grew) wrapContainers();
   // a junction keeps one grid step between its ports on every side
   for (const [sk, entries] of bySide) {
     const nodeId = sk.slice(0, sk.lastIndexOf("|"));
