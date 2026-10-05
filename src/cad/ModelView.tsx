@@ -80,7 +80,13 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
 
   useEffect(() => {
     if (!host.current) return;
-    const h = createScene(host.current);
+    let h: SceneHandle;
+    try {
+      h = createScene(host.current);
+    } catch {
+      setState({ status: "error", message: "3D drawing (WebGL) is not available here." });
+      return;
+    }
     handle.current = h;
     return () => {
       h.dispose();
