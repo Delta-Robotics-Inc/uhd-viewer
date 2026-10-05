@@ -46,6 +46,8 @@ export interface CanvasProps {
   onLayout: (linkId: string, patch: LinkLayout) => void;
   onPins: (linkId: string, pins: Pt[]) => void;
   onToggleExpand: (id: string) => void;
+  /** Double-click on a node (default: expand it in place). */
+  onOpenNode?: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
   /** A drag starts (what moves) or ends (null): the layout reroutes only what moves meanwhile. */
   onLive: (live: Live | null) => void;
@@ -231,7 +233,7 @@ export function Canvas(props: CanvasProps) {
       onNodeDragStart={(_, n, all) => props.onLive({ nodes: new Set([n.id, ...all.map((x) => x.id)]) })}
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
-      onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
+      onNodeDoubleClick={(_, n) => (props.onOpenNode ?? props.onToggleExpand)(n.id)}
       onNodeContextMenu={
         props.onNodeContext &&
         ((e, n) => {

@@ -414,12 +414,15 @@ messages are the same either way:
 | | `{type: "uhd-viewer:selectionChanged", selection}` | Every change of the selection, in the diagram or the 3D view: `{kind: "node" \| "link", id, defId?}` or `null`. Ids are canonical paths from the root: a module's instance path, a net or boundary interface as `board:v3v3`, a link as its owner's path and id (`stack/fc_esc`, as UHD's system checks name links). `defId` is the module's definition (for a link, the module that declares it). |
 | | `{type: "uhd-viewer:openSource", defId, instancePath?}` | The user asked for a module's source: *OPEN SOURCE* in the inspector (modules and links) or a module's context menu (right-click, on the canvas or in the hierarchy). Offered only when a host takes it. |
 | | `{type: "uhd-viewer:openArtifact", defId, artifactId}` | The user picked an artifact file row in the inspector. Without a host the row opens the file in a new tab, as before. |
+| | `{type: "uhd-viewer:openModule", path}` | The user asked to open a module on its own: a double-click on it, or *OPEN IN NEW TAB* in its context menu. `path` is its instance path from the root. Only with `onOpenModule` (a host that opens modules in tabs of their own); without it a double-click expands the module in place. |
 
 With `mountViewer`, the handle has `focus(path)`, `select(ids, { reveal? })`,
 `drill(path)` and `setView(view)`, and `post(message)` for a message object as
-it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`
-and `onOpenArtifact`. Giving `onOpenSource` turns on the *OPEN SOURCE* actions;
-giving `onOpenArtifact` hands artifact rows to the host.
+it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`,
+`onOpenArtifact` and `onOpenModule`. Giving `onOpenSource` turns on the *OPEN
+SOURCE* actions; giving `onOpenArtifact` hands artifact rows to the host;
+giving `onOpenModule` makes a double-click open the module (expanding it in
+place stays in its context menu).
 
 `parentWindow: true | { origins }` connects a mounted viewer to its parent
 window instead (or as well): host messages are taken from `window.parent`
