@@ -106,6 +106,8 @@ export interface HostLink {
   source: boolean;
   /** The host opens artifact files (instead of a new tab). */
   artifact: boolean;
+  /** The host opens modules on their own (double-click), `onOpenModule`. */
+  module?: boolean;
 }
 
 /** Loads the UHD bundle (the viewer's only input): the source once loaded, or why not. */
@@ -356,12 +358,29 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     () => ({
       openSource: host?.source ? (defId, instancePath) => host.emit({ type: "uhd-viewer:openSource", defId, ...(instancePath ? { instancePath } : {}) }) : undefined,
       openArtifact: host?.artifact ? (defId, artifactId) => host.emit({ type: "uhd-viewer:openArtifact", defId, artifactId }) : undefined,
+      openModule: host?.module ? (path) => host.emit({ type: "uhd-viewer:openModule", path }) : undefined,
     }),
-    [host?.source, host?.artifact, host?.emit],
+    [host?.source, host?.artifact, host?.module, host?.emit],
+  );
+  /**
+   * Double-click on a node: a module opens on its own when the host takes it
+   * (its new tab); otherwise, or for a net's junction, it expands in place.
+   */
+  const onOpenNode = useCallback(
+    (id: string) => {
+      const node = vm.nodes.find((n) => n.id === id);
+      if (hostActions.openModule && node?.defId && !node.net && !node.tapOf && !node.sheetPort) hostActions.openModule(fullId(drill, id));
+      else onToggleExpand(id);
+    },
+    [vm, drill, hostActions, onToggleExpand],
   );
   const onNodeContext = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
   const menuNode = menu ? vm.nodes.find((n) => n.id === menu.id) : undefined;
   const menuItems: NodeMenuItem[] = [];
+  if (menuNode?.defId && hostActions.openModule && !menuNode.net) {
+    const path = fullId(drill, menuNode.id);
+    menuItems.push({ label: "OPEN IN NEW TAB", run: () => hostActions.openModule!(path) });
+  }
   if (menuNode?.defId && hostActions.openSource) {
     const { defId } = menuNode;
     menuItems.push({ label: "OPEN SOURCE", run: () => hostActions.openSource!(defId, fullId(drill, menuNode.id)) });
@@ -430,7 +449,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     cadFocus,
     onCadSelect,
     hostActions,
-    onNodeContext: hostActions.openSource ? onNodeContext : undefined,
+    onOpenNode,
+    onNodeContext: hostActions.openSource || hostActions.openModule ? onNodeContext : undefined,
     menu,
     menuItems,
     closeMenu,

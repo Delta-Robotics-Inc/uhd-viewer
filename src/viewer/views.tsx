@@ -47,6 +47,7 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, cla
         onSelect={c.setSelection}
         onToggleLink={c.onToggleLink}
         onToggleExpand={c.onToggleExpand}
+        onOpenNode={c.onOpenNode}
         onMove={c.onMove}
         onLayout={c.editLink}
         onLive={c.setLive}

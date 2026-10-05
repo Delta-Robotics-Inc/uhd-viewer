@@ -82,6 +82,14 @@ export interface ViewerOptions {
    */
   onOpenArtifact?: (request: { defId: string; artifactId: string }) => void;
   /**
+   * The user asked to open a module on its own (a double-click on it, OPEN IN
+   * NEW TAB in its context menu): `path` is its instance path from the root.
+   * Given: double-click opens the module there (a host's new tab or window),
+   * and expanding it in place moves to the context menu. Not given:
+   * double-click expands the module in place.
+   */
+  onOpenModule?: (request: { path: string }) => void;
+  /**
    * Talk to the parent window over `postMessage` (the viewer in a frame):
    * host messages are accepted from `window.parent` only, and only from the
    * listed origins (exact origins, `scheme://*`, or `*`; default: the page's
@@ -152,7 +160,8 @@ export type ViewerEvent =
   | { type: "uhd-viewer:ready" }
   | { type: "uhd-viewer:selectionChanged"; selection: ViewerSelection | null }
   | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
-  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string };
+  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string }
+  | { type: "uhd-viewer:openModule"; path: string };
 
 export interface ViewerHandle {
   /**
