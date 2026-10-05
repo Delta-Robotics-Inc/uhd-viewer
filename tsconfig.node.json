@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  // the server is plain JavaScript (it runs from node_modules, where Node does not strip types):
+  // checked from its JSDoc, without requiring a type on every parameter
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noImplicitAny": false
+  },
+  "include": ["bin", "test", "scripts/check-render.mjs", "vite.lib.config.ts"]
+}

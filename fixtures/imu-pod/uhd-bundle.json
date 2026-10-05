@@ -1,0 +1,5147 @@
+{
+ "schema": "uhd.bundle/v0",
+ "root": "sample-imu-pod",
+ "definitions": [
+  {
+   "id": "sample-imu-pod",
+   "name": "IMU pod (sample)",
+   "description": "The UHD fixture IMU board in a two-part printed enclosure. Viewer fixture for boards and enclosures (PB-823).",
+   "interfaces": [],
+   "children": [
+    {
+     "id": "board",
+     "moduleDefId": "sample-imu-board",
+     "name": "IMU board"
+    },
+    {
+     "id": "enclosure",
+     "moduleDefId": "sample-imu-enclosure",
+     "name": "Enclosure"
+    }
+   ],
+   "links": [
+    {
+     "id": "board_mount",
+     "name": "Board on bosses",
+     "a": {
+      "child": "board",
+      "interfaceId": "mount"
+     },
+     "b": {
+      "child": "enclosure",
+      "interfaceId": "board_mount"
+     }
+    }
+   ]
+  },
+  {
+   "id": "sample-imu-board",
+   "name": "IMU board (fixture + sample outputs)",
+   "description": "Synthetic MCU + IMU on I2C 0, 3.3 V from a synthetic buck-boost regulator. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
+   "interfaces": [
+    {
+     "id": "vin",
+     "name": "VIN",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        2.5,
+        5.5
+       ]
+      }
+     ]
+    },
+    {
+     "id": "v3v3",
+     "name": "3V3",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3
+      }
+     ]
+    },
+    {
+     "id": "vcore",
+     "name": "VCORE",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.2
+      }
+     ]
+    },
+    {
+     "id": "gnd",
+     "name": "GND",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "fb",
+     "name": "FB",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "sw1",
+     "name": "SW1",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "sw2",
+     "name": "SW2",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "sda",
+     "name": "SDA",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "scl",
+     "name": "SCL",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "imu_int1",
+     "name": "IMU_INT1",
+     "domain": "electrical",
+     "exposed": false,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "net",
+       "roles": [
+        "node"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "mount",
+     "name": "Mounting holes",
+     "domain": "mechanical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "bolt_pattern",
+       "roles": [
+        "component"
+       ]
+      }
+     ],
+     "capabilities": [
+      "bolt_pattern"
+     ],
+     "parameters": [
+      {
+       "id": "hole_spacing",
+       "unit": "mm",
+       "value": 23
+      },
+      {
+       "id": "hole_count",
+       "unit": "dimensionless",
+       "value": 2
+      },
+      {
+       "id": "fastener_diameter",
+       "unit": "mm",
+       "value": 2
+      }
+     ],
+     "traits": [
+      {
+       "type": "bolt_pattern",
+       "params": {
+        "shape": "circle",
+        "fastener": "M2",
+        "threaded": false
+       }
+      }
+     ],
+     "geometry": {
+      "frame": {
+       "origin": [
+        14,
+        9,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        -1
+       ],
+       "xAxis": [
+        1,
+        0,
+        0
+       ],
+       "symmetryDeg": 180
+      },
+      "refs": [
+       {
+        "kind": "feature",
+        "artifact": "board_glb",
+        "name": "mount",
+        "signature": {
+         "area_mm2": 10.556,
+         "centroid": [
+          14,
+          9,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "children": [
+    {
+     "id": "u1",
+     "moduleDefId": "fixture-mcu-qfn32",
+     "name": "MCU"
+    },
+    {
+     "id": "u2",
+     "moduleDefId": "fixture-imu-lga12",
+     "name": "IMU"
+    },
+    {
+     "id": "u3",
+     "moduleDefId": "fixture-buck-boost-son12",
+     "name": "3V3 buck-boost"
+    },
+    {
+     "id": "l1",
+     "moduleDefId": "fixture-l-2u2"
+    },
+    {
+     "id": "r1",
+     "moduleDefId": "fixture-r-1m-0402",
+     "name": "FB upper"
+    },
+    {
+     "id": "r2",
+     "moduleDefId": "fixture-r-220k-0402",
+     "name": "FB lower"
+    },
+    {
+     "id": "r3",
+     "moduleDefId": "fixture-r-4k7-0402",
+     "name": "SDA pull-up"
+    },
+    {
+     "id": "r4",
+     "moduleDefId": "fixture-r-4k7-0402",
+     "name": "SCL pull-up"
+    }
+   ],
+   "links": [
+    {
+     "id": "vin.u3.pin_1",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "vin.u3.pin_2",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "vin.u3.pin_3",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_3"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "vin.u3.pin_4",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_4"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "vin.u3.pin_5",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_5"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vin"
+     }
+    },
+    {
+     "id": "sw1.u3.pin_6",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_6"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sw1"
+     }
+    },
+    {
+     "id": "sw1.l1.pin_1",
+     "a": {
+      "child": "l1",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sw1"
+     }
+    },
+    {
+     "id": "sw2.u3.pin_7",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_7"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sw2"
+     }
+    },
+    {
+     "id": "sw2.l1.pin_2",
+     "a": {
+      "child": "l1",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sw2"
+     }
+    },
+    {
+     "id": "fb.u3.pin_10",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_10"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "fb"
+     }
+    },
+    {
+     "id": "fb.r1.pin_2",
+     "a": {
+      "child": "r1",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "fb"
+     }
+    },
+    {
+     "id": "fb.r2.pin_1",
+     "a": {
+      "child": "r2",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "fb"
+     }
+    },
+    {
+     "id": "v3v3.u3.pin_8",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_8"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u3.pin_9",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_9"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.r1.pin_1",
+     "a": {
+      "child": "r1",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u1.pin_1",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u1.pin_9",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_9"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u1.pin_19",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_19"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u1.pin_24",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_24"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u1.pin_25",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_25"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u2.pin_7",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_7"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u2.pin_8",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_8"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.u2.pin_3",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_3"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.r3.pin_1",
+     "a": {
+      "child": "r3",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "v3v3.r4.pin_1",
+     "a": {
+      "child": "r4",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "v3v3"
+     }
+    },
+    {
+     "id": "vcore.u1.pin_26",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_26"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vcore"
+     }
+    },
+    {
+     "id": "vcore.u1.pin_27",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_27"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vcore"
+     }
+    },
+    {
+     "id": "vcore.u1.pin_28",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_28"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "vcore"
+     }
+    },
+    {
+     "id": "gnd.u3.pin_11",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pin_11"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u3.pgnd",
+     "a": {
+      "child": "u3",
+      "interfaceId": "pgnd"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.r2.pin_2",
+     "a": {
+      "child": "r2",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u1.pad_gnd",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pad_gnd"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u1.pin_10",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_10"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u2.pin_9",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_9"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u2.pin_10",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_10"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "gnd.u2.pin_4",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_4"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "gnd"
+     }
+    },
+    {
+     "id": "sda.u1.pin_2",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sda"
+     }
+    },
+    {
+     "id": "sda.u2.pin_1",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_1"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sda"
+     }
+    },
+    {
+     "id": "sda.r3.pin_2",
+     "a": {
+      "child": "r3",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "sda"
+     }
+    },
+    {
+     "id": "scl.u1.pin_3",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_3"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "scl"
+     }
+    },
+    {
+     "id": "scl.u2.pin_2",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "scl"
+     }
+    },
+    {
+     "id": "scl.r4.pin_2",
+     "a": {
+      "child": "r4",
+      "interfaceId": "pin_2"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "scl"
+     }
+    },
+    {
+     "id": "imu_int1.u1.pin_4",
+     "a": {
+      "child": "u1",
+      "interfaceId": "pin_4"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "imu_int1"
+     }
+    },
+    {
+     "id": "imu_int1.u2.pin_5",
+     "a": {
+      "child": "u2",
+      "interfaceId": "pin_5"
+     },
+     "b": {
+      "self": true,
+      "interfaceId": "imu_int1"
+     }
+    }
+   ],
+   "exports": [
+    {
+     "id": "power_in",
+     "name": "VIN",
+     "from": {
+      "child": "u3",
+      "interfaceId": "pin_1"
+     }
+    },
+    {
+     "id": "power_gnd",
+     "name": "GND",
+     "from": {
+      "child": "u3",
+      "interfaceId": "pin_11"
+     }
+    },
+    {
+     "id": "swd",
+     "name": "SWD",
+     "from": {
+      "child": "u1",
+      "interfaceId": "swd"
+     }
+    }
+   ],
+   "traits": [
+    {
+     "type": "design_envelope",
+     "params": {
+      "max_mm": {
+       "length": 30,
+       "width": 20,
+       "height": 5
+      },
+      "reason": "Fixture requirement: fits a 30 × 20 mm bay."
+     }
+    },
+    {
+     "type": "assumption",
+     "params": {
+      "field": "placement",
+      "value": "hand-made",
+      "reason": "Component positions, mounting holes and edge pads are chosen by hand for the viewer's fixtures; nothing was laid out or routed."
+     }
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "dimensions_mm": {
+      "length": 28,
+      "width": 18,
+      "height": 1.6
+     }
+    }
+   ],
+   "artifacts": [
+    {
+     "id": "board_glb",
+     "name": "Board body (GLB)",
+     "type": "3d_model",
+     "filePath": "board/out/board.glb",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "glb",
+     "role": "body",
+     "units": "mm"
+    },
+    {
+     "id": "board_manifest",
+     "name": "Board geometry manifest",
+     "type": "cad",
+     "filePath": "board/out/board.manifest.json",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "json",
+     "provenance": {
+      "generatedFrom": "board_glb"
+     }
+    },
+    {
+     "id": "bom",
+     "name": "Bill of materials",
+     "type": "documentation",
+     "filePath": "board/out/bom.csv",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "csv",
+     "mimeType": "text/csv"
+    },
+    {
+     "id": "pnp",
+     "name": "Pick and place",
+     "type": "pcb",
+     "filePath": "board/out/pnp.csv",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "csv",
+     "mimeType": "text/csv"
+    },
+    {
+     "id": "netlist",
+     "name": "Netlist report",
+     "type": "pcb",
+     "filePath": "board/out/netlist.json",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "json"
+    },
+    {
+     "id": "schematic",
+     "name": "Schematic",
+     "type": "schematic",
+     "filePath": "board/out/schematic.svg",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "svg",
+     "role": "drawing",
+     "mimeType": "image/svg+xml"
+    },
+    {
+     "id": "pcb_top",
+     "name": "PCB top",
+     "type": "pcb",
+     "filePath": "board/out/pcb-top.svg",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "svg",
+     "role": "drawing",
+     "mimeType": "image/svg+xml"
+    },
+    {
+     "id": "pcb_bottom",
+     "name": "PCB bottom",
+     "type": "pcb",
+     "filePath": "board/out/pcb-bottom.svg",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "svg",
+     "role": "drawing",
+     "mimeType": "image/svg+xml"
+    }
+   ]
+  },
+  {
+   "id": "sample-imu-enclosure",
+   "name": "IMU pod enclosure (sample)",
+   "description": "Two-part printed enclosure: a back shell with two bosses for the board, and a lid with a window over the SWD pads. Sample definition with hand-made cad outputs.",
+   "categories": [
+    "enclosure"
+   ],
+   "interfaces": [
+    {
+     "id": "board_mount",
+     "name": "Board bosses",
+     "domain": "mechanical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "bolt_pattern",
+       "roles": [
+        "structure"
+       ]
+      }
+     ],
+     "capabilities": [
+      "bolt_pattern"
+     ],
+     "parameters": [
+      {
+       "id": "hole_spacing",
+       "unit": "mm",
+       "value": 23
+      },
+      {
+       "id": "hole_count",
+       "unit": "dimensionless",
+       "value": 2
+      },
+      {
+       "id": "fastener_diameter",
+       "unit": "mm",
+       "value": 2
+      }
+     ],
+     "traits": [
+      {
+       "type": "bolt_pattern",
+       "params": {
+        "shape": "circle",
+        "fastener": "M2",
+        "threaded": true,
+        "note": "M2 self-tapping screws into printed bosses (sample assumption)"
+       }
+      }
+     ],
+     "geometry": {
+      "frame": {
+       "origin": [
+        17,
+        12,
+        4.6
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ],
+       "xAxis": [
+        1,
+        0,
+        0
+       ],
+       "symmetryDeg": 180
+      },
+      "refs": [
+       {
+        "kind": "feature",
+        "artifact": "enclosure_glb",
+        "name": "board_mount",
+        "signature": {
+         "area_mm2": 25.133,
+         "centroid": [
+          17,
+          12,
+          4.6
+         ]
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "cable_entry",
+     "name": "Cable entry",
+     "domain": "mechanical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "custom",
+       "roles": [
+        "opening"
+       ]
+      }
+     ],
+     "geometry": {
+      "frame": {
+       "origin": [
+        0,
+        18.5,
+        6.5
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ],
+       "xAxis": [
+        0,
+        1,
+        0
+       ]
+      },
+      "refs": [
+       {
+        "kind": "feature",
+        "artifact": "enclosure_glb",
+        "name": "cable_entry",
+        "signature": {
+         "area_mm2": 9,
+         "centroid": [
+          0,
+          18.5,
+          6.5
+         ]
+        }
+       }
+      ]
+     },
+     "traits": [
+      {
+       "type": "note",
+       "params": {
+        "text": "Opening for the battery lead to the VIN and GND pads."
+       }
+      }
+     ]
+    },
+    {
+     "id": "swd_window",
+     "name": "SWD window",
+     "domain": "mechanical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "custom",
+       "roles": [
+        "opening"
+       ]
+      }
+     ],
+     "geometry": {
+      "frame": {
+       "origin": [
+        13.3,
+        4.4,
+        11.6
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ],
+       "xAxis": [
+        1,
+        0,
+        0
+       ]
+      },
+      "refs": [
+       {
+        "kind": "feature",
+        "artifact": "enclosure_glb",
+        "name": "swd_window",
+        "signature": {
+         "area_mm2": 12,
+         "centroid": [
+          13.3,
+          4.4,
+          11.6
+         ]
+        }
+       }
+      ]
+     },
+     "traits": [
+      {
+       "type": "note",
+       "params": {
+        "text": "Window in the lid over the SWD pads, for a pogo-pin adapter."
+       }
+      }
+     ]
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "dimensions_mm": {
+      "length": 34,
+      "width": 24,
+      "height": 11.6
+     },
+     "material": {
+      "name": "PLA",
+      "density_g_cm3": 1.24,
+      "assumption": "Typical PLA density, assumed for the sample enclosure; no source states it."
+     }
+    }
+   ],
+   "artifacts": [
+    {
+     "id": "enclosure_glb",
+     "name": "Enclosure body (GLB)",
+     "type": "3d_model",
+     "filePath": "enclosure/out/body.glb",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "glb",
+     "role": "body",
+     "units": "mm"
+    },
+    {
+     "id": "enclosure_manifest",
+     "name": "Enclosure geometry manifest",
+     "type": "cad",
+     "filePath": "enclosure/out/body.manifest.json",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample"
+     ],
+     "format": "json",
+     "provenance": {
+      "generatedFrom": "enclosure_glb"
+     }
+    },
+    {
+     "id": "back_stl",
+     "name": "Back shell (print)",
+     "type": "cad",
+     "filePath": "enclosure/out/back.stl",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample",
+      "print"
+     ],
+     "format": "stl",
+     "units": "mm"
+    },
+    {
+     "id": "lid_stl",
+     "name": "Lid (print)",
+     "type": "cad",
+     "filePath": "enclosure/out/lid.stl",
+     "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+     "tags": [
+      "sample",
+      "print"
+     ],
+     "format": "stl",
+     "units": "mm"
+    }
+   ],
+   "traits": [
+    {
+     "type": "assumption",
+     "params": {
+      "field": "geometry",
+      "value": "hand-made",
+      "reason": "Wall 1.6 mm, floor 1.6 mm, bosses Ø4 × 3 mm: chosen by hand for the fixture, not generated or checked for printing."
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-mcu-qfn32",
+   "name": "Fixture microcontroller (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented microcontroller for tests: 24 I/O pins, one I2C controller on PA0/PA1, SWD, VDDIO 1.62-3.6 V, an internal 1.2 V core regulator (VREG_IN to VREG_OUT) that feeds its VCORE pins, 32-pin QFN with exposed pad. Not a real part.",
+   "categories": [
+    "microcontroller"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "VDDIO",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "PA0",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "i2c_sda"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA0",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_3",
+     "name": "PA1",
+     "pin": 3,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "i2c_scl"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA1",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_4",
+     "name": "PA2",
+     "pin": 4,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "interrupt"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA2",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_5",
+     "name": "PA3",
+     "pin": 5,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA3",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_6",
+     "name": "PA4",
+     "pin": 6,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA4",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_7",
+     "name": "PA5",
+     "pin": 7,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA5",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_8",
+     "name": "PA6",
+     "pin": 8,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA6",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_9",
+     "name": "VDDIO",
+     "pin": 9,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_10",
+     "name": "TEST",
+     "pin": 10,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Factory test mode; tie to GND",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_11",
+     "name": "PA7",
+     "pin": 11,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PA7",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_12",
+     "name": "PB0",
+     "pin": 12,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB0",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_13",
+     "name": "PB1",
+     "pin": 13,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB1",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_14",
+     "name": "PB2",
+     "pin": 14,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB2",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_15",
+     "name": "PB3",
+     "pin": 15,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB3",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_16",
+     "name": "SWCLK",
+     "pin": 16,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "swd_clk"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Debug clock",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_17",
+     "name": "SWDIO",
+     "pin": 17,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "swd_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Debug data",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_18",
+     "name": "NRST",
+     "pin": 18,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "reset_input"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Reset, active low",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_19",
+     "name": "VDDIO",
+     "pin": 19,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_20",
+     "name": "PB4",
+     "pin": 20,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB4",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_21",
+     "name": "PB5",
+     "pin": 21,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB5",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_22",
+     "name": "PB6",
+     "pin": 22,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB6",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_23",
+     "name": "PB7",
+     "pin": 23,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PB7",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_24",
+     "name": "VDDA",
+     "pin": 24,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Analog supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_25",
+     "name": "VREG_IN",
+     "pin": 25,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.3,
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core regulator input",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ],
+     "bridgesTo": [
+      "pin_26"
+     ]
+    },
+    {
+     "id": "pin_26",
+     "name": "VREG_OUT",
+     "pin": 26,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.2
+      },
+      {
+       "id": "max_current",
+       "unit": "A",
+       "value": 0.1
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core regulator output, 1.2 V",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ],
+     "bridgesTo": [
+      "pin_27",
+      "pin_28"
+     ]
+    },
+    {
+     "id": "pin_27",
+     "name": "VCORE",
+     "pin": 27,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.2,
+       "range": [
+        1.1,
+        1.3
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core supply, from VREG_OUT",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_28",
+     "name": "VCORE",
+     "pin": 28,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.2,
+       "range": [
+        1.1,
+        1.3
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core supply, from VREG_OUT",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_29",
+     "name": "PC0",
+     "pin": 29,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC0",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_30",
+     "name": "PC1",
+     "pin": 30,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC1",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_31",
+     "name": "PC2",
+     "pin": 31,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC2",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_32",
+     "name": "PC3",
+     "pin": 32,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.62,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "General-purpose I/O PC3",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pad_gnd",
+     "name": "GND",
+     "pin": 33,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Ground, exposed pad",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "i2c_0",
+     "name": "I2C 0",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": false,
+     "protocols": [
+      {
+       "type": "i2c",
+       "roles": [
+        "master",
+        "slave"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "clock_freq",
+       "unit": "Hz",
+       "range": [
+        100000,
+        1000000
+       ]
+      }
+     ],
+     "slots": [
+      {
+       "id": "sda",
+       "required": true,
+       "match": {
+        "protocol": "i2c",
+        "role": "data",
+        "capability": "i2c_sda"
+       }
+      },
+      {
+       "id": "scl",
+       "required": true,
+       "match": {
+        "protocol": "i2c",
+        "role": "clock",
+        "capability": "i2c_scl"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "i2c_0_default",
+       "label": "I2C 0",
+       "bindings": {
+        "sda": "pin_2",
+        "scl": "pin_3"
+       }
+      }
+     ]
+    },
+    {
+     "id": "swd",
+     "name": "SWD (serial wire debug)",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": false,
+     "protocols": [
+      {
+       "type": "swd",
+       "roles": [
+        "target"
+       ]
+      }
+     ],
+     "slots": [
+      {
+       "id": "swclk",
+       "required": true,
+       "match": {
+        "capability": "swd_clk"
+       }
+      },
+      {
+       "id": "swdio",
+       "required": true,
+       "match": {
+        "capability": "swd_io"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "swd_pins",
+       "label": "SWCLK/SWDIO (pins 16/17)",
+       "bindings": {
+        "swclk": "pin_16",
+        "swdio": "pin_17"
+       }
+      }
+     ],
+     "max_instances": 1
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "dimensions_mm": {
+      "length": 5,
+      "width": 5,
+      "height": 0.9
+     },
+     "package": {
+      "name": "QFN-32",
+      "pin_count": 32,
+      "pitch_mm": 0.5,
+      "exposed_pad": true,
+      "exposed_pad_pin": 33,
+      "exposed_pad_mm": [
+       3.5,
+       3.5
+      ],
+      "source": "fixture: invented part, no datasheet"
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-imu-lga12",
+   "name": "Fixture 6-axis IMU (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented 6-axis IMU for tests: I2C target at 0x6A/0x6B (ADDR strap) or SPI target on the same pads, VDD 1.71-3.6 V, VDDIO 1.2-3.6 V, 12-pad LGA. Not a real part.",
+   "categories": [
+    "sensor",
+    "sensor.motion"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "SDA",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "i2c_sda",
+      "spi_mosi"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Serial data (I2C SDA, SPI SDI)",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "SCL",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "i2c_scl",
+      "spi_sck"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Serial clock (I2C SCL, SPI SCK)",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_3",
+     "name": "CS",
+     "pin": 3,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "spi_ss"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "SPI chip select; tie high for I2C",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_4",
+     "name": "ADDR",
+     "pin": 4,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "spi_miso"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "SPI SDO; I2C address bit 0",
+        "source": "fixture: invented part, no datasheet"
+       }
+      },
+      {
+       "type": "strap",
+       "params": {
+        "function": "I2C address bit 0",
+        "when": [
+         "i2c"
+        ],
+        "levels": {
+         "low": "address 0x6A (ADDR to GND)",
+         "high": "address 0x6B (ADDR to VDDIO)"
+        },
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_5",
+     "name": "INT1",
+     "pin": 5,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      },
+      {
+       "type": "interrupt",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "interrupt"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Interrupt output 1",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_6",
+     "name": "INT2",
+     "pin": 6,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input",
+        "output",
+        "bidirectional"
+       ]
+      },
+      {
+       "type": "interrupt",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "interrupt"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Interrupt output 2",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_7",
+     "name": "VDD",
+     "pin": 7,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.8,
+       "range": [
+        1.71,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Core supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_8",
+     "name": "VDDIO",
+     "pin": 8,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 1.8,
+       "range": [
+        1.2,
+        3.6
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_9",
+     "name": "GND",
+     "pin": 9,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Ground",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_10",
+     "name": "GNDIO",
+     "pin": 10,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "I/O ground",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_11",
+     "name": "NC",
+     "pin": 11,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "custom",
+       "roles": [
+        "no_connect"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pin_12",
+     "name": "NC",
+     "pin": 12,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "custom",
+       "roles": [
+        "no_connect"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "i2c",
+     "name": "I2C (target)",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": false,
+     "protocols": [
+      {
+       "type": "i2c",
+       "roles": [
+        "slave"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "clock_freq",
+       "unit": "Hz",
+       "range": [
+        0,
+        1000000
+       ]
+      },
+      {
+       "id": "i2c_address",
+       "unit": "dimensionless",
+       "value": 106
+      }
+     ],
+     "slots": [
+      {
+       "id": "sda",
+       "required": true,
+       "match": {
+        "protocol": "i2c",
+        "role": "data",
+        "capability": "i2c_sda"
+       }
+      },
+      {
+       "id": "scl",
+       "required": true,
+       "match": {
+        "protocol": "i2c",
+        "role": "clock",
+        "capability": "i2c_scl"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "i2c_default",
+       "label": "I2C (target)",
+       "bindings": {
+        "sda": "pin_1",
+        "scl": "pin_2"
+       }
+      }
+     ]
+    },
+    {
+     "id": "spi",
+     "name": "SPI (target)",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": false,
+     "protocols": [
+      {
+       "type": "spi",
+       "roles": [
+        "slave"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "clock_freq",
+       "unit": "Hz",
+       "range": [
+        0,
+        10000000
+       ]
+      }
+     ],
+     "slots": [
+      {
+       "id": "mosi",
+       "required": true,
+       "match": {
+        "protocol": "spi",
+        "role": "data_out",
+        "capability": "spi_mosi"
+       }
+      },
+      {
+       "id": "miso",
+       "required": true,
+       "match": {
+        "protocol": "spi",
+        "role": "data_in",
+        "capability": "spi_miso"
+       }
+      },
+      {
+       "id": "sck",
+       "required": true,
+       "match": {
+        "protocol": "spi",
+        "role": "clock",
+        "capability": "spi_sck"
+       }
+      },
+      {
+       "id": "ss",
+       "required": false,
+       "match": {
+        "protocol": "spi",
+        "role": "select",
+        "capability": "spi_ss"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "spi_default",
+       "label": "SPI (target)",
+       "bindings": {
+        "mosi": "pin_1",
+        "miso": "pin_4",
+        "sck": "pin_2",
+        "ss": "pin_3"
+       }
+      }
+     ]
+    }
+   ],
+   "interfaceGroups": [
+    {
+     "id": "host_interface",
+     "label": "Host interface (I2C or SPI, shared pads)",
+     "members": [
+      "i2c",
+      "spi"
+     ],
+     "policy": "one_of"
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "dimensions_mm": {
+      "length": 2.5,
+      "width": 2,
+      "height": 0.8
+     },
+     "package": {
+      "name": "LGA-12",
+      "pin_count": 12,
+      "pitch_mm": 0.5,
+      "exposed_pad": false,
+      "source": "fixture: invented part, no datasheet"
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-buck-boost-son12",
+   "name": "Fixture buck-boost regulator (synthetic)",
+   "version": "1.0.0",
+   "description": "Invented adjustable buck-boost regulator for tests: VIN 2.0-5.5 V, VOUT 1.0-5.5 V set by a divider to a 0.6 V reference, 1.5 A output, 12-pin SON with exposed pad. Not a real part.",
+   "categories": [
+    "power",
+    "power.regulator"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "VIN",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Power stage input",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "VIN",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Power stage input",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_3",
+     "name": "VAUX",
+     "pin": 3,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Control supply",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_4",
+     "name": "EN",
+     "pin": 4,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "enable"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        0,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Enable, active high",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_5",
+     "name": "MODE",
+     "pin": 5,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io"
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        0,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "High: forced PWM; low: power save",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_6",
+     "name": "LX1",
+     "pin": 6,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Inductor, input side",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_7",
+     "name": "LX2",
+     "pin": 7,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Inductor, output side",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_8",
+     "name": "VOUT",
+     "pin": 8,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Regulated output",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_9",
+     "name": "VOUT",
+     "pin": 9,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1,
+        5.5
+       ]
+      }
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Regulated output",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_10",
+     "name": "FB",
+     "pin": 10,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "analog",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "capabilities": [
+      "analog_in"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Feedback, 0.6 V reference",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_11",
+     "name": "GND",
+     "pin": 11,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Control ground",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pin_12",
+     "name": "PG",
+     "pin": 12,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "digital",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "capabilities": [
+      "digital_io",
+      "open_drain",
+      "power_good"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Power good, open drain",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "pgnd",
+     "name": "PGND",
+     "pin": "EP",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "ground"
+       ]
+      }
+     ],
+     "capabilities": [
+      "ground"
+     ],
+     "traits": [
+      {
+       "type": "pin_functions",
+       "params": {
+        "description": "Power ground, exposed pad",
+        "source": "fixture: invented part, no datasheet"
+       }
+      }
+     ]
+    },
+    {
+     "id": "vin",
+     "name": "Input supply (VIN + VAUX)",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "input"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "value": 3.6,
+       "range": [
+        2,
+        5.5
+       ]
+      }
+     ],
+     "slots": [
+      {
+       "id": "vin_a",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "input"
+       }
+      },
+      {
+       "id": "vin_b",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "input"
+       }
+      },
+      {
+       "id": "vaux",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "input"
+       }
+      },
+      {
+       "id": "gnd",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "ground",
+        "capability": "ground"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "vin_pins",
+       "label": "VIN 1/2, VAUX 3, PGND",
+       "default_active": true,
+       "bindings": {
+        "vin_a": "pin_1",
+        "vin_b": "pin_2",
+        "vaux": "pin_3",
+        "gnd": "pgnd"
+       }
+      }
+     ]
+    },
+    {
+     "id": "vout",
+     "name": "Regulated output (VOUT)",
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "power",
+       "roles": [
+        "output"
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "id": "voltage",
+       "unit": "V",
+       "range": [
+        1,
+        5.5
+       ]
+      },
+      {
+       "id": "max_current",
+       "unit": "A",
+       "value": 1.5
+      }
+     ],
+     "slots": [
+      {
+       "id": "vout_a",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "output"
+       }
+      },
+      {
+       "id": "vout_b",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "output"
+       }
+      },
+      {
+       "id": "gnd",
+       "required": true,
+       "match": {
+        "protocol": "power",
+        "role": "ground",
+        "capability": "ground"
+       }
+      }
+     ],
+     "profiles": [
+      {
+       "id": "vout_pins",
+       "label": "VOUT 8/9, PGND",
+       "default_active": true,
+       "bindings": {
+        "vout_a": "pin_8",
+        "vout_b": "pin_9",
+        "gnd": "pgnd"
+       }
+      }
+     ]
+    }
+   ],
+   "interfaceGroups": [
+    {
+     "id": "vin_pair",
+     "label": "VIN pins 1 and 2 (both must be connected)",
+     "members": [
+      "pin_1",
+      "pin_2"
+     ],
+     "policy": "all_of"
+    },
+    {
+     "id": "vout_pair",
+     "label": "VOUT pins 8 and 9 (both must be connected)",
+     "members": [
+      "pin_8",
+      "pin_9"
+     ],
+     "policy": "all_of"
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "dimensions_mm": {
+      "length": 3,
+      "width": 3,
+      "height": 0.9
+     },
+     "package": {
+      "name": "SON-12",
+      "pin_count": 12,
+      "pitch_mm": 0.5,
+      "exposed_pad": true,
+      "exposed_pad_pin": "EP",
+      "exposed_pad_mm": [
+       2.4,
+       1.7
+      ],
+      "source": "fixture: invented part, no datasheet"
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-l-2u2",
+   "name": "Inductor 2.2 µH",
+   "categories": [
+    "component.passive.inductor"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "1",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "2",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    }
+   ],
+   "traits": [
+    {
+     "type": "passive",
+     "params": {
+      "kind": "inductor",
+      "value": 0.0000022,
+      "unit": "H",
+      "assumption": "Inductor value chosen for the fixture regulator."
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-r-1m-0402",
+   "name": "Resistor 1 MΩ 1 % 0402",
+   "categories": [
+    "component.passive.resistor"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "1",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "2",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "package": {
+      "name": "0402",
+      "code": "1005 metric",
+      "pin_count": 2,
+      "exposed_pad": false,
+      "assumption": "Chip size chosen for the fixture."
+     }
+    }
+   ],
+   "traits": [
+    {
+     "type": "passive",
+     "params": {
+      "kind": "resistor",
+      "value": 1000000,
+      "unit": "Ω",
+      "tolerance": 0.01,
+      "assumption": "Feedback divider for 3.3 V on the fixture regulator's 0.6 V reference. Upper resistor."
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-r-220k-0402",
+   "name": "Resistor 220 kΩ 1 % 0402",
+   "categories": [
+    "component.passive.resistor"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "1",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "2",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "package": {
+      "name": "0402",
+      "code": "1005 metric",
+      "pin_count": 2,
+      "exposed_pad": false,
+      "assumption": "Chip size chosen for the fixture."
+     }
+    }
+   ],
+   "traits": [
+    {
+     "type": "passive",
+     "params": {
+      "kind": "resistor",
+      "value": 220000,
+      "unit": "Ω",
+      "tolerance": 0.01,
+      "assumption": "Feedback divider for 3.3 V on the fixture regulator's 0.6 V reference. Lower resistor."
+     }
+    }
+   ]
+  },
+  {
+   "id": "fixture-r-4k7-0402",
+   "name": "Resistor 4.7 kΩ 1 % 0402",
+   "categories": [
+    "component.passive.resistor"
+   ],
+   "interfaces": [
+    {
+     "id": "pin_1",
+     "name": "1",
+     "pin": 1,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pin_2",
+     "name": "2",
+     "pin": 2,
+     "domain": "electrical",
+     "exposed": true,
+     "default_active": true,
+     "protocols": [
+      {
+       "type": "passive",
+       "roles": [
+        "terminal"
+       ]
+      }
+     ]
+    }
+   ],
+   "domains": [
+    {
+     "domain": "mechanical",
+     "package": {
+      "name": "0402",
+      "code": "1005 metric",
+      "pin_count": 2,
+      "exposed_pad": false,
+      "assumption": "Chip size chosen for the fixture."
+     }
+    }
+   ],
+   "traits": [
+    {
+     "type": "passive",
+     "params": {
+      "kind": "resistor",
+      "value": 4700,
+      "unit": "Ω",
+      "tolerance": 0.01,
+      "assumption": "I2C pull-up value: a common choice at 400 kHz and 3.3 V, not sized from bus capacitance."
+     }
+    }
+   ]
+  }
+ ],
+ "scenarios": [
+  {
+   "id": "imu-sdx-int1-swapped",
+   "label": "IMU SDx and INT1 swapped",
+   "description": "The IMU's SDx (u2 pin 1) is on the IMU_INT1 net and its INT1 (pin 5) on SDA: the I2C bus between the MCU and the IMU is incomplete.",
+   "definitions": [
+    {
+     "id": "sample-imu-board",
+     "name": "IMU board (fixture + sample outputs)",
+     "description": "Synthetic MCU + IMU on I2C 0, 3.3 V from a synthetic buck-boost regulator. Test fixture for the board convention; not a complete design. Viewer sample: the UHD fixture board with mounting holes and hand-made standard outputs.",
+     "interfaces": [
+      {
+       "id": "vin",
+       "name": "VIN",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ],
+       "parameters": [
+        {
+         "id": "voltage",
+         "unit": "V",
+         "range": [
+          2.5,
+          5.5
+         ]
+        }
+       ]
+      },
+      {
+       "id": "v3v3",
+       "name": "3V3",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ],
+       "parameters": [
+        {
+         "id": "voltage",
+         "unit": "V",
+         "value": 3.3
+        }
+       ]
+      },
+      {
+       "id": "vcore",
+       "name": "VCORE",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ],
+       "parameters": [
+        {
+         "id": "voltage",
+         "unit": "V",
+         "value": 1.2
+        }
+       ]
+      },
+      {
+       "id": "gnd",
+       "name": "GND",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "fb",
+       "name": "FB",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "sw1",
+       "name": "SW1",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "sw2",
+       "name": "SW2",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "sda",
+       "name": "SDA",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "scl",
+       "name": "SCL",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "imu_int1",
+       "name": "IMU_INT1",
+       "domain": "electrical",
+       "exposed": false,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "net",
+         "roles": [
+          "node"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "mount",
+       "name": "Mounting holes",
+       "domain": "mechanical",
+       "exposed": true,
+       "default_active": true,
+       "protocols": [
+        {
+         "type": "bolt_pattern",
+         "roles": [
+          "component"
+         ]
+        }
+       ],
+       "capabilities": [
+        "bolt_pattern"
+       ],
+       "parameters": [
+        {
+         "id": "hole_spacing",
+         "unit": "mm",
+         "value": 23
+        },
+        {
+         "id": "hole_count",
+         "unit": "dimensionless",
+         "value": 2
+        },
+        {
+         "id": "fastener_diameter",
+         "unit": "mm",
+         "value": 2
+        }
+       ],
+       "traits": [
+        {
+         "type": "bolt_pattern",
+         "params": {
+          "shape": "circle",
+          "fastener": "M2",
+          "threaded": false
+         }
+        }
+       ],
+       "geometry": {
+        "frame": {
+         "origin": [
+          14,
+          9,
+          0
+         ],
+         "normal": [
+          0,
+          0,
+          -1
+         ],
+         "xAxis": [
+          1,
+          0,
+          0
+         ],
+         "symmetryDeg": 180
+        },
+        "refs": [
+         {
+          "kind": "feature",
+          "artifact": "board_glb",
+          "name": "mount",
+          "signature": {
+           "area_mm2": 10.556,
+           "centroid": [
+            14,
+            9,
+            0
+           ]
+          }
+         }
+        ]
+       }
+      }
+     ],
+     "children": [
+      {
+       "id": "u1",
+       "moduleDefId": "fixture-mcu-qfn32",
+       "name": "MCU"
+      },
+      {
+       "id": "u2",
+       "moduleDefId": "fixture-imu-lga12",
+       "name": "IMU"
+      },
+      {
+       "id": "u3",
+       "moduleDefId": "fixture-buck-boost-son12",
+       "name": "3V3 buck-boost"
+      },
+      {
+       "id": "l1",
+       "moduleDefId": "fixture-l-2u2"
+      },
+      {
+       "id": "r1",
+       "moduleDefId": "fixture-r-1m-0402",
+       "name": "FB upper"
+      },
+      {
+       "id": "r2",
+       "moduleDefId": "fixture-r-220k-0402",
+       "name": "FB lower"
+      },
+      {
+       "id": "r3",
+       "moduleDefId": "fixture-r-4k7-0402",
+       "name": "SDA pull-up"
+      },
+      {
+       "id": "r4",
+       "moduleDefId": "fixture-r-4k7-0402",
+       "name": "SCL pull-up"
+      }
+     ],
+     "links": [
+      {
+       "id": "vin.u3.pin_1",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "vin.u3.pin_2",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "vin.u3.pin_3",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_3"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "vin.u3.pin_4",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_4"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "vin.u3.pin_5",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_5"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vin"
+       }
+      },
+      {
+       "id": "sw1.u3.pin_6",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_6"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sw1"
+       }
+      },
+      {
+       "id": "sw1.l1.pin_1",
+       "a": {
+        "child": "l1",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sw1"
+       }
+      },
+      {
+       "id": "sw2.u3.pin_7",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_7"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sw2"
+       }
+      },
+      {
+       "id": "sw2.l1.pin_2",
+       "a": {
+        "child": "l1",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sw2"
+       }
+      },
+      {
+       "id": "fb.u3.pin_10",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_10"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "fb"
+       }
+      },
+      {
+       "id": "fb.r1.pin_2",
+       "a": {
+        "child": "r1",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "fb"
+       }
+      },
+      {
+       "id": "fb.r2.pin_1",
+       "a": {
+        "child": "r2",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "fb"
+       }
+      },
+      {
+       "id": "v3v3.u3.pin_8",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_8"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u3.pin_9",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_9"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.r1.pin_1",
+       "a": {
+        "child": "r1",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u1.pin_1",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u1.pin_9",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_9"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u1.pin_19",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_19"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u1.pin_24",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_24"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u1.pin_25",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_25"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u2.pin_7",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_7"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u2.pin_8",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_8"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.u2.pin_3",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_3"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.r3.pin_1",
+       "a": {
+        "child": "r3",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "v3v3.r4.pin_1",
+       "a": {
+        "child": "r4",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "v3v3"
+       }
+      },
+      {
+       "id": "vcore.u1.pin_26",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_26"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vcore"
+       }
+      },
+      {
+       "id": "vcore.u1.pin_27",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_27"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vcore"
+       }
+      },
+      {
+       "id": "vcore.u1.pin_28",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_28"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "vcore"
+       }
+      },
+      {
+       "id": "gnd.u3.pin_11",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pin_11"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u3.pgnd",
+       "a": {
+        "child": "u3",
+        "interfaceId": "pgnd"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.r2.pin_2",
+       "a": {
+        "child": "r2",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u1.pad_gnd",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pad_gnd"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u1.pin_10",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_10"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u2.pin_9",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_9"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u2.pin_10",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_10"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "gnd.u2.pin_4",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_4"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "gnd"
+       }
+      },
+      {
+       "id": "sda.u1.pin_2",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sda"
+       }
+      },
+      {
+       "id": "imu_int1.u2.pin_1",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_1"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "imu_int1"
+       }
+      },
+      {
+       "id": "sda.r3.pin_2",
+       "a": {
+        "child": "r3",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sda"
+       }
+      },
+      {
+       "id": "scl.u1.pin_3",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_3"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "scl"
+       }
+      },
+      {
+       "id": "scl.u2.pin_2",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "scl"
+       }
+      },
+      {
+       "id": "scl.r4.pin_2",
+       "a": {
+        "child": "r4",
+        "interfaceId": "pin_2"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "scl"
+       }
+      },
+      {
+       "id": "imu_int1.u1.pin_4",
+       "a": {
+        "child": "u1",
+        "interfaceId": "pin_4"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "imu_int1"
+       }
+      },
+      {
+       "id": "sda.u2.pin_5",
+       "a": {
+        "child": "u2",
+        "interfaceId": "pin_5"
+       },
+       "b": {
+        "self": true,
+        "interfaceId": "sda"
+       }
+      }
+     ],
+     "exports": [
+      {
+       "id": "power_in",
+       "name": "VIN",
+       "from": {
+        "child": "u3",
+        "interfaceId": "pin_1"
+       }
+      },
+      {
+       "id": "power_gnd",
+       "name": "GND",
+       "from": {
+        "child": "u3",
+        "interfaceId": "pin_11"
+       }
+      },
+      {
+       "id": "swd",
+       "name": "SWD",
+       "from": {
+        "child": "u1",
+        "interfaceId": "swd"
+       }
+      }
+     ],
+     "traits": [
+      {
+       "type": "design_envelope",
+       "params": {
+        "max_mm": {
+         "length": 30,
+         "width": 20,
+         "height": 5
+        },
+        "reason": "Fixture requirement: fits a 30 × 20 mm bay."
+       }
+      },
+      {
+       "type": "assumption",
+       "params": {
+        "field": "placement",
+        "value": "hand-made",
+        "reason": "Component positions, mounting holes and edge pads are chosen by hand for the viewer's fixtures; nothing was laid out or routed."
+       }
+      }
+     ],
+     "domains": [
+      {
+       "domain": "mechanical",
+       "dimensions_mm": {
+        "length": 28,
+        "width": 18,
+        "height": 1.6
+       }
+      }
+     ],
+     "artifacts": [
+      {
+       "id": "board_glb",
+       "name": "Board body (GLB)",
+       "type": "3d_model",
+       "filePath": "board/out/board.glb",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "glb",
+       "role": "body",
+       "units": "mm"
+      },
+      {
+       "id": "board_manifest",
+       "name": "Board geometry manifest",
+       "type": "cad",
+       "filePath": "board/out/board.manifest.json",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "json",
+       "provenance": {
+        "generatedFrom": "board_glb"
+       }
+      },
+      {
+       "id": "bom",
+       "name": "Bill of materials",
+       "type": "documentation",
+       "filePath": "board/out/bom.csv",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "csv",
+       "mimeType": "text/csv"
+      },
+      {
+       "id": "pnp",
+       "name": "Pick and place",
+       "type": "pcb",
+       "filePath": "board/out/pnp.csv",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "csv",
+       "mimeType": "text/csv"
+      },
+      {
+       "id": "netlist",
+       "name": "Netlist report",
+       "type": "pcb",
+       "filePath": "board/out/netlist.json",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "json"
+      },
+      {
+       "id": "schematic",
+       "name": "Schematic",
+       "type": "schematic",
+       "filePath": "board/out/schematic.svg",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "svg",
+       "role": "drawing",
+       "mimeType": "image/svg+xml"
+      },
+      {
+       "id": "pcb_top",
+       "name": "PCB top",
+       "type": "pcb",
+       "filePath": "board/out/pcb-top.svg",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "svg",
+       "role": "drawing",
+       "mimeType": "image/svg+xml"
+      },
+      {
+       "id": "pcb_bottom",
+       "name": "PCB bottom",
+       "type": "pcb",
+       "filePath": "board/out/pcb-bottom.svg",
+       "description": "Sample output, hand-made for the viewer's fixtures (uhd-viewer fixtures/README.md); not produced by a provider.",
+       "tags": [
+        "sample"
+       ],
+       "format": "svg",
+       "role": "drawing",
+       "mimeType": "image/svg+xml"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "diagnostics": [
+  {
+   "code": "FIT_OPENING_OFFSET",
+   "severity": "error",
+   "entity": {
+    "kind": "interface",
+    "id": "enclosure:swd_window"
+   },
+   "message": "swd_window is 0.8 mm off the board's SWD pads along x (allowed 0.3 mm): a pogo-pin adapter will not seat.",
+   "validator": "sample/cad:check (hand-made)"
+  },
+  {
+   "code": "FIT_HEIGHT_UNSTATED",
+   "severity": "warning",
+   "entity": {
+    "kind": "instance",
+    "id": "board/l1"
+   },
+   "message": "l1 states no package height; its clearance to the lid (2.6 mm) assumes the sample's 1.2 mm body.",
+   "validator": "sample/cad:check (hand-made)"
+  },
+  {
+   "code": "ROUTE_BEND",
+   "severity": "warning",
+   "entity": {
+    "kind": "interface",
+    "id": "board:power_in"
+   },
+   "message": "The battery lead runs 3 mm from cable_entry to the VIN pad and turns down 0.3 mm onto it: tighter than a 26 AWG lead's 2 mm bend radius.",
+   "validator": "sample/cad:check (hand-made)"
+  }
+ ],
+ "meta": {
+  "name": "IMU pod (sample)",
+  "producer": "uhd-viewer fixtures (hand-made samples)"
+ }
+}

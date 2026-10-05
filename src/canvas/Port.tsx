@@ -14,6 +14,8 @@ export interface PortProps {
   label?: boolean;
   ground?: boolean;
   selected?: boolean;
+  /** Draw the dot (off where a ribbon's pin handle already marks the port). */
+  dot?: boolean;
   /** Max label width in px (from port spacing and card size). */
   labelWidth?: number;
 }
@@ -47,33 +49,27 @@ function GroundGlyph({ side, x, y, color }: { side: PortProps["placed"]["side"];
   );
 }
 
-export function Port({ placed, x, y, color, faded, exported, label, ground, selected, labelWidth = 76 }: PortProps) {
+export function Port({ placed, x, y, color, faded, exported, label, ground, selected, dot = true, labelWidth = 76 }: PortProps) {
   const mechanical = placed.port.domain === "mechanical";
-  const size = exported ? 12 : 10;
-  const style: React.CSSProperties = {
-    left: x,
-    top: y,
-    width: size,
-    height: size,
-    opacity: faded ? 0.25 : 1,
-    background: exported ? "var(--canvas-bg)" : color,
-    borderColor: exported ? color : "var(--canvas-bg)",
-    borderRadius: mechanical ? 2 : "50%",
-  };
+  const size = exported ? 11 : 9;
   const id = `p:${placed.port.id}`;
+  // The handles are invisible anchors; the dot is drawn exactly on the port point so link lines end at its centre.
   return (
     <>
-      <Handle
-        type="source"
-        id={id}
-        position={POSITION[placed.side]}
-        className={`port${exported ? " port-exported" : ""}${selected ? " port-selected" : ""}`}
-        style={style}
-        isConnectable={false}
-      >
-        {exported && <span className="port-core" style={{ background: color, borderRadius: mechanical ? 1 : "50%" }} />}
-      </Handle>
-      <Handle type="target" id={id} position={POSITION[placed.side]} className="port-target" style={{ left: x, top: y }} isConnectable={false} />
+      <Handle type="source" id={id} position={POSITION[placed.side]} className="port-anchor" style={{ left: x, top: y }} isConnectable={false} />
+      <Handle type="target" id={id} position={POSITION[placed.side]} className="port-anchor" style={{ left: x, top: y }} isConnectable={false} />
+      {dot && <span
+        className={`port-dot${exported ? " exported" : ""}${selected ? " selected" : ""}`}
+        style={{
+          left: x - size / 2,
+          top: y - size / 2,
+          width: size,
+          height: size,
+          background: color,
+          borderRadius: mechanical ? 2 : "50%",
+          opacity: faded ? 0.25 : 1,
+        }}
+      />}
       {ground && <GroundGlyph side={placed.side} x={x} y={y} color={color} />}
       {label && (
         <span className="port-label" style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>

@@ -1,0 +1,9 @@
+instance,x_mm,y_mm,rotation_deg,side
+u1,9.5,9,0,top
+u2,19,13,90,top
+u3,19.5,5,0,top
+l1,24,5,90,top
+r1,16.5,8.8,0,bottom
+r2,18,8.8,0,bottom
+r3,14.5,14,90,top
+r4,15.5,14,90,top

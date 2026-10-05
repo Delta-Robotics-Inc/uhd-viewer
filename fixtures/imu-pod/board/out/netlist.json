@@ -1,0 +1,99 @@
+{
+  "schema": "protoboard.netlist/v0",
+  "nets": [
+    {
+      "id": "vin",
+      "pins": [
+        "u3:pin_1",
+        "u3:pin_2",
+        "u3:pin_3",
+        "u3:pin_4",
+        "u3:pin_5"
+      ]
+    },
+    {
+      "id": "v3v3",
+      "pins": [
+        "u3:pin_8",
+        "u3:pin_9",
+        "r1:pin_1",
+        "u1:pin_1",
+        "u1:pin_9",
+        "u1:pin_19",
+        "u1:pin_24",
+        "u1:pin_25",
+        "u2:pin_7",
+        "u2:pin_8",
+        "u2:pin_3",
+        "r3:pin_1",
+        "r4:pin_1"
+      ]
+    },
+    {
+      "id": "vcore",
+      "pins": [
+        "u1:pin_26",
+        "u1:pin_27",
+        "u1:pin_28"
+      ]
+    },
+    {
+      "id": "gnd",
+      "pins": [
+        "u3:pin_11",
+        "u3:pgnd",
+        "r2:pin_2",
+        "u1:pad_gnd",
+        "u1:pin_10",
+        "u2:pin_9",
+        "u2:pin_10",
+        "u2:pin_4"
+      ]
+    },
+    {
+      "id": "fb",
+      "pins": [
+        "u3:pin_10",
+        "r1:pin_2",
+        "r2:pin_1"
+      ]
+    },
+    {
+      "id": "sw1",
+      "pins": [
+        "u3:pin_6",
+        "l1:pin_1"
+      ]
+    },
+    {
+      "id": "sw2",
+      "pins": [
+        "u3:pin_7",
+        "l1:pin_2"
+      ]
+    },
+    {
+      "id": "sda",
+      "pins": [
+        "u1:pin_2",
+        "u2:pin_1",
+        "r3:pin_2"
+      ]
+    },
+    {
+      "id": "scl",
+      "pins": [
+        "u1:pin_3",
+        "u2:pin_2",
+        "r4:pin_2"
+      ]
+    },
+    {
+      "id": "imu_int1",
+      "pins": [
+        "u1:pin_4",
+        "u2:pin_5"
+      ]
+    }
+  ]
+}

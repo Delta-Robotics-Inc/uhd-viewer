@@ -1,0 +1,9 @@
+instance,name,definition,manufacturer,part_number,package,quantity
+u1,MCU,fixture-mcu-qfn32,,,QFN-32,1
+u2,IMU,fixture-imu-lga12,,,LGA-12,1
+u3,3V3 buck-boost,fixture-buck-boost-son12,,,SON-12,1
+l1,Inductor 2.2 µH,fixture-l-2u2,,,,1
+r1,FB upper,fixture-r-1m-0402,,,0402,1
+r2,FB lower,fixture-r-220k-0402,,,0402,1
+r3,SDA pull-up,fixture-r-4k7-0402,,,0402,1
+r4,SCL pull-up,fixture-r-4k7-0402,,,0402,1

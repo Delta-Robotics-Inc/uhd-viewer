@@ -13,11 +13,15 @@ export interface NodeData extends Record<string, unknown> {
   mode: Classification;
   showGrounds: boolean;
   selectedPorts: Set<string>;
+  /** Ports ("node|port") whose link draws its own pin handle (ribbon mode): no dot. */
+  ribbonPorts?: Set<string>;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
 export type ContainerNodeType = Node<NodeData, "container">;
 export type SheetNodeType = Node<NodeData, "sheet">;
+export type HarnessNodeType = Node<NodeData, "harness">;
+export type NetNodeType = Node<NodeData, "net">;
 
 const STATUS: Record<string, string> = {
   configured: "var(--drc-configured)",
@@ -31,7 +35,12 @@ function portColor(p: PlacedPort, mode: Classification): string {
   return colorFor({ domain: p.port.domain, protocol: link?.protocol ?? p.port.protocol, state: link?.state }, mode);
 }
 
-function Ports({ data, labels }: { data: NodeData; labels: boolean }) {
+/**
+ * Ports are absolutely positioned inside the node's element, whose origin is
+ * inside its border: `border` shifts them back so each dot sits exactly on
+ * the port point where its links end.
+ */
+function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; border?: number }) {
   const { box, ports, mode, showGrounds, selectedPorts, node } = data;
   const perSide = (side: string) => ports.filter((q) => q.side === side).length;
   const widthFor = (p: PlacedPort) =>
@@ -46,14 +55,15 @@ function Ports({ data, labels }: { data: NodeData; labels: boolean }) {
           <Port
             key={p.port.id}
             placed={p}
-            x={p.x - box.x}
-            y={p.y - box.y}
+            x={p.x - box.x - border}
+            y={p.y - box.y - border}
             color={portColor(p, mode)}
             faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode)}
             exported={Boolean(p.port.exported) && node.expanded}
             label={labels}
             ground={onlyGround && !showGrounds}
             selected={selectedPorts.has(p.port.id)}
+            dot={!data.ribbonPorts?.has(`${node.id}|${p.port.id}`)}
             labelWidth={widthFor(p)}
           />
         );
@@ -93,7 +103,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
         <div className="module-title">{node.label}</div>
         {!circle && <PortGroups groups={data.groups} mode={data.mode} />}
       </div>
-      <Ports data={data} labels={!circle} />
+      <Ports data={data} labels={!circle} border={2} />
     </div>
   );
 }
@@ -103,12 +113,13 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
   const group = node.kind === "group";
   return (
     <div className={`container${group ? " group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
+      {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
         <Icon name={node.icon} size={12} strokeWidth={1.8} />
         <span>{node.label}</span>
         <span className="container-kind">{group ? "GROUP" : "MODULE"}</span>
       </div>
-      <Ports data={data} labels={false} />
+      <Ports data={data} labels={false} border={0} />
     </div>
   );
 }
@@ -121,9 +132,47 @@ export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
     <div className={`sheet-port${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }}>
       <Icon name={port?.side === "left" ? "arrow-left-from-line" : "arrow-right-to-line"} size={12} color={color} />
       <span>{node.label}</span>
-      <Ports data={data} labels={false} />
+      <Ports data={data} labels={false} border={1} />
     </div>
   );
 }
 
-export const nodeTypes = { module: ModuleNode, container: ContainerNode, sheet: SheetNode };
+/** A harness module drawn as the carrier node its links pass through (design D2, board 04). */
+export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
+  const { node, box } = data;
+  const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--text-muted)";
+  return (
+    <div className={`harness-node${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }} title={node.description}>
+      <Icon name={node.icon} size={12} color={color} />
+      <span className="harness-name">{node.label}</span>
+      <span className="harness-kind">HARNESS</span>
+      <Ports data={data} labels={false} border={1.5} />
+    </div>
+  );
+}
+
+/**
+ * A board net (PB-823): a junction that its members' grouped lines meet at.
+ * Its colour is the net's own (power, ground, the bus it carries), its status
+ * the worst of its lines.
+ */
+export function NetNode({ data, selected }: NodeProps<NetNodeType>) {
+  const { node, box } = data;
+  const net = node.net!;
+  const color = colorFor({ domain: "electrical", protocol: net.signal, state: node.status }, data.mode);
+  return (
+    <div
+      className={`net-node${selected ? " selected" : ""}${net.ground ? " ground" : ""}`}
+      style={{ width: box.w, height: box.h, borderColor: color, ["--status" as string]: STATUS[node.status] }}
+      title={node.description}
+    >
+      <span className="net-name" style={{ color }}>
+        {node.label}
+      </span>
+      {node.status === "incompatible" || node.status === "partial" ? <span className="status-dot" style={{ background: STATUS[node.status] }} /> : null}
+      <Ports data={data} labels={false} border={1.5} />
+    </div>
+  );
+}
+
+export const nodeTypes = { module: ModuleNode, container: ContainerNode, sheet: SheetNode, harness: HarnessNode, net: NetNode };

@@ -181,13 +181,18 @@ export function offsetPolyline(points: Pt[], d: number, r: number): { points: Pt
   for (let i = 1; i < pts.length - 1; i++) {
     const n1 = normals[i - 1];
     const n2 = normals[i];
-    out.push([pts[i][0] + (n1[0] + n2[0]) * d, pts[i][1] + (n1[1] + n2[1]) * d]);
+    // mitred corner: exact for any turn angle (orthogonal corners reduce to n1 + n2)
+    const k = d / (1 + n1[0] * n2[0] + n1[1] * n2[1]);
+    out.push([pts[i][0] + (n1[0] + n2[0]) * k, pts[i][1] + (n1[1] + n2[1]) * k]);
     // turn direction: cross of incoming and outgoing direction vectors
     const din: Pt = [pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]];
     const dout: Pt = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]];
     const cross = Math.sign(din[0] * dout[1] - din[1] * dout[0]);
-    // left-of-travel offsets sit on the outside of a right (clockwise) turn
-    radii.push(Math.max(2, r + cross * d));
+    // left-of-travel offsets sit on the outside of a right (clockwise) turn; the
+    // fillet is a tangent length, so it scales with tan(half the turn) to stay concentric
+    const cos = (din[0] * dout[0] + din[1] * dout[1]) / ((Math.hypot(...din) * Math.hypot(...dout)) || 1);
+    const half = Math.tan(Math.acos(Math.max(-1, Math.min(1, cos))) / 2);
+    radii.push(Math.max(2, r + cross * d * half));
   }
   const n = normals[normals.length - 1];
   const last = pts[pts.length - 1];
