@@ -1,0 +1,29 @@
+/* Rules the primitives (src/ui) need beyond utilities. */
+
+/* Radix's viewport wraps content in display: table, which stops long rows from
+   truncating; a vertical-only area lays its content out as a block instead */
+.uhd-scroll-y > div {
+  display: block !important;
+  min-width: 0 !important;
+}
+
+/* high contrast (VS Code's HC themes): state reads from outlines, not fills */
+[data-uhd-scheme^="high-contrast"] :is(.card, .module-card, .inspector, .legend, .toolbar, .cad-toolbar, .activity-bar, .header) {
+  outline: 1px solid var(--uhd-contrast-border);
+  outline-offset: -1px;
+}
+[data-uhd-scheme^="high-contrast"] :is(.module-card.selected, .tree-item.selected, .check:hover, .cad-row.on, .crumb:hover) {
+  outline: 1px dashed var(--uhd-contrast-active-border);
+  outline-offset: -1px;
+}
+[data-uhd-scheme^="high-contrast"] .uhd-icon-button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--uhd-text);
+  outline: 1px solid var(--uhd-contrast-active-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uhd-scrollbar {
+    transition: none;
+  }
+}

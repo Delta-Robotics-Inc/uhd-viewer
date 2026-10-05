@@ -5,6 +5,7 @@
  * schematic) with pan and zoom, where a selected component is marked and a
  * click on a component selects it.
  */
+import { ScrollArea } from "../ui/ScrollArea";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtifactDef, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { GeometryManifest } from "@uhd/system/geometry.js";
@@ -95,7 +96,7 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
         PINS · {pins.length}
         {netOf.size > 0 && <span className="muted"> · {netOf.size} ON NETS</span>}
       </div>
-      <div className="pin-table-wrap">
+      <ScrollArea className="pin-table-wrap" axis="both">
         <table className="child-table pin-table">
           <thead>
             <tr>
@@ -116,7 +117,7 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollArea>
     </>
   );
 }

@@ -1,25 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
-import { buildView, levelModule, withOverrides } from "./model/from-uhd";
-import { systemDiagnostics } from "./model/diagnostics";
-import type { Classification } from "./model/classification";
-import type { ViewLink } from "./model/types";
-import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "./layout/layout";
-import { tapRails } from "./layout/taps";
-import type { Pt } from "./canvas/routing";
-import { loadBundle, sourceFromBundle, type LoadedSource } from "./source/source";
-import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "./api";
-import { sameLayout } from "./options";
-import { Canvas, type Selection } from "./canvas/Canvas";
-import { ActivityBar, Header, Inspector, Legend, NodeMenu, Toolbar, type Goto, type NodeMenuItem, type Panel } from "./chrome/Chrome";
-import { PairView } from "./chrome/PairView";
-import { CadView, type CadSelection } from "./cad/CadView";
-import { defAt } from "./cad/model";
-import type { CommandBus } from "./host/channel";
-import { HostContext, type HostActions } from "./host/context";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "./host/targets";
+import { buildView, levelModule, withOverrides } from "../model/from-uhd";
+import { systemDiagnostics } from "../model/diagnostics";
+import type { Classification } from "../model/classification";
+import type { ViewLink } from "../model/types";
+import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "../layout/layout";
+import { tapRails } from "../layout/taps";
+import type { Pt } from "../canvas/routing";
+import { loadBundle, sourceFromBundle, type LoadedSource } from "../source/source";
+import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "../api";
+import { sameLayout } from "../options";
+import type { Selection } from "../canvas/Canvas";
+import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
+import type { CadSelection } from "../cad/CadView";
+import { defAt } from "../cad/model";
+import type { CommandBus } from "../host/channel";
+import { HostContext, type HostActions } from "../host/context";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "../host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -91,8 +90,7 @@ export interface Live {
 const NARROW = 760;
 
 /** Initial view state from the URL: ?scenario=o4-on-vbat&mode=drc&detail=conductors&drill=stack&open=gnss_i2c&panel=checks */
-const params = new URLSearchParams(window.location.search);
-const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
+const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
 
 export interface AppProps extends ViewerOptions {
   /** Development only: absolute artifact bases are served through Vite's /@fs route. */
@@ -110,8 +108,8 @@ export interface HostLink {
   artifact: boolean;
 }
 
-/** Loads the UHD bundle (the viewer's only input), then shows it. */
-export default function App(props: AppProps) {
+/** Loads the UHD bundle (the viewer's only input): the source once loaded, or why not. */
+export function useViewerSource(props: Pick<AppProps, "bundle" | "bundleUrl" | "resolveArtifact" | "fsRoute">): { source: LoadedSource | null; error: string | null; empty: boolean } {
   const { bundle, bundleUrl, resolveArtifact, fsRoute } = props;
   const [source, setSource] = useState<LoadedSource | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,18 +129,18 @@ export default function App(props: AppProps) {
       cancelled = true;
     };
   }, [bundle, bundleUrl, resolveArtifact, fsRoute]);
-  if (error) return <div className="load-state error">{error}</div>;
-  if (!bundle && !bundleUrl)
-    return (
-      <div className="load-state">
-        No UHD bundle. Open this page with ?bundle=&lt;url&gt;, or serve one with uhd-viewer serve &lt;bundle.json&gt;.
-      </div>
-    );
-  if (!source) return <div className="load-state">Loading UHD bundle…</div>;
-  return <Viewer source={source} options={props} host={props.host} />;
+  return { source, error, empty: !bundle && !bundleUrl };
 }
 
-function Viewer({ source, options, host }: { source: LoadedSource; options: ViewerOptions; host?: HostLink }) {
+/**
+ * The viewer's state and behaviour for one loaded bundle: what is drawn, what
+ * is selected, the drill level, the classification, layout edits, the host
+ * channel. Shells read it through `useViewer()` inside `UhdViewer`; the
+ * canvases, inspector panels, toolbar and legend are views of it.
+ */
+export function useViewerController(source: LoadedSource, options: ViewerOptions, host?: HostLink) {
+  const [params] = useState(urlParams);
+  const list = (key: string) => params.get(key)?.split(",").filter(Boolean);
   const hosted = Boolean(options.onLayoutChange);
   const SCENARIOS = source.scenarios;
   const HAND_LAYOUTS: Record<string, LevelLayout> = source.display.diagram?.layouts ?? {};
@@ -374,114 +372,117 @@ function Viewer({ source, options, host }: { source: LoadedSource; options: View
   }
   const closeMenu = useCallback(() => setMenu(null), []);
 
+
+  return {
+    source,
+    options,
+    // the model on screen
+    scenario,
+    scenarios: scenarioList,
+    onScenario,
+    system,
+    vm,
+    drawn,
+    layout,
+    hand,
+    levelKey,
+    levelDef,
+    drill,
+    topLevel: drill.length === 0,
+    diagnostics,
+    hostDiagnostics,
+    errors,
+    defFor,
+    bSlotsFor,
+    // what the user chose
+    view,
+    setView,
+    mode,
+    setMode,
+    conductors,
+    setConductors,
+    showGrounds,
+    setShowGrounds,
+    panel,
+    setPanel,
+    selection,
+    setSelection,
+    openLinks,
+    overrides,
+    pair,
+    setPairLink,
+    // actions
+    onNavigate,
+    onDrill,
+    onGoto,
+    onPair,
+    onReset,
+    onToggleLink,
+    onToggleExpand,
+    onMove,
+    onOverride,
+    editLink,
+    onPins,
+    setLive,
+    // the host channel and what follows from it
+    centre,
+    reveal,
+    cadFocus,
+    onCadSelect,
+    hostActions,
+    onNodeContext: hostActions.openSource ? onNodeContext : undefined,
+    menu,
+    menuItems,
+    closeMenu,
+  };
+}
+
+/** Everything a view of the loaded model reads (see useViewerController). */
+export type ViewerController = ReturnType<typeof useViewerController>;
+
+const ViewerContext = createContext<ViewerController | null>(null);
+
+/** The viewer's state, inside `UhdViewer` (or `ViewerProvider`). */
+export function useViewer(): ViewerController {
+  const c = useContext(ViewerContext);
+  if (!c) throw new Error("useViewer: render inside <UhdViewer>");
+  return c;
+}
+
+/** The viewer's state for a loaded source, for the components inside. */
+export function ViewerProvider({ source, options, host, children }: { source: LoadedSource; options: ViewerOptions; host?: HostLink; children?: ReactNode }) {
+  const c = useViewerController(source, options, host);
   return (
-    <HostContext.Provider value={hostActions}>
-    <ReactFlowProvider>
-      <div className="app">
-        <Header
-          vm={vm}
-          onNavigate={onNavigate}
-          scenarios={scenarioList}
-          scenario={scenario.id}
-          onScenario={onScenario}
-          mode={mode}
-          onMode={setMode}
-          conductors={conductors}
-          onConductors={setConductors}
-          showGrounds={showGrounds}
-          onGrounds={setShowGrounds}
-          view={view}
-          onView={setView}
-        />
-        <div className="workspace">
-          <ActivityBar panel={panel} onPanel={setPanel} errors={errors} />
-          {view === "3d" ? (
-            <CadView
-              key={scenario.id}
-              system={system}
-              lookup={scenario.lookup}
-              source={source}
-              diagnostics={diagnostics}
-              hostDiagnostics={hostDiagnostics}
-              focusOn={cadFocus}
-              onSelect={onCadSelect}
-              inspector={Boolean(panel)}
-            />
-          ) : (
-          <>
-          <main className="canvas">
-            {scenario.id !== "nominal" && (
-              <div className={`scenario-banner${errors ? " error" : ""}`}>
-                <b>SCENARIO · {scenario.label.toUpperCase()}</b>
-                <span>{scenario.description}</span>
-                <span>
-                  {errors} error{errors === 1 ? "" : "s"} found by the system checks
-                </span>
-              </div>
-            )}
-            <Canvas
-              key={`${scenario.id}/${levelKey}`}
-              vm={drawn}
-              inspector={Boolean(panel)}
-              layout={layout}
-              hand={hand}
-              mode={mode}
-              detail={conductors ? "ribbon" : "basic"}
-              showGrounds={showGrounds}
-              openLinks={openLinks}
-              selection={selection}
-              onSelect={setSelection}
-              onToggleLink={onToggleLink}
-              onToggleExpand={onToggleExpand}
-              onMove={onMove}
-              onLayout={editLink}
-              onLive={setLive}
-              onPins={onPins}
-              centre={centre}
-              reveal={reveal}
-              onNodeContext={hostActions.openSource ? onNodeContext : undefined}
-            />
-            <Toolbar
-              onReset={onReset}
-              inspector={Boolean(panel)}
-            />
-            <Legend mode={mode} />
-            {pair && <PairView vm={vm} link={pair} mode={mode} onClose={() => setPairLink(null)} />}
-          </main>
-          {panel && (
-            <Inspector
-              vm={vm}
-              panel={panel}
-              onPanel={setPanel}
-              selection={selection}
-              mode={mode}
-              openLinks={openLinks}
-              diagnostics={diagnostics}
-              hostDiagnostics={hostDiagnostics}
-              defFor={defFor}
-              resolveArtifact={source.resolveArtifact}
-              appearance={source.display.spatial?.appearance}
-              bSlotsFor={bSlotsFor}
-              overrides={overrides}
-              onOverride={onOverride}
-              onSelect={setSelection}
-              onDrill={onDrill}
-              onToggleLink={onToggleLink}
-              onToggleExpand={onToggleExpand}
-              onPair={onPair}
-              topLevel={drill.length === 0}
-              levelDef={levelDef}
-              drill={drill}
-              onGoto={onGoto}
-              onNodeContext={hostActions.openSource ? onNodeContext : undefined}
-            />
-          )}
-          </>
-          )}
-        </div>
-        {menu && <NodeMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} />}
-      </div>
-    </ReactFlowProvider>
+    <HostContext.Provider value={c.hostActions}>
+      <ReactFlowProvider>
+        <ViewerContext.Provider value={c}>{children}</ViewerContext.Provider>
+      </ReactFlowProvider>
     </HostContext.Provider>
+  );
+}
+
+export interface UhdViewerProps extends AppProps {
+  /** The views of the model: canvases, panels, the shell's own chrome. */
+  children?: ReactNode;
+}
+
+/**
+ * Loads the bundle, then provides the viewer's state to `children`. While
+ * loading, or when the bundle cannot be read, it says so in place.
+ */
+export function UhdViewer({ children, ...props }: UhdViewerProps) {
+  const { source, error, empty } = useViewerSource(props);
+  if (error) return <div className="load-state error">{error}</div>;
+  if (empty)
+    return (
+      <div className="load-state">
+        No UHD bundle. Open this page with ?bundle=&lt;url&gt;, or serve one with uhd-viewer serve &lt;bundle.json&gt;.
+      </div>
+    );
+  if (!source) return <div className="load-state">Loading UHD bundle…</div>;
+  return (
+    <ViewerProvider source={source} options={props} host={props.host}>
+      {children}
+    </ViewerProvider>
   );
 }

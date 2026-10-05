@@ -1,5 +1,6 @@
 /**
- * The standalone app. The bundle comes from `?bundle=<url>`, else from the
+ * The standalone app. `?theme=` picks its look (dark, light, system, vscode).
+ * The bundle comes from `?bundle=<url>`, else from the
  * config a server injected into the page (`uhd-viewer serve`), else, in
  * development only, from the default named in vite.config.ts.
  *
@@ -10,9 +11,12 @@
  * writes the frame's URL, so it could allow itself. The Vite dev server alone
  * also takes `?hostOrigin=<origin>[,<origin>…]`, for trying a host locally.
  */
-import { pickBundleUrl } from "./source/source";
-import { render } from "./mount";
-import { originList } from "./host/protocol";
+import "../styles/index.css";
+import { pickBundleUrl } from "../source/source";
+import { renderViewer } from "../viewer/mount";
+import { originList } from "../host/protocol";
+import type { ViewerThemeOption } from "../api";
+import App from "./App";
 
 declare const __DEFAULT_BUNDLE__: string | null;
 
@@ -27,11 +31,21 @@ function injectedConfig(): { bundleUrl?: string; hostOrigins?: string[] } {
 
 async function start() {
   const config = injectedConfig();
-  render(document.getElementById("root")!, {
-    bundleUrl: pickBundleUrl(window.location.search, config.bundleUrl, __DEFAULT_BUNDLE__),
-    fsRoute: import.meta.env.DEV,
-    parentWindow: parentWindow(config.hostOrigins),
-  });
+  renderViewer(
+    document.getElementById("root")!,
+    {
+      bundleUrl: pickBundleUrl(window.location.search, config.bundleUrl, __DEFAULT_BUNDLE__),
+      fsRoute: import.meta.env.DEV,
+      parentWindow: parentWindow(config.hostOrigins),
+      theme: themeOption(new URLSearchParams(window.location.search).get("theme")),
+    },
+    App,
+  );
+}
+
+/** `?theme=dark|light|system|vscode` (default: the viewer's dark theme). */
+function themeOption(value: string | null): ViewerThemeOption | undefined {
+  return value === "dark" || value === "light" || value === "system" || value === "vscode" ? value : undefined;
 }
 
 /** The parent channel: in a frame whose parent is allowed (its own origin, or one the server lists). */

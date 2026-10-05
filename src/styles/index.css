@@ -1,0 +1,14 @@
+/* The viewer's stylesheet (library and app). Everything is layered, so a
+ * host page's own unlayered rules win, and within the viewer: React Flow's
+ * base styles < the viewer's rules < Tailwind 4 utilities. No Preflight: a
+ * host page keeps its own base styles. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "@xyflow/react/dist/style.css" layer(base);
+@import "./fonts.css" layer(base);
+@import "./theme.css" layer(base);
+@import "./app.css" layer(components);
+@import "./ui.css" layer(components);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "./tailwind-theme.css";
+@source "../";

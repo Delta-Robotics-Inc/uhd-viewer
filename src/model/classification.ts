@@ -13,40 +13,40 @@ export const CLASSIFICATIONS: { id: Classification; label: string }[] = [
 ];
 
 const DOMAIN_COLORS: Record<string, string> = {
-  electrical: "var(--dom-electrical)",
-  mechanical: "var(--dom-mechanical)",
-  pneumatic: "var(--dom-pneumatic)",
-  hydraulic: "var(--dom-hydraulic)",
-  thermal: "var(--dom-thermal)",
-  network: "var(--dom-network)",
-  software: "var(--dom-software)",
+  electrical: "var(--uhd-domain-electrical)",
+  mechanical: "var(--uhd-domain-mechanical)",
+  pneumatic: "var(--uhd-domain-pneumatic)",
+  hydraulic: "var(--uhd-domain-hydraulic)",
+  thermal: "var(--uhd-domain-thermal)",
+  network: "var(--uhd-domain-network)",
+  software: "var(--uhd-domain-software)",
 };
 
 const DRC_COLORS: Record<LinkState, string> = {
-  configured: "var(--drc-configured)",
-  partial: "var(--drc-partial)",
-  incompatible: "var(--drc-incompatible)",
-  unconfigured: "var(--drc-unconfigured)",
+  configured: "var(--uhd-drc-configured)",
+  partial: "var(--uhd-drc-partial)",
+  incompatible: "var(--uhd-drc-incompatible)",
+  unconfigured: "var(--uhd-drc-unconfigured)",
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
-  power: "var(--sig-power)",
-  ground: "var(--sig-ground)",
-  bldc_3phase: "var(--sig-phase)",
-  bldc_phase: "var(--sig-phase)",
-  dshot: "var(--sig-pwm)",
-  fc_esc_connector: "var(--sig-pwm)",
-  pwm: "var(--sig-pwm)",
-  pwm_esc: "var(--sig-pwm)",
-  uart: "var(--sig-uart)",
-  crsf: "var(--sig-uart)",
-  sbus: "var(--sig-uart)",
-  i2c: "var(--sig-i2c)",
-  spi: "var(--sig-spi)",
-  analog: "var(--sig-analog)",
-  digital: "var(--sig-digital)",
-  can: "var(--sig-can)",
-  rf: "var(--sig-rf)",
+  power: "var(--uhd-signal-power)",
+  ground: "var(--uhd-signal-ground)",
+  bldc_3phase: "var(--uhd-signal-phase)",
+  bldc_phase: "var(--uhd-signal-phase)",
+  dshot: "var(--uhd-signal-pwm)",
+  fc_esc_connector: "var(--uhd-signal-pwm)",
+  pwm: "var(--uhd-signal-pwm)",
+  pwm_esc: "var(--uhd-signal-pwm)",
+  uart: "var(--uhd-signal-uart)",
+  crsf: "var(--uhd-signal-uart)",
+  sbus: "var(--uhd-signal-uart)",
+  i2c: "var(--uhd-signal-i2c)",
+  spi: "var(--uhd-signal-spi)",
+  analog: "var(--uhd-signal-analog)",
+  digital: "var(--uhd-signal-digital)",
+  can: "var(--uhd-signal-can)",
+  rf: "var(--uhd-signal-rf)",
 };
 
 export interface Colorable {
@@ -58,10 +58,10 @@ export interface Colorable {
 export function colorFor(item: Colorable, mode: Classification): string {
   if (mode === "drc") return DRC_COLORS[item.state ?? "unconfigured"];
   if (mode === "signal") {
-    if (item.domain !== "electrical") return "#3a3a3a";
+    if (item.domain !== "electrical") return "var(--uhd-domain-other)";
     return signalColor(item.protocol);
   }
-  return DOMAIN_COLORS[item.domain] ?? "var(--sig-other)";
+  return DOMAIN_COLORS[item.domain] ?? "var(--uhd-signal-other)";
 }
 
 /** Items outside the classification's focus are faded (signal mode shows electrical only). */
@@ -87,7 +87,7 @@ export function legendFor(mode: Classification): { label: string; color: string 
       { label: "UART / CRSF", color: SIGNAL_COLORS.uart },
       { label: "I2C", color: SIGNAL_COLORS.i2c },
       { label: "RF", color: SIGNAL_COLORS.rf },
-      { label: "OTHER DOMAINS", color: "#3a3a3a" },
+      { label: "OTHER DOMAINS", color: "var(--uhd-domain-other)" },
     ];
   }
   return [
@@ -103,7 +103,7 @@ export function legendFor(mode: Classification): { label: string; color: string 
 /** Signal-type colour: one table for links, lanes and conductors ("uart_tx" is a UART). */
 function signalColor(protocol: string): string {
   const base = Object.keys(SIGNAL_COLORS).find((k) => protocol === k || protocol.startsWith(`${k}_`));
-  return base ? SIGNAL_COLORS[base] : "var(--sig-other)";
+  return base ? SIGNAL_COLORS[base] : "var(--uhd-signal-other)";
 }
 
 /** Colour of one conductor in signal mode (the same table as links and lanes). */

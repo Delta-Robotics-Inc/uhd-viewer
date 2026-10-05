@@ -1,4 +1,6 @@
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
+import { ScrollArea } from "../ui/ScrollArea";
+import { IconButton } from "../ui/Toolbar";
 import { colorFor, type Classification } from "../model/classification";
 import { Icon } from "../canvas/Icon";
 
@@ -60,14 +62,13 @@ export function PairView({ vm, link, mode, onClose }: { vm: ViewModel; link: Vie
   return (
     <div className="pair-overlay" onClick={onClose}>
       <div className="pair-view" onClick={(e) => e.stopPropagation()}>
+        <ScrollArea className="pair-scroll" contentClassName="pair-content">
         <div className="pair-header">
           <span className="pair-title">PAIR VIEW</span>
           <span className="pair-sub">
             {nodeA.label} ↔ {nodeB.label}
           </span>
-          <button className="mini" onClick={onClose}>
-            CLOSE
-          </button>
+          <IconButton icon="x" size="sm" label="Close the pair view" onClick={onClose} />
         </div>
         <div className="pair-grid" style={{ height: y + 40 }}>
           <div className="pair-col left">
@@ -132,6 +133,7 @@ export function PairView({ vm, link, mode, onClose }: { vm: ViewModel; link: Vie
         <div className={`pair-verdict ${worstState}`}>
           {between.length} LINK{between.length === 1 ? "" : "S"} · {worstState.toUpperCase()}
         </div>
+        </ScrollArea>
       </div>
     </div>
   );

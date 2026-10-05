@@ -13,6 +13,10 @@ import type { Mat4 } from "@uhd/system/geometry.js";
 import { param, traitParam } from "./model";
 import type { Appearance } from "../source/source";
 
+/**
+ * Highlight colours of the scene. The focus colours follow the theme's
+ * accent and highlight tokens (`themeScene`); the rest are data colours.
+ */
 export const COLORS = {
   focus: 0xff5c00,
   counterpart: 0x38bdf8,
@@ -20,7 +24,28 @@ export const COLORS = {
   xAxis: 0x22d3ee,
   phase: [0xe11d48, 0xfacc15, 0x38bdf8],
   hint: 0xa8a29e,
+  /** The selected body's emissive glow, and a stronger one for a picked interface's body. */
+  glow: 0x2a1200,
+  glowStrong: 0x3a1600,
 };
+
+/** The theme's colours for the scene, as `#rrggbb` (ThemeProvider's tokenColor). */
+export interface SceneTheme {
+  background: string;
+  grid: string;
+  gridMinor: string;
+  accent: string;
+  highlight: string;
+}
+
+/** Point the focus colours at the theme's accent (the selected body glows a dim accent). */
+export function themeColors(theme: SceneTheme) {
+  const accent = new THREE.Color(theme.accent);
+  COLORS.focus = COLORS.normal = accent.getHex();
+  COLORS.xAxis = new THREE.Color(theme.highlight).getHex();
+  COLORS.glow = accent.clone().multiplyScalar(0.16).getHex();
+  COLORS.glowStrong = accent.clone().multiplyScalar(0.22).getHex();
+}
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<GLTF | null>>();
@@ -230,6 +255,8 @@ export interface SceneHandle {
   setUp: (up: THREE.Vector3) => void;
   /** Put the ground grid under a box (the assembled model), across the up direction. */
   setGround: (box: THREE.Box3) => void;
+  /** The theme's background, grid and focus colours. */
+  setTheme: (theme: SceneTheme) => void;
   /** Called every frame before rendering, with the frame time in seconds. */
   onFrame: Set<(dt: number) => void>;
   /** When set, the render loop is driven externally (video capture). */
@@ -263,10 +290,22 @@ export function createScene(container: HTMLElement): SceneHandle {
   rim.position.set(-300, 250, 120);
   scene.add(rim);
 
-  const grid = new THREE.GridHelper(600, 60, 0x3a3a3a, 0x262626);
+  let grid = new THREE.GridHelper(600, 60, 0x3a3a3a, 0x262626);
   grid.rotation.x = Math.PI / 2;
   grid.position.z = -0.5;
   scene.add(grid);
+  /** New grid colours: a GridHelper bakes them into its vertices, so the grid is rebuilt in place. */
+  const setGridColors = (major: string, minor: string) => {
+    const next = new THREE.GridHelper(600, 60, major, minor);
+    next.position.copy(grid.position);
+    next.quaternion.copy(grid.quaternion);
+    next.scale.copy(grid.scale);
+    scene.remove(grid);
+    grid.geometry.dispose();
+    (grid.material as THREE.Material).dispose();
+    grid = next;
+    scene.add(grid);
+  };
 
   const root = new THREE.Group();
   const overlay = new THREE.Group();
@@ -346,6 +385,12 @@ export function createScene(container: HTMLElement): SceneHandle {
     onFrame,
     manual,
     renderOnce: () => renderOnce(1 / 30),
+    setTheme: (theme) => {
+      scene.background = new THREE.Color(theme.background);
+      setGridColors(theme.grid, theme.gridMinor);
+      themeColors(theme);
+      renderOnce(1 / 30);
+    },
     dispose: () => {
       cancelAnimationFrame(raf);
       ro.disconnect();

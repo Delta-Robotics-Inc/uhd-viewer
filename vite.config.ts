@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +25,7 @@ const withRealPath = (path: string) => {
 // ?bundle=<url> or the bundle `uhd-viewer serve` injects, with relative asset
 // URLs so it can be served from any path. The library build is vite.lib.config.ts.
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: command === "build" ? "./" : "/",
   define: { __DEFAULT_BUNDLE__: JSON.stringify(command === "build" ? null : `/@fs${defaultBundle}`) },
   resolve: {

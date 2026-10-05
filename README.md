@@ -47,10 +47,11 @@ To open a particular view, pass URL parameters:
 | `grounds` | `1` | Draws ground links as wires rather than symbols. |
 | `scenario` | `o4-on-vbat`, `frame-20mm-stack`, `gps-on-rx-uart`, `two-compasses`, `legacy-m10q` | Loads a fault or variant scenario. |
 | `panel` | `checks` | Opens the system checks panel. The hierarchy panel opens by default, except in a view narrower than 760 px (a VS Code panel beside an editor), where the panel and the 3D inspector start closed. |
-| `labels` | `1` | Shows the 3D callout labels from the start (off by default: on a small view they hide the model; the 3D toolbar's **Labels** turns them on). |
+| `labels` | `1` | Shows the 3D callout labels from the start (off by default: on a small view they hide the model; the 3D toolbar's labels button turns them on). |
 | `select` | `node:gnss`, `link:m1_phases` | Selects a module or link. |
 | `pair` | `gnss_uart` | Opens the pair view for a link. |
 | `select` | `node::sda` | A board net is selected by its path (`:<net>`). |
+| `theme` | `light`, `system`, `vscode` | The standalone app's theme (default: the viewer's own dark theme). |
 
 Clicking a link's label selects it; on a bundle (`2 LINKS`, a harness's
 lanes) it also opens or closes it, as its +/− box does.
@@ -124,12 +125,62 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/layout/layout.ts` | Node boxes, port placement, routing, segment separation, and label placement. |
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
-| `src/chrome/Chrome.tsx` | Header, activity bar, inspector, toolbar, and legend. |
+| `src/chrome/Chrome.tsx` | The inspector (selection, hierarchy, system checks) and a module's context menu. |
+| `src/viewer/` | The viewer's state (`controller.tsx`: `UhdViewer`, `useViewer`), its views (`views.tsx`: `DiagramCanvas`, `Scene3D`, `ViewerInspector`, toolbar, legend) and `renderViewer` (`mount.tsx`, the host channel). |
+| `src/ui/` | Primitives: `Toolbar`, `IconButton`, `ToggleGroup`, `Legend`, `InspectorPanel` and friends, `ScrollArea` (Radix), the tooltip layer. |
+| `src/theme/` | The theme-token contract (`tokens.ts`), the default themes, the adapters (default, VS Code), `ThemeProvider`. |
+| `src/app/` | The plain standalone app: its chrome (header, activity rail), `App.tsx` and `main.tsx`. |
+| `src/styles/` | `index.css` (Tailwind 4 layers), `theme.css` (default tokens, generated), `tailwind-theme.css`, `app.css` (the viewer's rules, on tokens), `ui.css`. |
 | `src/api.ts` | The host contract: `ViewerOptions`, `ViewerLayout`, `ViewerHandle`, host messages and events. |
 | `src/host/` | The host message channel: checking messages and origins, the parent-window channel, what a focus or select names on the model. |
 | `src/source/source.ts` | Bundle loading and the default artifact resolver. |
-| `src/main.tsx`, `src/lib.tsx` | The standalone app's entry and the library entry (`mountViewer`). |
+| `src/lib.tsx`, `src/components.ts` | The library entries: `mountViewer` (the app in an element) and the component library. |
 | `bin/` | `uhd-viewer serve` (`serve.mjs` holds the server). |
+
+## Component library and theming (PB-909, PB-900)
+
+The package is a component library and a plain app built from it
+(protoboard-cli `docs/specs/viewer-stack.md` has the whole stack):
+
+- `@deltarobotics/uhd-viewer` (`mountViewer`): the standalone app in an element, everything bundled.
+- `@deltarobotics/uhd-viewer/components` (+ `/components.css`): the views as React components, with
+  React, Three, React Flow, Radix and Lucide left to the host. No app chrome.
+- `@deltarobotics/uhd-viewer/tailwind-theme.css`: the Tailwind 4 theme for a host's own build.
+
+```tsx
+import { ThemeProvider, UhdViewer, DiagramCanvas, ViewerInspector, vscodeThemeAdapter } from "@deltarobotics/uhd-viewer/components";
+import "@deltarobotics/uhd-viewer/components.css";
+
+<ThemeProvider adapter={vscodeThemeAdapter()}>
+  <UhdViewer bundleUrl="/uhd-bundle.json">
+    <DiagramCanvas />
+    <ViewerInspector />
+  </UhdViewer>
+</ThemeProvider>;
+```
+
+`renderViewer(element, options, Shell)` mounts a shell of the host's own with
+the same handle and host messages as `mountViewer`.
+
+**Theming.** Every colour, surface, shadow and face is a semantic token, read
+as a CSS variable `--uhd-<name>` (`src/theme/tokens.ts`: surfaces, text,
+borders, accents, domains, signals, DRC and severity, focus and selection,
+scrollbars, the 3D scene, shape and type). A theme gives the tokens values;
+an adapter says which theme applies and when it changes:
+
+| Adapter | What |
+| --- | --- |
+| `defaultThemeAdapter("dark" \| "light" \| "system")` | The viewer's neutral themes (dark is the default look). |
+| `vscodeThemeAdapter()` | Maps every token onto the `--vscode-*` variables of a webview and follows VS Code's colour theme, high contrast included. |
+| `staticTheme(defineTheme(defaultDark, { id, label, tokens: { accent } }))` | A host's own theme: change the accent (tint and glow follow) or any token. |
+
+`mountViewer` takes the same as `theme` (`"dark"`, `"light"`, `"system"`,
+`"vscode"`, a theme or an adapter). DRC and severity colours are the same in
+every theme. No brand colour is in this package.
+
+Styles are Tailwind 4 (no Preflight; everything in cascade layers, so a host
+page's own rules win). Scroll containers are Radix ScrollAreas with thin,
+auto-hiding, themed scrollbars; toolbars are icon buttons with tooltips.
 
 ## 3D view (PB-775)
 

@@ -82,6 +82,8 @@ export interface LoadedSource {
   /** Findings from the bundle's producer (e.g. ProtoBoard's aggregated check). */
   hostDiagnostics: UhdBundleDiagnostic[];
   display: DisplayConfig;
+  /** The bundle as loaded (for host views that read more of it than the viewer draws). */
+  bundle: UhdBundle;
 }
 
 export interface SourceOptions {
@@ -152,6 +154,7 @@ export function sourceFromBundle(bundle: UhdBundle, url: string, options: Source
     resolveArtifact: host ? (definitionId, filePath) => host(definitionId, filePath, fallback) : fallback,
     hostDiagnostics: bundle.diagnostics ?? [],
     display: (bundle.display ?? {}) as DisplayConfig,
+    bundle,
   };
 }
 

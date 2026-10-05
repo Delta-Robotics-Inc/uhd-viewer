@@ -47,7 +47,7 @@ import {
 } from "./geometry";
 import { Icon } from "./Icon";
 import type { LinkLayout } from "../layout/layout";
-import type { Live } from "../App";
+import type { Live } from "../viewer/controller";
 import { GRID } from "../layout/router";
 
 export type Detail = "basic" | "ribbon";
@@ -560,7 +560,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
           width={horiz ? 8 : len}
           height={horiz ? len : 8}
           rx={3}
-          fill="var(--canvas-bg)"
+          fill="var(--uhd-canvas)"
           stroke={color}
           strokeWidth={1.3}
         />
@@ -573,7 +573,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
 
   const endMark = (s: number, key: string) => {
     const { p } = at(geo.P, s);
-    return <rect key={key} x={p[0] - 4} y={p[1] - 4} width={8} height={8} rx={1} fill="var(--canvas-bg)" stroke={color} strokeWidth={1.5} />;
+    return <rect key={key} x={p[0] - 4} y={p[1] - 4} width={8} height={8} rx={1} fill="var(--uhd-canvas)" stroke={color} strokeWidth={1.5} />;
   };
 
   const toggle = (b: ToggleBox) => {
@@ -587,7 +587,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
     const g: Pt = [p[0] + nrm[0] * b.glyph, p[1] + nrm[1] * b.glyph];
     return (
       <g key={b.key} className="link-toggle-box nodrag nopan" style={{ cursor: "pointer", pointerEvents: "all" }} {...slider("label", b.onClick)}>
-        <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} rx={4} fill="var(--canvas-bg)" stroke={color} strokeWidth={b.depth ? 1.2 : 1.5} />
+        <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} rx={4} fill="var(--uhd-canvas)" stroke={color} strokeWidth={b.depth ? 1.2 : 1.5} />
         <path
           d={b.open ? `M${g[0] - 3.5},${g[1]} h7` : `M${g[0] - 3.5},${g[1]} h7 M${g[0]},${g[1] - 3.5} v7`}
           stroke={color}
@@ -649,9 +649,9 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
       <title>{kind === "pin" ? "Pinned waypoint: drag to move, double-click to release" : "Drag to pin a waypoint here"}</title>
       <circle cx={p[0]} cy={p[1]} r={9} fill="transparent" />
       {kind === "pin" ? (
-        <rect x={p[0] - 4.5} y={p[1] - 4.5} width={9} height={9} rx={2} fill="var(--brand)" stroke="var(--canvas-bg)" strokeWidth={1.5} />
+        <rect x={p[0] - 4.5} y={p[1] - 4.5} width={9} height={9} rx={2} fill="var(--uhd-accent)" stroke="var(--uhd-canvas)" strokeWidth={1.5} />
       ) : (
-        <circle cx={p[0]} cy={p[1]} r={4.5} fill="var(--canvas-bg)" stroke="var(--text-muted)" strokeWidth={1.5} />
+        <circle cx={p[0]} cy={p[1]} r={4.5} fill="var(--uhd-canvas)" stroke="var(--uhd-text-muted)" strokeWidth={1.5} />
       )}
     </g>
   );
@@ -660,7 +660,7 @@ export function LinkEdge({ id, data, selected }: EdgeProps<LinkEdgeType>) {
   return (
     <>
       {geo.region && (
-        <path d={geo.region} fill="#ffffff0d" stroke="var(--text-muted)" strokeWidth={1.8} strokeDasharray="0 6" strokeLinecap="round" opacity={faded ? 0.3 : 1} />
+        <path d={geo.region} fill="color-mix(in oklab, var(--uhd-text) 5%, transparent)" stroke="var(--uhd-text-muted)" strokeWidth={1.8} strokeDasharray="0 6" strokeLinecap="round" opacity={faded ? 0.3 : 1} />
       )}
       {selected && <path d={main} className="edge-glow" stroke={color} strokeWidth={geo.ribbonMode ? geo.conductors.length * RIBBON_PITCH + 6 : 8} />}
       {geo.ribbonMode && (
