@@ -4,6 +4,7 @@ import type { ViewNode } from "../model/types";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import { Icon } from "./Icon";
 import { Port } from "./Port";
+import { cardInsets, chipText, fitChips, sideLabelWidth } from "../layout/card-body";
 
 export interface NodeData extends Record<string, unknown> {
   node: ViewNode;
@@ -45,7 +46,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   const perSide = (side: string) => ports.filter((q) => q.side === side).length;
   const widthFor = (p: PlacedPort) =>
     p.side === "left" || p.side === "right"
-      ? Math.max(40, box.w / 2 - 54)
+      ? sideLabelWidth(box.w)
       : Math.max(30, Math.min(84, (box.w - 32) / (perSide(p.side) + 1) - 4));
   return (
     <>
@@ -72,18 +73,21 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   );
 }
 
-function PortGroups({ groups, mode }: { groups: PortGroup[]; mode: Classification }) {
-  if (!groups.length) return null;
-  const shown = groups.slice(0, 4);
-  const rest = groups.slice(4).reduce((n, g) => n + g.count, 0);
+function PortGroups({ shown, rest, all, mode }: { shown: PortGroup[]; rest: number; all: PortGroup[]; mode: Classification }) {
+  if (!shown.length && !rest) return null;
+  const folded = all.slice(shown.length);
   return (
     <div className="port-groups">
       {shown.map((g) => (
         <span key={g.protocol} className="port-group" style={{ borderColor: colorFor({ domain: g.domain, protocol: g.protocol }, mode) }}>
-          {g.protocol.replace(/_/g, " ").toUpperCase()} ×{g.count}
+          {chipText(g)}
         </span>
       ))}
-      {rest > 0 && <span className="port-group muted">+{rest}</span>}
+      {rest > 0 && (
+        <span className="port-group muted" title={folded.map(chipText).join(" · ")}>
+          +{rest}
+        </span>
+      )}
     </div>
   );
 }
@@ -91,6 +95,9 @@ function PortGroups({ groups, mode }: { groups: PortGroup[]; mode: Classificatio
 export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
   const { node, box } = data;
   const circle = node.shape === "circle";
+  // the body sits between the rows of labels of the ports on the top and bottom edges
+  const insets = cardInsets(data.ports.map((p) => ({ side: p.side, name: p.port.name })), box.w);
+  const chips = circle ? { shown: [], rest: 0 } : fitChips(node.label, box, data.groups, insets);
   return (
     <div
       className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}`}
@@ -98,10 +105,10 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
       title={node.description}
     >
       <span className="status-dot" style={{ background: STATUS[node.status] }} />
-      <div className="module-body">
+      <div className="module-body" style={circle ? undefined : { padding: `${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px` }}>
         <Icon name={node.icon} size={circle ? 18 : 22} strokeWidth={1.6} />
         <div className="module-title">{node.label}</div>
-        {!circle && <PortGroups groups={data.groups} mode={data.mode} />}
+        {!circle && <PortGroups shown={chips.shown} rest={chips.rest} all={data.groups} mode={data.mode} />}
       </div>
       <Ports data={data} labels={!circle} border={2} />
     </div>
