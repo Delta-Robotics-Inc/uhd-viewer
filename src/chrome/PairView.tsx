@@ -16,7 +16,7 @@ interface Endpoints {
 }
 
 /** True endpoints of a link, joining harness segments back together. */
-function endpointsOf(vm: ViewModel, link: ViewLink): Endpoints {
+export function pairEnds(vm: ViewModel, link: ViewLink): Endpoints {
   if (!link.segment) return { a: link.source, b: link.target };
   const first = vm.links.find((l) => l.linkId === link.linkId && l.segment === "a")!;
   const second = vm.links.find((l) => l.linkId === link.linkId && l.segment === "b")!;
@@ -27,14 +27,14 @@ const ROW = 22;
 const HEAD = 30;
 
 export function PairView({ vm, link, mode, onClose }: { vm: ViewModel; link: ViewLink; mode: Classification; onClose: () => void }) {
-  const { a, b } = endpointsOf(vm, link);
+  const { a, b } = pairEnds(vm, link);
   const nodeA = vm.nodes.find((n) => n.id === a.node);
   const nodeB = vm.nodes.find((n) => n.id === b.node);
   if (!nodeA || !nodeB) return null;
 
   const between = vm.links
     .filter((l) => !l.passThrough && l.segment !== "b")
-    .map((l) => ({ link: l, ends: endpointsOf(vm, l) }))
+    .map((l) => ({ link: l, ends: pairEnds(vm, l) }))
     .filter(({ ends }) => (ends.a.node === nodeA.id && ends.b.node === nodeB.id) || (ends.a.node === nodeB.id && ends.b.node === nodeA.id))
     .map(({ link: l, ends }) => (ends.a.node === nodeA.id ? { link: l, aPort: ends.a.port, bPort: ends.b.port, flipped: false } : { link: l, aPort: ends.b.port, bPort: ends.a.port, flipped: true }));
 
@@ -135,6 +135,79 @@ export function PairView({ vm, link, mode, onClose }: { vm: ViewModel; link: Vie
         </div>
         </ScrollArea>
       </div>
+    </div>
+  );
+}
+
+const PREVIEW_ROWS = 6;
+
+/**
+ * The pair a link joins, small, for the inspector: the two modules and the
+ * link's conductors from one to the other (a crossover crosses). `onOpen`
+ * opens the full pair view.
+ */
+export function PairPreview({ vm, link, mode, onOpen }: { vm: ViewModel; link: ViewLink; mode: Classification; onOpen: () => void }) {
+  const { a, b } = pairEnds(vm, link);
+  const nodeA = vm.nodes.find((n) => n.id === a.node);
+  const nodeB = vm.nodes.find((n) => n.id === b.node);
+  if (!nodeA || !nodeB) return null;
+  const color = colorFor(link, mode);
+  const rows = link.children.slice(0, PREVIEW_ROWS);
+  const more = link.children.length - rows.length;
+  // B's rows in B's own slot order, so a crossover (TX → RX) draws as a crossing
+  const slotOrder = nodeB.ports.find((p) => p.id === b.port)?.children.map((c) => c.slotId) ?? [];
+  const rank = (slot: string) => (slotOrder.indexOf(slot) >= 0 ? slotOrder.indexOf(slot) : slotOrder.length);
+  const bRows = [...rows].sort((p, q) => rank(p.b) - rank(q.b) || p.b.localeCompare(q.b));
+  const portName = (node: ViewNode, id: string) => node.ports.find((p) => p.id === id)?.name ?? id;
+  const ROW_H = 18;
+  const height = Math.max(1, rows.length) * ROW_H;
+  return (
+    <div className="pair-preview mt-2 mb-1 rounded-panel border border-line bg-sunken p-2 outline outline-1 -outline-offset-1 outline-contrast">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate font-label text-[10px] tracking-[0.08em] text-fg-muted">
+          {nodeA.label.toUpperCase()} <span className="text-fg-faint">↔</span> {nodeB.label.toUpperCase()}
+        </span>
+        <IconButton icon="git-compare-arrows" size="sm" label="Open the pair view: every link between these two modules" onClick={onOpen} />
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] items-start font-code text-[10px]">
+        <div className="min-w-0">
+          <div className="truncate pb-1 text-fg" title={portName(nodeA, a.port)}>{portName(nodeA, a.port)}</div>
+          {rows.map((c) => (
+            <div key={c.id} className="flex h-[18px] items-center justify-end gap-1 truncate pr-1.5 text-fg-muted">
+              <span className="truncate">{c.a.toUpperCase()}</span>
+              {c.aPin && <span className="text-fg-faint">{c.aPin}</span>}
+            </div>
+          ))}
+        </div>
+        <svg width="56" height={height + 18} viewBox={`0 0 56 ${height + 18}`} aria-hidden className="overflow-visible">
+          {rows.length === 0 ? (
+            <line x1={2} x2={54} y1={9} y2={9} stroke={color} strokeWidth={2.5} />
+          ) : (
+            rows.map((c, i) => {
+              const j = bRows.indexOf(c);
+              const y1 = 18 + i * ROW_H + ROW_H / 2;
+              const y2 = 18 + j * ROW_H + ROW_H / 2;
+              return (
+                <g key={c.id}>
+                  <path d={`M 2 ${y1} C 28 ${y1}, 28 ${y2}, 54 ${y2}`} stroke={color} strokeWidth={1.5} fill="none" />
+                  <circle cx={2} cy={y1} r={2} fill={color} />
+                  <circle cx={54} cy={y2} r={2} fill={color} />
+                </g>
+              );
+            })
+          )}
+        </svg>
+        <div className="min-w-0">
+          <div className="truncate pb-1 text-right text-fg" title={portName(nodeB, b.port)}>{portName(nodeB, b.port)}</div>
+          {bRows.map((c) => (
+            <div key={c.id} className="flex h-[18px] items-center gap-1 truncate pl-1.5 text-fg-muted">
+              {c.bPin && <span className="text-fg-faint">{c.bPin}</span>}
+              <span className="truncate">{c.b.toUpperCase()}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {more > 0 && <div className="pt-1 text-center font-code text-[10px] text-fg-faint">+{more} more in the pair view</div>}
     </div>
   );
 }

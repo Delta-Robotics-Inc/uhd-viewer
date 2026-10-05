@@ -18,6 +18,7 @@ import type { CadSelection } from "../cad/CadView";
 import { defAt } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
+import { pairEnds } from "../chrome/PairView";
 import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "../host/targets";
 
 
@@ -108,6 +109,8 @@ export interface HostLink {
   artifact: boolean;
   /** The host opens modules on their own (double-click), `onOpenModule`. */
   module?: boolean;
+  /** The host shows the pair view (instead of the viewer's own over the diagram). */
+  pair?: boolean;
 }
 
 /** Loads the UHD bundle (the viewer's only input): the source once loaded, or why not. */
@@ -263,7 +266,14 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     setLinkEdits((e) => ({ ...e, [levelKey]: {} }));
   }, [levelKey]);
   const defFor = useCallback((id?: string) => (id ? scenario.lookup(id) : undefined), [scenario]);
-  const onPair = useCallback((l: ViewLink) => setPairLink(l.linkId), []);
+  const onPair = useCallback(
+    (l: ViewLink) => {
+      if (!host?.pair) return setPairLink(l.linkId);
+      const ends = pairEnds(vm, l);
+      host.emit({ type: "uhd-viewer:openPair", linkId: fullId(drill, l.linkId), a: fullId(drill, ends.a.node), b: fullId(drill, ends.b.node) });
+    },
+    [host, vm, drill],
+  );
   // a finding or a board drawing can lead to another level: open it, then select there
   const onGoto = useCallback((g: Goto) => {
     setDrill((d) => (d.join("/") === g.drill.join("/") ? d : g.drill));

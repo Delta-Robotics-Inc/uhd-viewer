@@ -30,6 +30,8 @@ import {
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
 import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
+import { planStack } from "./explode";
+import { exitByRays, sampleStackPart, surrounded, type SampledPart } from "./explodeSample";
 import { Icon } from "../canvas/Icon";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
 import { ScrollArea } from "../ui/ScrollArea";
@@ -133,7 +135,11 @@ interface BodyRec {
    * enclosure's back and lid). Exploding moves each away from the largest
    * along the line between their centres (`dir`, in the node's own glTF space).
    */
-  parts: { obj: THREE.Object3D; base: THREE.Vector3; dir: THREE.Vector3; cadDir: THREE.Vector3; cadBox: THREE.Box3; volume: number; travel: THREE.Vector3 }[];
+  /**
+   * Named bodies of one artifact that come apart: `clear` is how far (CAD
+   * mm) one must go along `cadDir` before it is out of the fixed body's box.
+   */
+  parts: { obj: THREE.Object3D; base: THREE.Vector3; cadDir: THREE.Vector3; cadBox: THREE.Box3; clear: number; volume: number; travel: THREE.Vector3; toLocal?: THREE.Matrix3 }[];
   materials: THREE.MeshStandardMaterial[];
 }
 
@@ -209,6 +215,8 @@ export function CadView({
   const [settled, setSettled] = useState(false);
   const [direction, setDirection] = useState<Direction>((params.get("dir") as Direction) ?? "feature");
   const [exploded, setExploded] = useState(explode.current.target === 1);
+  /** The camera's move while the model comes apart or together: from where it was to a fit of where it ends. */
+  const cameraTween = useRef<{ from: [THREE.Vector3, THREE.Vector3]; to: [THREE.Vector3, THREE.Vector3]; start: number } | null>(null);
   // off unless asked for (?labels=1, or the toolbar): on a small view the callouts hide the model (PB-861)
   const [showLabels, setShowLabels] = useState(params.get("labels") === "1");
   const [labelKinds, setLabelKinds] = useState<Set<LabelKind>>(new Set((params.get("labelkinds") ?? "module,harness").split(",") as LabelKind[]));
@@ -304,7 +312,9 @@ export function CadView({
     let count = 0;
     const loads: Promise<unknown>[] = [];
     setSettled(false);
+    stackPlan.current = null;
     const bump = () => {
+      stackPlan.current = null;
       count++;
       if (!cancelled) setLoaded(count);
     };
@@ -359,14 +369,22 @@ export function CadView({
         if (parts && node(parts.fixed)) {
           const centreOf = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
           const c0 = centreOf(node(parts.fixed)!);
+          const fixedBox = new THREE.Box3().setFromObject(node(parts.fixed)!);
+          /** The extent of a box along a direction: [lowest, highest] projection of its corners. */
+          const along = (b: THREE.Box3, d: THREE.Vector3) => {
+            const xs = [b.min.x, b.max.x].map((x) => x * d.x);
+            const ys = [b.min.y, b.max.y].map((y) => y * d.y);
+            const zs = [b.min.z, b.max.z].map((z) => z * d.z);
+            return [Math.min(...xs) + Math.min(...ys) + Math.min(...zs), Math.max(...xs) + Math.max(...ys) + Math.max(...zs)];
+          };
           for (const n of parts.moving) {
             const part = node(n);
             if (!part) continue;
             const d = centreOf(part).sub(c0).normalize();
             const cadBox = new THREE.Box3().setFromObject(part);
             const sz = cadBox.getSize(new THREE.Vector3());
-            // CAD (x, y, z) mm → the node's glTF space (x, z, −y) m
-            rec.parts.push({ obj: part, base: part.position.clone(), dir: new THREE.Vector3(d.x, d.z, -d.y).divideScalar(1000), cadDir: d, cadBox, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
+            const clear = Math.max(0, along(fixedBox, d)[1] - along(cadBox, d)[0]);
+            rec.parts.push({ obj: part, base: part.position.clone(), cadDir: d, cadBox, clear, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
           }
         }
         obj.add(w);
@@ -437,105 +455,118 @@ export function CadView({
     };
   }, [model]);
 
-  // ---- explode: animate each body along the mate that placed it --------------
+  // ---- explode: each body up the stack, or along the mate that placed it ------
   useEffect(() => {
     explode.current.target = exploded ? 1 : 0;
   }, [exploded]);
 
-  /**
-   * Bodies held inside a shell by a display placement (a board, a cell in a
-   * case: no mate places them, so no mate says which way they come out).
-   * Each comes out along the shell's opening — the direction its lid moves
-   * when exploded, else the shell's up — ranked by depth along it, so the
-   * stack separates in assembly order. Keyed by body key.
-   */
   /** Explode step at "exploded" (mm): a small assembly (a board in its enclosure) comes apart in proportion to its size. */
   const explodeScale = () => {
     const size = assembledBounds().getSize(new THREE.Vector3()).length();
     return EXPLODE_MM * (size > 0 && size < 120 ? Math.max(0.3, size / 120) : 1);
   };
-  const explodeStack = () => {
-    const out = new Map<string, { container: string; axis: THREE.Vector3; axisLocal: THREE.Vector3; along: number; lid: number }>();
-    const step = explodeScale() * 0.8;
-    const recs = [...bodies.current.values()].filter((r) => !r.box.isEmpty());
-    const world = new Map(recs.map((r) => [r, r.box.clone().applyMatrix4(r.base)]));
-    const volume = (b: THREE.Box3) => {
-      const v = b.getSize(new THREE.Vector3());
-      return v.x * v.y * v.z;
-    };
-    /** The span of a body along an axis. */
-    const span = (r: BodyRec, axis: THREE.Vector3): [number, number] => {
-      const b = world.get(r)!;
-      const c = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).dot(axis));
-      return [Math.min(...c), Math.max(...c)];
-    };
-    // the shell holding a placed body: the smallest body a mate (or the root) places whose bounds hold its centre
-    const groups = new Map<BodyRec, BodyRec[]>();
-    for (const r of recs) {
-      if (r.body.via || !r.body.hint) continue;
-      const c = world.get(r)!.getCenter(new THREE.Vector3());
-      const shell = recs
-        .filter((o) => o !== r && !o.body.hint && world.get(o)!.containsPoint(c) && volume(world.get(o)!) > volume(world.get(r)!))
-        .sort((a, b) => volume(world.get(a)!) - volume(world.get(b)!))[0];
-      if (shell) groups.set(shell, [...(groups.get(shell) ?? []), r]);
+  /**
+   * The exploded stack (PB-899): how far each part rises along the model's up
+   * direction, by assembly order (./explode.ts). A part placed by a mate
+   * across that direction (a camera on the front) comes off along its mate
+   * instead. Planned once per loaded model, in the assembled pose.
+   */
+  const stackPlan = useRef<{ rise: Map<string, number>; partKeys: Map<string, string> } | null>(null);
+  const upRef = useRef(new THREE.Vector3(0, 0, 1));
+  const planStacks = () => {
+    if (stackPlan.current) return stackPlan.current;
+    const h = handle.current;
+    const axis = upRef.current.clone().normalize();
+    const partKeys = new Map<string, string>();
+    if (!h || !model) return { rise: new Map<string, number>(), partKeys };
+    // the assembled pose
+    for (const rec of bodies.current.values()) {
+      rec.obj.matrix.copy(rec.base);
+      for (const part of rec.parts) part.obj.position.copy(part.base);
     }
-    for (const [shell, held] of groups) {
-      const cover = [...shell.parts].sort((a, b) => b.volume - a.volume)[0];
-      const axisLocal = cover ? cover.cadDir.clone() : new THREE.Vector3(0, 0, 1);
-      const axis = axisLocal.clone().transformDirection(shell.base);
-      const depth = (r: BodyRec) => world.get(r)!.getCenter(new THREE.Vector3()).dot(axis);
-      // deepest first: each comes out past the shell's opening and the one before it, keeping their order
-      held.sort((a, b) => depth(a) - depth(b) || a.body.key.localeCompare(b.body.key));
-      let floor = span(shell, axis)[1] + step;
-      for (const r of held) {
-        const [lo, hi] = span(r, axis);
-        const along = Math.max(step, floor - lo);
-        out.set(r.body.key, { container: shell.body.key, axis, axisLocal, along, lid: 0 });
-        floor = hi + along + step;
+    h.root.updateMatrixWorld(true);
+    // a named body moves in its parent's space (the GLB's own nodes may turn and scale it)
+    for (const rec of bodies.current.values())
+      for (const part of rec.parts) if (part.obj.parent) part.toLocal = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().copy(part.obj.parent.matrixWorld).invert());
+    const along = (rec: BodyRec) => {
+      const mate = rec.body.via ? model.assembly.mates.find((m) => m.linkId === rec.body.via) : undefined;
+      if (!mate) return true;
+      const keyOf = (end: MateEdge["a"]) => end.path.join("/") + (end.frame.artifact ? `#${end.frame.artifact}` : "");
+      const parentEnd = keyOf(mate.b) === rec.body.key ? mate.a : mate.b;
+      const parent = bodies.current.get(keyOf(parentEnd));
+      const n = new THREE.Vector3(...parentEnd.frame.normal).transformDirection(parent?.base ?? rec.base);
+      return Math.abs(n.dot(axis)) > 0.9;
+    };
+    const elements: { key: string; objects: THREE.Object3D[]; skip: Set<THREE.Object3D> }[] = [];
+    for (const rec of bodies.current.values()) {
+      if (rec.box.isEmpty() || !along(rec)) continue;
+      const moving = rec.parts.filter((p) => Math.abs(p.cadDir.clone().transformDirection(rec.base).dot(axis)) > 0.7);
+      elements.push({ key: rec.body.key, objects: [rec.obj], skip: new Set(moving.map((p) => p.obj)) });
+      for (const p of moving) {
+        const key = `${rec.body.key}::${p.obj.name}`;
+        partKeys.set(key, rec.body.key);
+        elements.push({ key, objects: [p.obj], skip: new Set() });
       }
-      out.set(shell.body.key, { container: shell.body.key, axis, axisLocal, along: 0, lid: floor - span(shell, axis)[1] });
     }
-    return out;
+    const parts = elements.map((e) => sampleStackPart(e.key, e.objects, e.skip, axis)).filter((p): p is SampledPart => Boolean(p));
+    const byKey = new Map(parts.map((p) => [p.key, p]));
+    const rise = planStack(parts, {
+      gap: explodeScale(),
+      surrounds: (holder, part) => surrounded(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+      exit: (holder, part) => exitByRays(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+    });
+    stackPlan.current = { rise, partKeys };
+    return stackPlan.current;
   };
   const applyExplode = useMemo(() => {
     return (e: number) => {
       if (!model) return;
       const E = e * explodeScale();
-      const stack = explodeStack();
-      // a shell's lid (the moving named body along the stack axis) clears everything held inside
-      for (const rec of bodies.current.values()) {
-        const inside = stack.get(rec.body.key);
-        for (const part of rec.parts) {
-          const k = inside?.lid && part.cadDir.dot(inside.axisLocal) > 0.7 ? Math.max(2.2, inside.lid / explodeScale()) : 2.2;
-          part.travel.copy(part.cadDir).transformDirection(rec.base).multiplyScalar(E * k);
-          part.obj.position.copy(part.base).addScaledVector(part.dir, E * k);
-        }
-      }
+      // assembled: nothing to plan (the plan samples every loaded body, so it waits until something comes apart)
+      const plan = e > 0 ? planStacks() : { rise: new Map<string, number>(), partKeys: new Map<string, string>() };
+      const axis = upRef.current.clone().normalize();
+      const keyOf = (end: MateEdge["a"]) => end.path.join("/") + (end.frame.artifact ? `#${end.frame.artifact}` : "");
       /** Travel of the named body of `rec` that holds a point (body-local CAD coordinates), if one moves. */
       const partTravel = (rec: BodyRec | undefined, local: THREE.Vector3) => {
         const part = rec?.parts.find((p) => p.cadBox.clone().expandByScalar(1).containsPoint(local));
         return part ? part.travel.clone() : new THREE.Vector3();
       };
-      const keyOf = (end: MateEdge["a"]) => end.path.join("/") + (end.frame.artifact ? `#${end.frame.artifact}` : "");
+      // stacked bodies rise along up; the rest come off along the mate that placed them, after their parent
       for (const b of model.bodies) {
         const rec = bodies.current.get(b.key);
         if (!rec) continue;
         rec.offset.set(0, 0, 0);
+        const rise = plan.rise.get(b.key);
+        if (rise !== undefined) rec.offset.copy(axis).multiplyScalar(rise * e);
+      }
+      for (const b of model.bodies) {
+        const rec = bodies.current.get(b.key);
+        if (!rec || plan.rise.has(b.key)) continue;
         const mate = model.assembly.mates.find((m) => m.linkId === b.via);
-        const held = stack.get(b.key);
         if (mate && E) {
           const parentEnd = keyOf(mate.b) === b.key ? mate.a : mate.b;
           const parent = bodies.current.get(keyOf(parentEnd));
           const n = new THREE.Vector3(...parentEnd.frame.normal).transformDirection(parent?.base ?? rec.base);
           // parts on a shaft (props, pulleys) travel further so they clear what drives them
           const onShaft = [mate.a.iface, mate.b.iface].some((i) => i.protocols?.some((p) => p.type === "shaft"));
-          const k = onShaft ? 1.6 : 1;
-          // a part seated in a shell's lid goes with the lid, then off it
-          rec.offset.copy(parent?.offset ?? new THREE.Vector3()).add(partTravel(parent, new THREE.Vector3(...parentEnd.frame.origin))).addScaledVector(n, E * k);
-        } else if (held && E) {
-          // held inside a shell by a display placement (no mate): out along the shell's opening, in stacking order
-          rec.offset.copy(bodies.current.get(held.container)?.offset ?? new THREE.Vector3()).addScaledVector(held.axis, (E / explodeScale()) * held.along);
+          rec.offset.copy(parent?.offset ?? new THREE.Vector3()).addScaledVector(n, E * (onShaft ? 1.6 : 1));
         }
+      }
+      // named bodies of one artifact (an enclosure's lid): up the stack, or apart along the line between their centres
+      for (const rec of bodies.current.values()) {
+        for (const part of rec.parts) {
+          const rise = plan.rise.get(`${rec.body.key}::${part.obj.name}`);
+          if (rise !== undefined) part.travel.copy(axis).multiplyScalar(rise * e).sub(rec.offset);
+          // off the stack (a plunger through a side wall): out of its bore, just clear of the body, and no further
+          else part.travel.copy(part.cadDir).transformDirection(rec.base).multiplyScalar(part.clear * e + E * 0.35);
+          // world travel (mm) → the node's parent's space
+          part.obj.position.copy(part.base);
+          if (part.toLocal && e > 0) part.obj.position.add(part.travel.clone().applyMatrix3(part.toLocal));
+        }
+      }
+      for (const b of model.bodies) {
+        const rec = bodies.current.get(b.key);
+        if (!rec) continue;
         rec.obj.matrix.copy(new THREE.Matrix4().makeTranslation(rec.offset).multiply(rec.base));
         rec.obj.matrixWorldNeedsUpdate = true;
       }
@@ -581,6 +612,16 @@ export function CadView({
         ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
         const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
         applyExplode(eased);
+        const cam = cameraTween.current;
+        if (cam) {
+          // the camera's share of the way, on the same curve as the parts
+          const k = Math.abs(ex.target - cam.start) > 0 ? Math.min(1, Math.abs(ex.value - cam.start) / Math.abs(ex.target - cam.start)) : 1;
+          const t = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+          h.camera.position.lerpVectors(cam.from[0], cam.to[0], t);
+          h.controls.target.lerpVectors(cam.from[1], cam.to[1], t);
+          h.camera.lookAt(h.controls.target);
+          if (ex.value === ex.target) cameraTween.current = null;
+        }
       }
       const size = h.renderer.getSize(new THREE.Vector2());
       labelsRef.current?.update(h.camera, size.x, size.y, dt);
@@ -725,7 +766,12 @@ export function CadView({
   /** Bounds of the model as drawn now (exploded or not). */
   const currentBounds = () => {
     const box = new THREE.Box3();
-    for (const rec of bodies.current.values()) if (!rec.box.isEmpty()) box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
+    for (const rec of bodies.current.values()) {
+      if (rec.box.isEmpty()) continue;
+      box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
+      // its named bodies where they went (a lid lifted off)
+      for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrix).translate(part.travel));
+    }
     return box;
   };
   /** Where the section plane cuts `box` (the assembled bounds), and which side it keeps (flip: the + side). */
@@ -1009,6 +1055,10 @@ export function CadView({
   // ---- camera helpers and the capture API ---------------------------------------
   /** The direction drawn up (a display hint; default +z) and the rotation from +z to it. */
   const upVec = useMemo(() => new THREE.Vector3(...(display.view?.up ?? [0, 0, 1])).normalize(), [source]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!upRef.current.equals(upVec)) {
+    upRef.current = upVec.clone();
+    stackPlan.current = null;
+  }
   const upQuat = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), upVec), [upVec]);
   /** Unit vector from the target to the camera for an azimuth and elevation about `up`. */
   const viewDir = (azimuthDeg: number, elevationDeg: number) => {
@@ -1052,6 +1102,34 @@ export function CadView({
     }
     const target = c.clone().addScaledVector(right, d * tanH * panel);
     orbit(azimuthDeg, elevationDeg, d, target);
+  };
+  /** Fit what is drawn now, from where the camera looks. */
+  const fitAsSeen = () => {
+    const h = handle.current;
+    if (!h) return;
+    const v = h.camera.position.clone().sub(h.controls.target).normalize();
+    const local = v.clone().applyQuaternion(upQuat.clone().invert());
+    fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
+  };
+  /** Explode or assemble, the camera moving with the parts to frame where they end. */
+  const toggleExploded = (on: boolean) => {
+    const h = handle.current;
+    const ex = explode.current;
+    if (h && model && ex.target !== (on ? 1 : 0)) {
+      const from: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
+      const now = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
+      // where it ends: lay the parts out there for a moment, fit, and put everything back
+      applyExplode(on ? 1 : 0);
+      h.root.updateMatrixWorld(true);
+      fitAsSeen();
+      const to: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
+      applyExplode(now);
+      h.camera.position.copy(from[0]);
+      h.controls.target.copy(from[1]);
+      h.camera.lookAt(from[1]);
+      cameraTween.current = { from, to, start: ex.value };
+    }
+    setExploded(on);
   };
   const focus = () => {
     const h = handle.current;
@@ -1178,10 +1256,10 @@ export function CadView({
               tooltipSide="top"
               options={[
                 { id: "assembled", icon: "box", label: "Assembled: every module where its links put it" },
-                { id: "exploded", icon: "layers", label: "Exploded: each module apart along the mate that placed it" },
+                { id: "exploded", icon: "layers", label: "Exploded: apart in assembly order, bottom to top" },
               ]}
               value={exploded ? "exploded" : "assembled"}
-              onChange={(v) => setExploded(v === "exploded")}
+              onChange={(v) => toggleExploded(v === "exploded")}
             />
             <ToolbarSeparator />
             <div className="cad-menu-wrap">
@@ -1234,9 +1312,10 @@ export function CadView({
                         const auto = h ? h.camera.position.getComponent(axis) < h.controls.target.getComponent(axis) : false;
                         setSection({ axis, at: section?.at ?? 0.5, flip: !(section?.flip ?? auto) });
                       }}
-                      title="Keep the other side"
+                      aria-label="Keep the other side"
+                      data-tooltip="Keep the other side"
                     >
-                      FLIP
+                      <Icon name="arrow-up-down" size={13} />
                     </button>
                   </div>
                   <input
@@ -1265,18 +1344,12 @@ export function CadView({
             <ToggleGroup
               label="Interface direction"
               tooltipSide="top"
-              options={DIRECTIONS.map((d) => ({ id: d.id, icon: <span className="font-label text-[11px]">{d.label.split(" ")[0]}</span>, label: `${d.label} · ${d.hint}` }))}
+              options={DIRECTIONS.map((d) => ({ id: d.id, icon: d.icon, label: `Interface geometry by ${d.label.toLowerCase().replace(/^d/, "D")}: ${d.hint}` }))}
               value={direction}
               onChange={setDirection}
             />
             <ToolbarSeparator />
-            <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={() => {
-                const h = handle.current;
-                if (!h) return;
-                const v = h.camera.position.clone().sub(h.controls.target).normalize();
-                const local = v.clone().applyQuaternion(upQuat.clone().invert());
-                fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
-              }} />
+            <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={fitAsSeen} />
             <IconButton icon="crosshair" label="Look along the selected interface's normal" tooltipSide="top" disabled={!sel.body} onClick={focus} />
           </Toolbar>
         )}

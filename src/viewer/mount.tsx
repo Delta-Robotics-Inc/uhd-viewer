@@ -35,7 +35,9 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
     const artifact = Boolean(current.onOpenArtifact || parent);
     // only a host that says it opens modules changes what double-click does
     const module = Boolean(current.onOpenModule);
-    if (!host || host.source !== source || host.artifact !== artifact || host.module !== module) host = { bus, emit, source, artifact, module };
+    // a pair view of the host's own only when the host takes it (a frame's parent keeps the viewer's)
+    const pair = Boolean(current.onOpenPair);
+    if (!host || host.source !== source || host.artifact !== artifact || host.module !== module || Boolean(host.pair) !== pair) host = { bus, emit, source, artifact, module, pair };
     return host;
   };
   const draw = () =>
