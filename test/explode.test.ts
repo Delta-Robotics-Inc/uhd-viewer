@@ -29,7 +29,7 @@ const walls = (r: number, t: number, z: [number, number]): Box[] => [
 const surrounds = (holder: StackPart, p: StackPart) =>
   holder.outline[0] < p.outline[0] - 0.5 && holder.outline[1] > p.outline[1] + 0.5 && holder.outline[2] < p.outline[2] - 0.5 && holder.outline[3] > p.outline[3] + 0.5;
 
-// a bottle with a screw cap (the smart bottle's shape): the cap's skirt reaches below the bottle's lip
+// a generic bottle with a screw cap: the cap's skirt reaches below the bottle's lip
 const bottle = part("bottle", [square(40, [0, 2]), ...walls(40, 2, [0, 220]), ...walls(28, 3, [220, 250])]);
 const lipSeal = part("lip_seal", walls(26, 3, [245, 250]));
 // the skirt screws onto the neck; the electronics sit in the bay above the ceiling

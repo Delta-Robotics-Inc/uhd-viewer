@@ -135,7 +135,11 @@ interface BodyRec {
    * enclosure's back and lid). Exploding moves each away from the largest
    * along the line between their centres (`dir`, in the node's own glTF space).
    */
-  parts: { obj: THREE.Object3D; base: THREE.Vector3; cadDir: THREE.Vector3; cadBox: THREE.Box3; volume: number; travel: THREE.Vector3; toLocal?: THREE.Matrix3 }[];
+  /**
+   * Named bodies of one artifact that come apart: `clear` is how far (CAD
+   * mm) one must go along `cadDir` before it is out of the fixed body's box.
+   */
+  parts: { obj: THREE.Object3D; base: THREE.Vector3; cadDir: THREE.Vector3; cadBox: THREE.Box3; clear: number; volume: number; travel: THREE.Vector3; toLocal?: THREE.Matrix3 }[];
   materials: THREE.MeshStandardMaterial[];
 }
 
@@ -211,6 +215,8 @@ export function CadView({
   const [settled, setSettled] = useState(false);
   const [direction, setDirection] = useState<Direction>((params.get("dir") as Direction) ?? "feature");
   const [exploded, setExploded] = useState(explode.current.target === 1);
+  /** The camera's move while the model comes apart or together: from where it was to a fit of where it ends. */
+  const cameraTween = useRef<{ from: [THREE.Vector3, THREE.Vector3]; to: [THREE.Vector3, THREE.Vector3]; start: number } | null>(null);
   // off unless asked for (?labels=1, or the toolbar): on a small view the callouts hide the model (PB-861)
   const [showLabels, setShowLabels] = useState(params.get("labels") === "1");
   const [labelKinds, setLabelKinds] = useState<Set<LabelKind>>(new Set((params.get("labelkinds") ?? "module,harness").split(",") as LabelKind[]));
@@ -363,13 +369,22 @@ export function CadView({
         if (parts && node(parts.fixed)) {
           const centreOf = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
           const c0 = centreOf(node(parts.fixed)!);
+          const fixedBox = new THREE.Box3().setFromObject(node(parts.fixed)!);
+          /** The extent of a box along a direction: [lowest, highest] projection of its corners. */
+          const along = (b: THREE.Box3, d: THREE.Vector3) => {
+            const xs = [b.min.x, b.max.x].map((x) => x * d.x);
+            const ys = [b.min.y, b.max.y].map((y) => y * d.y);
+            const zs = [b.min.z, b.max.z].map((z) => z * d.z);
+            return [Math.min(...xs) + Math.min(...ys) + Math.min(...zs), Math.max(...xs) + Math.max(...ys) + Math.max(...zs)];
+          };
           for (const n of parts.moving) {
             const part = node(n);
             if (!part) continue;
             const d = centreOf(part).sub(c0).normalize();
             const cadBox = new THREE.Box3().setFromObject(part);
             const sz = cadBox.getSize(new THREE.Vector3());
-            rec.parts.push({ obj: part, base: part.position.clone(), cadDir: d, cadBox, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
+            const clear = Math.max(0, along(fixedBox, d)[1] - along(cadBox, d)[0]);
+            rec.parts.push({ obj: part, base: part.position.clone(), cadDir: d, cadBox, clear, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
           }
         }
         obj.add(w);
@@ -542,7 +557,8 @@ export function CadView({
         for (const part of rec.parts) {
           const rise = plan.rise.get(`${rec.body.key}::${part.obj.name}`);
           if (rise !== undefined) part.travel.copy(axis).multiplyScalar(rise * e).sub(rec.offset);
-          else part.travel.copy(part.cadDir).transformDirection(rec.base).multiplyScalar(E * 2.2);
+          // off the stack (a plunger through a side wall): out of its bore, just clear of the body, and no further
+          else part.travel.copy(part.cadDir).transformDirection(rec.base).multiplyScalar(part.clear * e + E * 0.35);
           // world travel (mm) → the node's parent's space
           part.obj.position.copy(part.base);
           if (part.toLocal && e > 0) part.obj.position.add(part.travel.clone().applyMatrix3(part.toLocal));
@@ -596,6 +612,16 @@ export function CadView({
         ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
         const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
         applyExplode(eased);
+        const cam = cameraTween.current;
+        if (cam) {
+          // the camera's share of the way, on the same curve as the parts
+          const k = Math.abs(ex.target - cam.start) > 0 ? Math.min(1, Math.abs(ex.value - cam.start) / Math.abs(ex.target - cam.start)) : 1;
+          const t = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+          h.camera.position.lerpVectors(cam.from[0], cam.to[0], t);
+          h.controls.target.lerpVectors(cam.from[1], cam.to[1], t);
+          h.camera.lookAt(h.controls.target);
+          if (ex.value === ex.target) cameraTween.current = null;
+        }
       }
       const size = h.renderer.getSize(new THREE.Vector2());
       labelsRef.current?.update(h.camera, size.x, size.y, dt);
@@ -740,7 +766,12 @@ export function CadView({
   /** Bounds of the model as drawn now (exploded or not). */
   const currentBounds = () => {
     const box = new THREE.Box3();
-    for (const rec of bodies.current.values()) if (!rec.box.isEmpty()) box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
+    for (const rec of bodies.current.values()) {
+      if (rec.box.isEmpty()) continue;
+      box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
+      // its named bodies where they went (a lid lifted off)
+      for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrix).translate(part.travel));
+    }
     return box;
   };
   /** Where the section plane cuts `box` (the assembled bounds), and which side it keeps (flip: the + side). */
@@ -1072,6 +1103,34 @@ export function CadView({
     const target = c.clone().addScaledVector(right, d * tanH * panel);
     orbit(azimuthDeg, elevationDeg, d, target);
   };
+  /** Fit what is drawn now, from where the camera looks. */
+  const fitAsSeen = () => {
+    const h = handle.current;
+    if (!h) return;
+    const v = h.camera.position.clone().sub(h.controls.target).normalize();
+    const local = v.clone().applyQuaternion(upQuat.clone().invert());
+    fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
+  };
+  /** Explode or assemble, the camera moving with the parts to frame where they end. */
+  const toggleExploded = (on: boolean) => {
+    const h = handle.current;
+    const ex = explode.current;
+    if (h && model && ex.target !== (on ? 1 : 0)) {
+      const from: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
+      const now = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
+      // where it ends: lay the parts out there for a moment, fit, and put everything back
+      applyExplode(on ? 1 : 0);
+      h.root.updateMatrixWorld(true);
+      fitAsSeen();
+      const to: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
+      applyExplode(now);
+      h.camera.position.copy(from[0]);
+      h.controls.target.copy(from[1]);
+      h.camera.lookAt(from[1]);
+      cameraTween.current = { from, to, start: ex.value };
+    }
+    setExploded(on);
+  };
   const focus = () => {
     const h = handle.current;
     const rec = sel.body ? bodies.current.get(sel.body) : undefined;
@@ -1197,10 +1256,10 @@ export function CadView({
               tooltipSide="top"
               options={[
                 { id: "assembled", icon: "box", label: "Assembled: every module where its links put it" },
-                { id: "exploded", icon: "layers", label: "Exploded: each module apart along the mate that placed it" },
+                { id: "exploded", icon: "layers", label: "Exploded: apart in assembly order, bottom to top" },
               ]}
               value={exploded ? "exploded" : "assembled"}
-              onChange={(v) => setExploded(v === "exploded")}
+              onChange={(v) => toggleExploded(v === "exploded")}
             />
             <ToolbarSeparator />
             <div className="cad-menu-wrap">
@@ -1290,13 +1349,7 @@ export function CadView({
               onChange={setDirection}
             />
             <ToolbarSeparator />
-            <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={() => {
-                const h = handle.current;
-                if (!h) return;
-                const v = h.camera.position.clone().sub(h.controls.target).normalize();
-                const local = v.clone().applyQuaternion(upQuat.clone().invert());
-                fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
-              }} />
+            <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={fitAsSeen} />
             <IconButton icon="crosshair" label="Look along the selected interface's normal" tooltipSide="top" disabled={!sel.body} onClick={focus} />
           </Toolbar>
         )}
