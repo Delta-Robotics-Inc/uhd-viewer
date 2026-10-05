@@ -28,7 +28,7 @@ import {
   type InterfaceRow,
 } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
-import { COLORS, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
 import { Icon } from "../canvas/Icon";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
@@ -286,8 +286,8 @@ export function CadView({
       background: tokenColor(el, "sceneBackground"),
       grid: tokenColor(el, "sceneGrid", "#3a3a3a"),
       gridMinor: tokenColor(el, "sceneGridMinor", "#262626"),
-      accent: tokenColor(el, "accent", "#ff5c00"),
-      highlight: tokenColor(el, "highlight", "#22d3ee"),
+      accent: tokenColor(el, "accent", DEFAULT_SCENE_ACCENT),
+      highlight: tokenColor(el, "highlight", DEFAULT_SCENE_HIGHLIGHT),
     });
     // highlights already drawn pick up the new colours on the next selection pass
     setThemed((n) => n + 1);
@@ -807,7 +807,7 @@ export function CadView({
     for (const [key, rec] of bodies.current) {
       rec.obj.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? COLORS.glow : 0x000000);
+        if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? h.colors.glow : 0x000000);
       });
     }
     const addInBody = (key: string, obj: THREE.Object3D) => {
@@ -822,7 +822,7 @@ export function CadView({
         const iface = body.def.interfaces.find((i) => i.id === src)!;
         const frame = iface.geometry?.frame;
         const targetKey = frame?.artifact ? `${body.path.join("/")}#${frame.artifact}` : body.key;
-        if (frame) addInBody(targetKey, frameGizmo(frame));
+        if (frame) addInBody(targetKey, frameGizmo(frame, h.colors));
         const refs = row.byDirection[direction].filter((r) => r.interfaceId === src);
         if (!refs.length) {
           newNotes.push(`${src}: no ${DIRECTIONS.find((d) => d.id === direction)!.label} binding`);
@@ -909,7 +909,7 @@ export function CadView({
     if (!mate && selBody && sel.iface) mate = model.assembly.mates.find((m) => mateOf(m, selBody.key, sel.iface!));
     if (selBody && sel.iface) {
       const row = rowFor(selBody.def, sel.iface);
-      if (row) drawInterface(selBody, row, COLORS.focus);
+      if (row) drawInterface(selBody, row, h.colors.focus);
     }
     if (mate) {
       for (const end of [mate.a, mate.b]) {
@@ -917,7 +917,7 @@ export function CadView({
         if (selBody && key.split("#")[0] === selBody.key.split("#")[0] && end.iface.id === sel.iface) continue;
         const b = model.bodies.find((x) => x.path.join("/") === end.path.join("/") && (x.key === key || !end.frame.artifact));
         const row = b && rowFor(b.def, end.iface.id);
-        if (b && row) drawInterface(b, row, sel.iface ? COLORS.counterpart : COLORS.focus);
+        if (b && row) drawInterface(b, row, sel.iface ? h.colors.counterpart : h.colors.focus);
       }
       // the mate's hardware glows too
       if (mate.harnessPath) {
@@ -928,7 +928,7 @@ export function CadView({
             const mesh = o as THREE.Mesh;
             if (mesh.isMesh) {
               mats.set(mesh, mesh.material);
-              mesh.material = focusMaterial(COLORS.focus);
+              mesh.material = focusMaterial(h.colors.focus);
             }
           });
           restore.push(() => {
@@ -945,7 +945,7 @@ export function CadView({
           const mesh = x as THREE.Mesh;
           if (!mesh.isMesh) return;
           const was = mesh.material;
-          mesh.material = focusMaterial(COLORS.focus);
+          mesh.material = focusMaterial(h.colors.focus);
           restore.push(() => (mesh.material = was));
         });
       });
@@ -956,7 +956,7 @@ export function CadView({
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (!m || !("emissive" in m)) return;
         const was = m.emissive.getHex();
-        m.emissive.setHex(COLORS.glowStrong);
+        m.emissive.setHex(h.colors.glowStrong);
         restore.push(() => m.emissive.setHex(was));
       });
     }
@@ -968,7 +968,7 @@ export function CadView({
           const targetKey = f.artifact ? `${b.path.join("/")}#${f.artifact}` : b.key;
           if (f.artifact && targetKey !== b.key && !bodies.current.has(targetKey)) continue;
           if (!f.artifact && b.key.includes("#")) continue;
-          addInBody(targetKey, frameGizmo(f, 9));
+          addInBody(targetKey, frameGizmo(f, h.colors, 9));
         }
       }
     }

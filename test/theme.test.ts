@@ -1,10 +1,14 @@
 /** The theme-token contract and its adapters (PB-900). */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Color } from "three";
 import { describe, expect, it } from "vitest";
 import { TOKEN_NAMES, defineTheme, themeDeclarations, tokenVar, type ThemeTokens } from "../src/theme/tokens";
 import { defaultDark, defaultLight } from "../src/theme/themes";
 import { vscodeScheme, vscodeTheme } from "../src/theme/adapters";
 import { completeTheme, resolveTheme } from "../src/theme/resolve";
+import { DEFAULT_SCENE_ACCENT, sceneColors } from "../src/cad/scene";
 
 const CSS = new URL("../src/styles/theme.css", import.meta.url);
 const HEADER = "/* Generated from src/theme/themes.ts (defaultDark) by test/theme.test.ts: UPDATE_THEME_CSS=1 npm test rewrites it. */\n";
@@ -33,8 +37,30 @@ describe("theme tokens", () => {
 
   it("names no colour of a host product in the viewer's own themes", () => {
     const all = JSON.stringify([defaultDark, defaultLight]).toLowerCase();
-    // ProtoBoard's brand orange (oklch 0.68 0.21 40 / #ff5c00 / #f26b1d) belongs to the host's theme, not here
+    // Protoboard's brand orange (oklch 0.68 0.21 40 / #ff5c00 / #f26b1d) belongs to the host's theme, not here
     expect(all).not.toMatch(/#ff5c00|#f26b1d|0\.6837 0\.212/);
+  });
+
+  it("hard-codes no brand colour anywhere in the viewer's source, the 3D scene included", () => {
+    const brand = /ff5c00|f26b1d|2a1200|3a1600|0\.6837 0\.212/i;
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.(tsx?|css|html|svg)$/.test(e.name) && brand.test(readFileSync(p, "utf8"))) hits.push(p);
+      }
+    };
+    walk(fileURLToPath(new URL("../src", import.meta.url)));
+    expect(hits).toEqual([]);
+  });
+
+  it("gives each 3D scene its own highlight colours", () => {
+    const a = sceneColors({ accent: "#ff0000", highlight: "#00ff00" });
+    const b = sceneColors();
+    expect(a.focus).toBe(0xff0000);
+    expect(b.focus).toBe(new Color(DEFAULT_SCENE_ACCENT).getHex());
+    expect(a).not.toBe(b);
   });
 
   it("keeps DRC severity colours the same in every theme", () => {

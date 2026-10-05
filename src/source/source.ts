@@ -79,7 +79,7 @@ export interface LoadedSource {
   scenarios: ViewerScenario[];
   /** URL for a definition's artifact file path, or undefined if it cannot be resolved. */
   resolveArtifact: ArtifactResolver;
-  /** Findings from the bundle's producer (e.g. ProtoBoard's aggregated check). */
+  /** Findings from the bundle's producer (e.g. Protoboard's aggregated check). */
   hostDiagnostics: UhdBundleDiagnostic[];
   display: DisplayConfig;
   /** The bundle as loaded (for host views that read more of it than the viewer draws). */

@@ -1344,9 +1344,9 @@
 
 
 /* ===========================================================================
- * ProtoBoard chrome: floating cards over a full-bleed canvas, 1px separators,
+ * Protoboard chrome: floating cards over a full-bleed canvas, 1px separators,
  * Kode Mono UI text, ProtoMono headers, orange active states.
- * (Values from ProtoBoard next-alpha: CanvasShell toolbar, AppHeader,
+ * (Values from Protoboard next-alpha: CanvasShell toolbar, AppHeader,
  * ActivityBar, RightSidebar, dropdown-menu.)
  * ========================================================================= */
 body {
@@ -1429,7 +1429,7 @@ body {
   gap: 4px;
 }
 
-/* toggle groups (ProtoBoard ToggleGroup: gap-1, h-8, active = primary) */
+/* toggle groups (Protoboard ToggleGroup: gap-1, h-8, active = primary) */
 .segmented {
   gap: 2px;
   border: none;
@@ -1622,7 +1622,7 @@ body {
   align-items: center;
   gap: 2px;
 }
-/* dropdown (ProtoBoard dropdown-menu: popover bg, border, rounded-md, p-1, shadow-md) */
+/* dropdown (Protoboard dropdown-menu: popover bg, border, rounded-md, p-1, shadow-md) */
 .cad-menu {
   position: absolute;
   bottom: calc(100% + 10px);
@@ -2242,12 +2242,39 @@ body {
   }
 }
 
-/* narrow views: the legend sits above the toolbar row, which centres on the whole width */
+/*
+ * Narrow views (a VS Code panel, a small window): the inspector narrows, the
+ * bottom toolbar centres on what the inspector leaves visible and scrolls
+ * sideways (no bar) rather than slide under it, and the legend sits above
+ * the toolbar row.
+ */
 @media (max-width: 900px) {
+  .inspector,
+  .cad-inspector {
+    width: min(300px, calc(100% - 96px));
+  }
   .legend {
     bottom: 60px;
   }
   .toolbar {
-    --uhd-inset-right: 0px;
+    left: calc(var(--uhd-inset-left, 0px) + 8px);
+    right: 8px;
+    margin-inline: auto;
+    width: fit-content;
+    max-width: calc(100% - 16px - var(--uhd-inset-left, 0px));
+    transform: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toolbar > * {
+    flex-shrink: 0;
+  }
+  .toolbar::-webkit-scrollbar,
+  .cad-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar.covered-right,
+  .cad-view:has(.cad-inspector) .cad-toolbar {
+    right: calc(min(300px, 100% - 96px) + 12px);
   }
 }

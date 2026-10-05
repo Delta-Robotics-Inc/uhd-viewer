@@ -2,9 +2,9 @@
 
 Standalone viewer for UHD (Universal Hardware Description) systems: modules,
 interfaces, interface links, and harnesses. It depends on UHD and a neutral
-view contract, not on ProtoBoard types.
+view contract, not on Protoboard types.
 
-Tracking: PB-770 (Track B) under PB-763 in the ProtoBoard Stack Linear project.
+Tracking: PB-770 (Track B) under PB-763 in the Protoboard Stack Linear project.
 
 ![Quadcopter, domain classification](docs/screenshots/01-quadcopter-domain.png)
 
@@ -210,7 +210,7 @@ FOCUS looks along the selected interface's normal.
 **Cables are harness artifacts.** A wire harness whose end interfaces carry
 frames has its own routed body (a GLB in assembly-root coordinates, one node
 per conductor, plug housing, solder joint and tinned tip, written by
-ProtoBoard's `@protoboard/ext-harness-cad`). UHD `assemble` places it from the
+Protoboard's `@protoboard/ext-harness-cad`). UHD `assemble` places it from the
 part its first end lands on (`assembly.harnesses`) and checks every other end;
 the viewer draws that GLB at that placement, keeps the generator's colours and
 sets the surface per node kind (satin insulation, metal solder). Selecting a
@@ -284,7 +284,7 @@ hints, appearance, keyed by instance path). It never imports a project.
 
 - `?bundle=<url>` picks the bundle; failing that, the bundle URL a server
   injected into the page (`uhd-viewer serve`). The development default is the
-  ProtoBoard quadcopter project's build output (`protoboard build` writes
+  Protoboard quadcopter project's build output (`protoboard build` writes
   `.protoboard/build/uhd-bundle.json`); override it with `UHD_BUNDLE=<path>`.
   A production build has no default.
 - Absolute filesystem artifact bases are served through Vite's `/@fs` route in

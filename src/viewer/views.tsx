@@ -105,7 +105,7 @@ interface DiagramToolbarViewProps {
 const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarViewProps) {
   const flow = useReactFlow();
   return (
-    <Toolbar label="Diagram tools" className={cx("toolbar", p.className)}>
+    <Toolbar label="Diagram tools" className={cx("toolbar", p.coveredRight && "covered-right", p.className)}>
       {p.controls && (
         <>
           <ToggleGroup label="Classification" tooltipSide="top" options={CLASSIFICATION_OPTIONS} value={p.mode} onChange={p.onMode} />

@@ -13,22 +13,6 @@ import type { Mat4 } from "@uhd/system/geometry.js";
 import { param, traitParam } from "./model";
 import type { Appearance } from "../source/source";
 
-/**
- * Highlight colours of the scene. The focus colours follow the theme's
- * accent and highlight tokens (`themeScene`); the rest are data colours.
- */
-export const COLORS = {
-  focus: 0xff5c00,
-  counterpart: 0x38bdf8,
-  normal: 0xff5c00,
-  xAxis: 0x22d3ee,
-  phase: [0xe11d48, 0xfacc15, 0x38bdf8],
-  hint: 0xa8a29e,
-  /** The selected body's emissive glow, and a stronger one for a picked interface's body. */
-  glow: 0x2a1200,
-  glowStrong: 0x3a1600,
-};
-
 /** The theme's colours for the scene, as `#rrggbb` (ThemeProvider's tokenColor). */
 export interface SceneTheme {
   background: string;
@@ -38,13 +22,40 @@ export interface SceneTheme {
   highlight: string;
 }
 
-/** Point the focus colours at the theme's accent (the selected body glows a dim accent). */
-export function themeColors(theme: SceneTheme) {
+/**
+ * Highlight colours of one scene. The focus colours follow the theme's accent
+ * and highlight tokens; the rest are data colours. Each scene owns its set, so
+ * two viewers with different themes never share focus colours.
+ */
+export interface SceneColors {
+  focus: number;
+  counterpart: number;
+  normal: number;
+  xAxis: number;
+  phase: number[];
+  hint: number;
+  /** The selected body's emissive glow, and a stronger one for a picked interface's body. */
+  glow: number;
+  glowStrong: number;
+}
+
+/** The neutral default theme's accent and highlight (the stylesheet defaults), used until a theme is read. */
+export const DEFAULT_SCENE_ACCENT = "#339fee";
+export const DEFAULT_SCENE_HIGHLIGHT = "#22d3ee";
+
+/** Fresh scene colours for a theme's accent and highlight (the selected body glows a dim accent). */
+export function sceneColors(theme: Pick<SceneTheme, "accent" | "highlight"> = { accent: DEFAULT_SCENE_ACCENT, highlight: DEFAULT_SCENE_HIGHLIGHT }): SceneColors {
   const accent = new THREE.Color(theme.accent);
-  COLORS.focus = COLORS.normal = accent.getHex();
-  COLORS.xAxis = new THREE.Color(theme.highlight).getHex();
-  COLORS.glow = accent.clone().multiplyScalar(0.16).getHex();
-  COLORS.glowStrong = accent.clone().multiplyScalar(0.22).getHex();
+  return {
+    focus: accent.getHex(),
+    counterpart: 0x38bdf8,
+    normal: accent.getHex(),
+    xAxis: new THREE.Color(theme.highlight).getHex(),
+    phase: [0xe11d48, 0xfacc15, 0x38bdf8],
+    hint: 0xa8a29e,
+    glow: accent.clone().multiplyScalar(0.16).getHex(),
+    glowStrong: accent.clone().multiplyScalar(0.22).getHex(),
+  };
 }
 
 const loader = new GLTFLoader();
@@ -144,7 +155,7 @@ export function frameGroup(frame: GeometryFrame): THREE.Group {
   return g;
 }
 
-export function frameGizmo(frame: GeometryFrame, size = 14): THREE.Group {
+export function frameGizmo(frame: GeometryFrame, colors: SceneColors, size = 14): THREE.Group {
   const g = frameGroup(frame);
   const arrow = (dir: THREE.Vector3, color: number, len: number) => {
     const a = new THREE.ArrowHelper(dir, new THREE.Vector3(), len, color, len * 0.22, len * 0.12);
@@ -153,8 +164,8 @@ export function frameGizmo(frame: GeometryFrame, size = 14): THREE.Group {
     a.renderOrder = 10;
     return a;
   };
-  g.add(arrow(new THREE.Vector3(0, 0, 1), COLORS.normal, size));
-  if (frame.xAxis) g.add(arrow(new THREE.Vector3(1, 0, 0), COLORS.xAxis, size * 0.6));
+  g.add(arrow(new THREE.Vector3(0, 0, 1), colors.normal, size));
+  if (frame.xAxis) g.add(arrow(new THREE.Vector3(1, 0, 0), colors.xAxis, size * 0.6));
   // symmetry: tick marks every symmetryDeg
   if (frame.symmetryDeg) {
     const pts: THREE.Vector3[] = [];
@@ -162,7 +173,7 @@ export function frameGizmo(frame: GeometryFrame, size = 14): THREE.Group {
       const r = (a * Math.PI) / 180;
       pts.push(new THREE.Vector3(Math.cos(r) * size * 0.45, Math.sin(r) * size * 0.45, 0), new THREE.Vector3(Math.cos(r) * size * 0.7, Math.sin(r) * size * 0.7, 0));
     }
-    const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: COLORS.xAxis, depthTest: false }));
+    const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: colors.xAxis, depthTest: false }));
     ticks.renderOrder = 10;
     g.add(ticks);
   }
@@ -255,6 +266,8 @@ export interface SceneHandle {
   setUp: (up: THREE.Vector3) => void;
   /** Put the ground grid under a box (the assembled model), across the up direction. */
   setGround: (box: THREE.Box3) => void;
+  /** This scene's highlight colours (follow `setTheme`). */
+  colors: SceneColors;
   /** The theme's background, grid and focus colours. */
   setTheme: (theme: SceneTheme) => void;
   /** Called every frame before rendering, with the frame time in seconds. */
@@ -273,6 +286,7 @@ export function createScene(container: HTMLElement): SceneHandle {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
+  const colors = sceneColors();
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1a);
   const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 1, 5000);
@@ -385,10 +399,11 @@ export function createScene(container: HTMLElement): SceneHandle {
     onFrame,
     manual,
     renderOnce: () => renderOnce(1 / 30),
+    colors,
     setTheme: (theme) => {
       scene.background = new THREE.Color(theme.background);
       setGridColors(theme.grid, theme.gridMinor);
-      themeColors(theme);
+      Object.assign(colors, sceneColors(theme));
       renderOnce(1 / 30);
     },
     dispose: () => {
