@@ -7,5 +7,5 @@
     "checkJs": true,
     "noImplicitAny": false
   },
-  "include": ["bin", "test", "scripts/check-render.mjs", "vite.lib.config.ts"]
+  "include": ["bin", "test", "scripts/check-render.mjs", "scripts/build-components-types.mjs", "vite.lib.config.ts", "vite.components.config.ts"]
 }

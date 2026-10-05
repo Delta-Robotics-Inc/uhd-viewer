@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Standalone viewer for UHD systems: modules, interfaces, interface links, and harnesses.",
+  "description": "Viewer for UHD systems (modules, interfaces, interface links, harnesses): a React component library and its plain standalone app.",
   "bin": {
     "uhd-viewer": "bin/uhd-viewer.mjs"
   },
@@ -13,6 +13,12 @@
       "import": "./dist/lib/uhd-viewer.js"
     },
     "./style.css": "./dist/lib/uhd-viewer.css",
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "import": "./dist/components/index.js"
+    },
+    "./components.css": "./dist/components/components.css",
+    "./tailwind-theme.css": "./src/styles/tailwind-theme.css",
     "./app/*": "./dist/app/*",
     "./serve": {
       "types": "./bin/serve.d.mts",
@@ -23,6 +29,8 @@
   "files": [
     "dist/app",
     "dist/lib",
+    "dist/components",
+    "src/styles/tailwind-theme.css",
     "bin",
     "README.md"
   ],
@@ -34,14 +42,15 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && npm run build:app && npm run build:lib",
+    "build": "npm run type-check && npm run build:app && npm run build:lib && npm run build:components",
     "build:app": "vite build",
     "build:lib": "vite build --config vite.lib.config.ts && node scripts/build-types.mjs",
     "serve": "node bin/uhd-viewer.mjs serve",
     "test": "vitest run",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs"
   },
   "peerDependencies": {
     "@deltarobotics/uhd": ">=0.2.0"
@@ -52,6 +61,7 @@
     }
   },
   "dependencies": {
+    "@radix-ui/react-scroll-area": "^1.2.18",
     "@types/three": "^0.180.0",
     "@xyflow/react": "^12.12.0",
     "lucide-react": "^1.48.0",
@@ -60,11 +70,13 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "puppeteer-core": "^24.43.1",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.3"

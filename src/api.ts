@@ -89,7 +89,34 @@ export interface ViewerOptions {
    * then go to the parent. `true` uses the defaults. Off unless given.
    */
   parentWindow?: boolean | { origins?: string[] };
+
+  /**
+   * How the viewer looks: its own `"dark"` (default) or `"light"` theme,
+   * `"system"` (whichever the system prefers), `"vscode"` (follows the VS Code
+   * colour theme of the webview it runs in, high contrast included), a theme
+   * of the host's (tokens it leaves out come from the default), or an adapter
+   * that tells the viewer when the host's theme changes.
+   */
+  theme?: ViewerThemeOption;
 }
+
+/** A theme: values for the viewer's semantic tokens (docs: README, "Theming"). */
+export interface ViewerTheme {
+  id: string;
+  label: string;
+  scheme: "dark" | "light" | "high-contrast" | "high-contrast-light";
+  /** Token values by token name (`accent`, `surface`, `textMuted`, …): any CSS value, `var(...)` included. */
+  tokens: Partial<Record<string, string>>;
+}
+
+/** Where a host's theme comes from, when it can change while the viewer is open. */
+export interface ViewerThemeAdapter {
+  id: string;
+  current(): ViewerTheme;
+  subscribe?(onChange: (theme: ViewerTheme) => void): () => void;
+}
+
+export type ViewerThemeOption = "dark" | "light" | "system" | "vscode" | ViewerTheme | ViewerThemeAdapter;
 
 /** What a view shows: the diagram or the assembled 3D model. */
 export type ViewerView = "diagram" | "3d";

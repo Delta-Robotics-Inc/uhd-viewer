@@ -27,12 +27,16 @@ import {
   type Direction,
   type InterfaceRow,
 } from "./model";
-import { COLORS, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
+import { useTheme, tokenColor } from "../theme/ThemeProvider";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
 import { Icon } from "../canvas/Icon";
+import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
+import { ScrollArea } from "../ui/ScrollArea";
 import { ArtifactLink } from "../chrome/Artifacts";
 
-const params = new URLSearchParams(window.location.search);
+/** View parameters from the page URL (read when the view mounts, so importing the library touches no window). */
+const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
 
 /** Explode distance (mm per mate level) at "exploded". */
 const EXPLODE_MM = 26;
@@ -197,6 +201,7 @@ export function CadView({
   const hardware = useRef<HardwareRec[]>([]);
   const harnessGroup = useRef(new THREE.Group());
   const harnessObjs = useRef(new Map<string, THREE.Group>());
+  const [params] = useState(urlParams);
   const explode = useRef({ value: Number(params.get("explode") ?? 0) > 0 ? 1 : 0, target: Number(params.get("explode") ?? 0) > 0 ? 1 : 0 });
   const [manifests, setManifests] = useState<Map<string, GeometryManifest> | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -269,6 +274,24 @@ export function CadView({
       handle.current = null;
     };
   }, []);
+
+  // ---- the theme's background, grid and highlight colours --------------------
+  const { theme } = useTheme();
+  const [themed, setThemed] = useState(0);
+  useEffect(() => {
+    const h = handle.current;
+    const el = host.current;
+    if (!h || !el) return;
+    h.setTheme({
+      background: tokenColor(el, "sceneBackground"),
+      grid: tokenColor(el, "sceneGrid", "#3a3a3a"),
+      gridMinor: tokenColor(el, "sceneGridMinor", "#262626"),
+      accent: tokenColor(el, "accent", DEFAULT_SCENE_ACCENT),
+      highlight: tokenColor(el, "highlight", DEFAULT_SCENE_HIGHLIGHT),
+    });
+    // highlights already drawn pick up the new colours on the next selection pass
+    setThemed((n) => n + 1);
+  }, [theme]);
 
   // ---- bodies and hardware ---------------------------------------------------
   useEffect(() => {
@@ -784,7 +807,7 @@ export function CadView({
     for (const [key, rec] of bodies.current) {
       rec.obj.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? 0x2a1200 : 0x000000);
+        if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? h.colors.glow : 0x000000);
       });
     }
     const addInBody = (key: string, obj: THREE.Object3D) => {
@@ -799,7 +822,7 @@ export function CadView({
         const iface = body.def.interfaces.find((i) => i.id === src)!;
         const frame = iface.geometry?.frame;
         const targetKey = frame?.artifact ? `${body.path.join("/")}#${frame.artifact}` : body.key;
-        if (frame) addInBody(targetKey, frameGizmo(frame));
+        if (frame) addInBody(targetKey, frameGizmo(frame, h.colors));
         const refs = row.byDirection[direction].filter((r) => r.interfaceId === src);
         if (!refs.length) {
           newNotes.push(`${src}: no ${DIRECTIONS.find((d) => d.id === direction)!.label} binding`);
@@ -886,7 +909,7 @@ export function CadView({
     if (!mate && selBody && sel.iface) mate = model.assembly.mates.find((m) => mateOf(m, selBody.key, sel.iface!));
     if (selBody && sel.iface) {
       const row = rowFor(selBody.def, sel.iface);
-      if (row) drawInterface(selBody, row, COLORS.focus);
+      if (row) drawInterface(selBody, row, h.colors.focus);
     }
     if (mate) {
       for (const end of [mate.a, mate.b]) {
@@ -894,7 +917,7 @@ export function CadView({
         if (selBody && key.split("#")[0] === selBody.key.split("#")[0] && end.iface.id === sel.iface) continue;
         const b = model.bodies.find((x) => x.path.join("/") === end.path.join("/") && (x.key === key || !end.frame.artifact));
         const row = b && rowFor(b.def, end.iface.id);
-        if (b && row) drawInterface(b, row, sel.iface ? COLORS.counterpart : COLORS.focus);
+        if (b && row) drawInterface(b, row, sel.iface ? h.colors.counterpart : h.colors.focus);
       }
       // the mate's hardware glows too
       if (mate.harnessPath) {
@@ -905,7 +928,7 @@ export function CadView({
             const mesh = o as THREE.Mesh;
             if (mesh.isMesh) {
               mats.set(mesh, mesh.material);
-              mesh.material = focusMaterial(COLORS.focus);
+              mesh.material = focusMaterial(h.colors.focus);
             }
           });
           restore.push(() => {
@@ -922,7 +945,7 @@ export function CadView({
           const mesh = x as THREE.Mesh;
           if (!mesh.isMesh) return;
           const was = mesh.material;
-          mesh.material = focusMaterial(COLORS.focus);
+          mesh.material = focusMaterial(h.colors.focus);
           restore.push(() => (mesh.material = was));
         });
       });
@@ -933,7 +956,7 @@ export function CadView({
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (!m || !("emissive" in m)) return;
         const was = m.emissive.getHex();
-        m.emissive.setHex(0x3a1600);
+        m.emissive.setHex(h.colors.glowStrong);
         restore.push(() => m.emissive.setHex(was));
       });
     }
@@ -945,13 +968,13 @@ export function CadView({
           const targetKey = f.artifact ? `${b.path.join("/")}#${f.artifact}` : b.key;
           if (f.artifact && targetKey !== b.key && !bodies.current.has(targetKey)) continue;
           if (!f.artifact && b.key.includes("#")) continue;
-          addInBody(targetKey, frameGizmo(f, 9));
+          addInBody(targetKey, frameGizmo(f, h.colors, 9));
         }
       }
     }
     setNotes([...new Set(newNotes)]);
     return () => restore.forEach((f) => f());
-  }, [model, sel, direction, showFrames, loaded]);
+  }, [model, sel, direction, showFrames, loaded, themed]);
 
   // ---- picking ---------------------------------------------------------------
   useEffect(() => {
@@ -1149,23 +1172,21 @@ export function CadView({
     <div className={`cad-view${present ? " present" : ""}`}>
       <div className="cad-canvas" ref={host}>
         {!present && (
-          <div className="cad-toolbar">
-            <div className="segmented">
-              <button className={!exploded ? "on" : ""} onClick={() => setExploded(false)} title="Every module where its links put it">
-                <Icon name="box" size={16} /> Assembled
-              </button>
-              <button className={exploded ? "on" : ""} onClick={() => setExploded(true)} title="Separate each module along the mate that placed it">
-                <Icon name="layers" size={16} /> Exploded
-              </button>
-            </div>
-            <span className="sep" />
+          <Toolbar label="3D tools" className="cad-toolbar">
+            <ToggleGroup
+              label="Assembly"
+              tooltipSide="top"
+              options={[
+                { id: "assembled", icon: "box", label: "Assembled: every module where its links put it" },
+                { id: "exploded", icon: "layers", label: "Exploded: each module apart along the mate that placed it" },
+              ]}
+              value={exploded ? "exploded" : "assembled"}
+              onChange={(v) => setExploded(v === "exploded")}
+            />
+            <ToolbarSeparator />
             <div className="cad-menu-wrap">
-              <button className={`chip-toggle${showLabels ? " on" : ""}`} onClick={() => setShowLabels(!showLabels)} title="Callout labels">
-                <Icon name="tag" size={16} /> Labels
-              </button>
-              <button className="chip-toggle caret" onClick={() => setLabelMenu(!labelMenu)} title="Label types">
-                <Icon name="chevron-up" size={14} />
-              </button>
+              <IconButton icon="tag" label="Callout labels" tooltipSide="top" pressed={showLabels} onClick={() => setShowLabels(!showLabels)} />
+              <IconButton icon="chevron-up" size="sm" className="w-5" label="Label types" tooltipSide="top" aria-expanded={labelMenu} onClick={() => setLabelMenu(!labelMenu)} />
               {labelMenu && (
                 <div className="cad-menu">
                   <div className="cad-menu-label">Show labels for</div>
@@ -1186,30 +1207,16 @@ export function CadView({
               )}
             </div>
             {(model?.assembly.hardware.length ?? 0) > 0 && (
-              <button className={`chip-toggle${showHardware ? " on" : ""}`} onClick={() => setShowHardware(!showHardware)} title="Mounting hardware from the harnesses' fastener stacks">
-                <Icon name="wrench" size={16} /> Hardware
-              </button>
+              <IconButton icon="wrench" label="Mounting hardware from the harnesses' fastener stacks" tooltipSide="top" pressed={showHardware} onClick={() => setShowHardware(!showHardware)} />
             )}
             {(model?.assembly.harnesses.length ?? 0) > 0 && (
-              <button className={`chip-toggle${showWires ? " on" : ""}`} onClick={() => setShowWires(!showWires)} title="Routed wire harnesses (each harness's own CAD artifact)">
-                <Icon name="cable" size={16} /> Cables
-              </button>
+              <IconButton icon="cable" label="Routed wire harnesses" tooltipSide="top" pressed={showWires} onClick={() => setShowWires(!showWires)} />
             )}
-            <button className={`chip-toggle${showFrames ? " on" : ""}`} onClick={() => setShowFrames(!showFrames)} title="Every interface frame">
-              <Icon name="move-3d" size={16} /> Frames
-            </button>
-            <span className="sep" />
+            <IconButton icon="move-3d" label="Every interface frame" tooltipSide="top" pressed={showFrames} onClick={() => setShowFrames(!showFrames)} />
+            <ToolbarSeparator />
             <div className="cad-menu-wrap">
-              <button
-                className={`chip-toggle icon${section ? " on" : ""}`}
-                onClick={() => setSection(section ? null : { axis: 1, at: 0.5 })}
-                title="Cut the model with a plane (cut faces are left open)"
-              >
-                <Icon name="scissors" size={16} />
-              </button>
-              <button className="chip-toggle caret" onClick={() => setSectionMenu(!sectionMenu)} title="Section plane">
-                <Icon name="chevron-up" size={14} />
-              </button>
+              <IconButton icon="scissors" label="Section: cut the model with a plane" tooltipSide="top" pressed={Boolean(section)} onClick={() => setSection(section ? null : { axis: 1, at: 0.5 })} />
+              <IconButton icon="chevron-up" size="sm" className="w-5" label="Section plane" tooltipSide="top" aria-expanded={sectionMenu} onClick={() => setSectionMenu(!sectionMenu)} />
               {sectionMenu && (
                 <div className="cad-menu cad-section">
                   <div className="cad-menu-label">Section plane</div>
@@ -1243,36 +1250,35 @@ export function CadView({
                 </div>
               )}
             </div>
-            <button className={`chip-toggle icon${xray ? " on" : ""}`} onClick={() => setXray(!xray)} title="X-ray: see through bodies that hold others (an enclosure)">
-              <Icon name="scan-eye" size={16} />
-            </button>
+            <IconButton icon="scan-eye" label="X-ray: see through bodies that hold others" tooltipSide="top" pressed={xray} onClick={() => setXray(!xray)} />
             {findings.length > 0 && (
-              <button className={`chip-toggle${showFindings ? " on" : ""}`} onClick={() => setShowFindings(!showFindings)} title="Findings: errors and warnings pinned where they are on the model">
-                <Icon name="triangle-alert" size={16} /> {findings.length}
-              </button>
+              <IconButton
+                icon="triangle-alert"
+                label={`Findings on the model · ${findings.length}`}
+                tooltipSide="top"
+                pressed={showFindings}
+                badge={findings.length}
+                onClick={() => setShowFindings(!showFindings)}
+              />
             )}
-            <span className="sep" />
-            <div className="segmented">
-              {DIRECTIONS.map((d) => (
-                <button key={d.id} title={d.hint} className={d.id === direction ? "on" : ""} onClick={() => setDirection(d.id)}>
-                  {d.label.split(" ")[0]}
-                </button>
-              ))}
-            </div>
-            <span className="sep" />
-            <button className="chip-toggle icon" onClick={() => {
+            <ToolbarSeparator />
+            <ToggleGroup
+              label="Interface direction"
+              tooltipSide="top"
+              options={DIRECTIONS.map((d) => ({ id: d.id, icon: <span className="font-label text-[11px]">{d.label.split(" ")[0]}</span>, label: `${d.label} · ${d.hint}` }))}
+              value={direction}
+              onChange={setDirection}
+            />
+            <ToolbarSeparator />
+            <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={() => {
                 const h = handle.current;
                 if (!h) return;
                 const v = h.camera.position.clone().sub(h.controls.target).normalize();
                 const local = v.clone().applyQuaternion(upQuat.clone().invert());
                 fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
-              }} title="Fit">
-              <Icon name="maximize" size={16} />
-            </button>
-            <button className="chip-toggle icon" disabled={!sel.body} onClick={focus} title="Look along the selected interface's normal">
-              <Icon name="crosshair" size={16} />
-            </button>
-          </div>
+              }} />
+            <IconButton icon="crosshair" label="Look along the selected interface's normal" tooltipSide="top" disabled={!sel.body} onClick={focus} />
+          </Toolbar>
         )}
         {!model && <div className="cad-loading">Loading manifests…</div>}
         {present && (
@@ -1396,7 +1402,7 @@ function CadInspector({
           </button>
         )}
       </div>
-      <div className="inspector-body">
+      <ScrollArea className="inspector-scroll" contentClassName="inspector-body">
         {body ? (
           <>
             <h3 className="cad-title">{body.def.name}</h3>
@@ -1590,7 +1596,7 @@ function CadInspector({
             )}
           </>
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 }

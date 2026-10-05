@@ -19,7 +19,7 @@ import type { LevelLayout, LinkLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
-import type { Live } from "../App";
+import type { Live } from "../viewer/controller";
 import { revealViewport, selectionBounds } from "./reveal";
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
@@ -251,7 +251,7 @@ export function Canvas(props: CanvasProps) {
       maxZoom={2.5}
       attributionPosition="bottom-left"
     >
-      <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--canvas-dot)" bgColor="var(--canvas-bg)" />
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--uhd-canvas-dot)" bgColor="var(--uhd-canvas)" />
     </ReactFlow>
   );
 }

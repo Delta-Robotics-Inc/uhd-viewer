@@ -24,10 +24,10 @@ export type HarnessNodeType = Node<NodeData, "harness">;
 export type NetNodeType = Node<NodeData, "net">;
 
 const STATUS: Record<string, string> = {
-  configured: "var(--drc-configured)",
-  partial: "var(--drc-partial)",
-  incompatible: "var(--drc-incompatible)",
-  unconfigured: "var(--drc-unconfigured)",
+  configured: "var(--uhd-drc-configured)",
+  partial: "var(--uhd-drc-partial)",
+  incompatible: "var(--uhd-drc-incompatible)",
+  unconfigured: "var(--uhd-drc-unconfigured)",
 };
 
 function portColor(p: PlacedPort, mode: Classification): string {
@@ -127,7 +127,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
 export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
   const { node, box } = data;
   const port = data.ports[0];
-  const color = port ? portColor(port, data.mode) : "var(--text-muted)";
+  const color = port ? portColor(port, data.mode) : "var(--uhd-text-muted)";
   return (
     <div className={`sheet-port${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }}>
       <Icon name={port?.side === "left" ? "arrow-left-from-line" : "arrow-right-to-line"} size={12} color={color} />
@@ -140,7 +140,7 @@ export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
 /** A harness module drawn as the carrier node its links pass through (design D2, board 04). */
 export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
   const { node, box } = data;
-  const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--text-muted)";
+  const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--uhd-text-muted)";
   return (
     <div className={`harness-node${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }} title={node.description}>
       <Icon name={node.icon} size={12} color={color} />
