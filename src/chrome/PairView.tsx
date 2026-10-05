@@ -173,7 +173,7 @@ export function PairPreview({ vm, link, mode, onOpen }: { vm: ViewModel; link: V
         <div className="min-w-0">
           <div className="truncate pb-1 text-fg" title={portName(nodeA, a.port)}>{portName(nodeA, a.port)}</div>
           {rows.map((c) => (
-            <div key={c.id} className="flex h-[18px] items-center justify-end gap-1 truncate text-fg-muted">
+            <div key={c.id} className="flex h-[18px] items-center justify-end gap-1 truncate pr-1.5 text-fg-muted">
               <span className="truncate">{c.a.toUpperCase()}</span>
               {c.aPin && <span className="text-fg-faint">{c.aPin}</span>}
             </div>
@@ -200,7 +200,7 @@ export function PairPreview({ vm, link, mode, onOpen }: { vm: ViewModel; link: V
         <div className="min-w-0">
           <div className="truncate pb-1 text-right text-fg" title={portName(nodeB, b.port)}>{portName(nodeB, b.port)}</div>
           {bRows.map((c) => (
-            <div key={c.id} className="flex h-[18px] items-center gap-1 truncate text-fg-muted">
+            <div key={c.id} className="flex h-[18px] items-center gap-1 truncate pl-1.5 text-fg-muted">
               {c.bPin && <span className="text-fg-faint">{c.bPin}</span>}
               <span className="truncate">{c.b.toUpperCase()}</span>
             </div>
