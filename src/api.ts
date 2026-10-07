@@ -36,6 +36,16 @@ export interface ViewerLayout {
   links: Record<string, Record<string, LinkLayout>>;
 }
 
+/** The tones a mark can take; each is a token of the theme (`--uhd-mark-<tone>`). */
+export type NodeMarkTone = "neutral" | "info" | "ok" | "warning" | "error";
+
+/** A host's mark on a module (`ViewerOptions.nodeMarks`). */
+export interface NodeMark {
+  tone: NodeMarkTone;
+  /** What the mark means, for the tooltip. */
+  label?: string;
+}
+
 export interface ViewerOptions {
   /** The bundle itself. Relative artifact paths resolve against `bundleUrl` when both are given. */
   bundle?: UhdBundle;
@@ -52,6 +62,14 @@ export interface ViewerOptions {
    * the nominal scenario only.
    */
   diagnostics?: UhdBundleDiagnostic[];
+  /**
+   * A mark per definition, by definition id: the dot in the corner of every
+   * module card drawn from that definition takes the mark's tone and says its
+   * label on hover. For what the host knows about a part and the bundle does
+   * not (where it comes from, whether it was reviewed). A module with no mark
+   * keeps the dot of its links' state.
+   */
+  nodeMarks?: Record<string, NodeMark>;
   /**
    * The layout edits to show (only used together with `onLayoutChange`). A
    * different layout passed later through `update` replaces the viewer's

@@ -456,6 +456,30 @@
   height: 7px;
   border-radius: 50%;
 }
+/* a host's mark (ViewerOptions.nodeMarks): a tone of the theme, a little larger so it can be hovered; a theme
+   may set --uhd-mark-<tone> (a deeper shade on a light card), else the tone is the severity colour */
+.status-dot.mark {
+  top: 6px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  pointer-events: auto;
+  background: var(--uhd-mark-neutral, var(--uhd-text-faint));
+  outline: 1px solid var(--uhd-contrast-border, transparent);
+  outline-offset: 1px;
+}
+.status-dot.mark[data-tone="info"] {
+  background: var(--uhd-mark-info, var(--uhd-severity-info));
+}
+.status-dot.mark[data-tone="ok"] {
+  background: var(--uhd-mark-ok, var(--uhd-severity-ok));
+}
+.status-dot.mark[data-tone="warning"] {
+  background: var(--uhd-mark-warning, var(--uhd-severity-warning));
+}
+.status-dot.mark[data-tone="error"] {
+  background: var(--uhd-mark-error, var(--uhd-severity-error));
+}
 .module-card.circle .status-dot {
   top: 10%;
   right: 14%;

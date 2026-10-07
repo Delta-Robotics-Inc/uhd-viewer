@@ -1,6 +1,7 @@
 import type { Node, NodeProps } from "@xyflow/react";
 import type { Box, PlacedPort, PortGroup } from "../layout/layout";
 import type { ViewNode } from "../model/types";
+import type { NodeMark } from "../api";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import { Icon } from "./Icon";
 import { Port } from "./Port";
@@ -16,6 +17,8 @@ export interface NodeData extends Record<string, unknown> {
   selectedPorts: Set<string>;
   /** Ports ("node|port") whose link draws its own pin handle (ribbon mode): no dot. */
   ribbonPorts?: Set<string>;
+  /** The host's mark for the node's definition: the corner dot takes its tone. */
+  mark?: NodeMark;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
@@ -104,7 +107,11 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
       style={{ width: box.w, height: box.h, ["--status" as string]: STATUS[node.status] }}
       title={node.description}
     >
-      <span className="status-dot" style={{ background: STATUS[node.status] }} />
+      {data.mark ? (
+        <span className="status-dot mark" data-tone={data.mark.tone} data-tooltip={data.mark.label} role={data.mark.label ? "img" : undefined} aria-label={data.mark.label} />
+      ) : (
+        <span className="status-dot" style={{ background: STATUS[node.status] }} />
+      )}
       <div className="module-body" style={circle ? undefined : { padding: `${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px` }}>
         <Icon name={node.icon} size={circle ? 18 : 22} strokeWidth={1.6} />
         <div className="module-title">{node.label}</div>

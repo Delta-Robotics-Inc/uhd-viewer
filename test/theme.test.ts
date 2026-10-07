@@ -122,3 +122,18 @@ describe("the theme option", () => {
     expect(resolveTheme({ id: "mine", label: "Mine", scheme: "dark", tokens: {} }).current().tokens.canvas).toBe(defaultDark.tokens.canvas);
   });
 });
+
+describe("a host's marks on modules (ViewerOptions.nodeMarks)", () => {
+  it("every tone has a colour from the theme, which a host may override, and no meaning of its own", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(new URL("../src/styles/app.css", import.meta.url), "utf8");
+    expect(css).toContain(".status-dot.mark {");
+    expect(css).toMatch(/\.status-dot\.mark \{[^}]*background: var\(--uhd-mark-neutral, var\(--uhd-text-faint\)\)/);
+    for (const [tone, token] of [["info", "severity-info"], ["ok", "severity-ok"], ["warning", "severity-warning"], ["error", "severity-error"]]) {
+      expect(css).toContain(`.status-dot.mark[data-tone="${tone}"] {\n  background: var(--uhd-mark-${tone}, var(--uhd-${token}));`);
+    }
+    // the open viewer knows marks, not parts: nothing in it names a part's status
+    const sources = ["../src/canvas/nodes.tsx", "../src/canvas/Canvas.tsx", "../src/api.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
+    expect(sources).not.toMatch(/\b(verified|unverified|official|trust)\b/i);
+  });
+});

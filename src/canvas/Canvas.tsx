@@ -13,6 +13,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import type { ViewModel } from "../model/types";
+import type { NodeMark } from "../api";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import type { ComputedLayout } from "../layout/layout";
 import type { LevelLayout, LinkLayout } from "../layout/layout";
@@ -57,6 +58,8 @@ export interface CanvasProps {
   reveal?: { selection: NonNullable<Selection>; seq: number };
   /** Right-click on a node: its context menu at the pointer (the browser's own when not given). */
   onNodeContext?: (id: string, x: number, y: number) => void;
+  /** The host's marks by definition id (`ViewerOptions.nodeMarks`). */
+  marks?: Record<string, NodeMark>;
 }
 
 /**
@@ -105,13 +108,14 @@ export function Canvas(props: CanvasProps) {
       const portKey = ports.map((p) => [p.port.id, p.x, p.y, p.side, p.links.map((l) => l.id + l.state).join()]);
       const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
       const selected = selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf);
-      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected];
+      const mark = node.defId ? props.marks?.[node.defId] : undefined;
+      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.kind === "net" ? "net" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
-        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
+        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts, ...(mark ? { mark } : {}) },
         selected,
         style: { width: box.w, height: box.h },
         // size and handle positions are known from the layout: handing them over means React Flow
