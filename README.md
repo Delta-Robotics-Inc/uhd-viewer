@@ -185,6 +185,16 @@ an adapter says which theme applies and when it changes:
 `"vscode"`, a theme or an adapter). DRC and severity colours are the same in
 every theme. No brand colour is in this package.
 
+**Marks.** A host can mark modules with what it knows about their parts and
+the bundle does not: `nodeMarks` (an option of `mountViewer` and of
+`UhdViewer`) maps a definition id to `{ tone, label }`. The corner dot of
+every module card drawn from that definition takes the tone (`neutral`,
+`info`, `ok`, `warning`, `error`) and says the label on hover; a module with
+no mark keeps the dot of its links' state. A tone's colour is the theme's:
+`--uhd-mark-<tone>` when the host sets it on the viewer's root, else the
+severity colour (the faint text colour for `neutral`). The viewer does not
+know what a mark means.
+
 Styles are Tailwind 4 (no Preflight; everything in cascade layers, so a host
 page's own rules win). Scroll containers are Radix ScrollAreas with thin,
 auto-hiding, themed scrollbars; toolbars are icon buttons with tooltips.

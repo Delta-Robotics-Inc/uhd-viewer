@@ -55,6 +55,7 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, cla
         centre={c.centre}
         reveal={c.reveal}
         onNodeContext={c.onNodeContext}
+        marks={c.options.nodeMarks}
       />
       {toolbar && <DiagramToolbar coveredRight={covered} />}
       {legend && <DiagramLegend />}
