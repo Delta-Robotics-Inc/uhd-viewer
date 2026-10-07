@@ -225,7 +225,7 @@ FOCUS looks along the selected interface's normal.
 **Cables are harness artifacts.** A wire harness whose end interfaces carry
 frames has its own routed body (a GLB in assembly-root coordinates, one node
 per conductor, plug housing, solder joint and tinned tip, written by
-Protoboard's `@protoboard/ext-harness-cad`). UHD `assemble` places it from the
+Protoboard's `@protoboardai/ext-harness-cad`). UHD `assemble` places it from the
 part its first end lands on (`assembly.harnesses`) and checks every other end;
 the viewer draws that GLB at that placement, keeps the generator's colours and
 sets the surface per node kind (satin insulation, metal solder). Selecting a
