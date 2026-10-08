@@ -359,7 +359,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
           }
           return;
         }
-        // the diagram's level (the 3D view shows the whole assembly at any level)
+        // the level: the diagram's, and the module the 3D view shows (the root: the whole assembly)
         case "uhd-viewer:drill":
           setDrill(sameDrill(drillTarget(sys, lookup, m.path)));
           setSelection(null);

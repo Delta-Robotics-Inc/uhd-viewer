@@ -4,7 +4,7 @@
  * placed from the harnesses' fastener stacks, wire harnesses drawn from their
  * own routed artifacts (placed by the parts they connect), and callout labels.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import type { GeometryFrame, ModuleDef } from "@uhd/types/index.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
@@ -18,6 +18,7 @@ import { findingAnchors, type FindingAnchor } from "./findings";
 import {
   DIRECTIONS,
   buildCadModel,
+  defAt,
   explodeParts,
   interfaceRows,
   loadManifests,
@@ -36,6 +37,7 @@ import { Icon } from "../canvas/Icon";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
 import { ScrollArea } from "../ui/ScrollArea";
 import { ArtifactLink } from "../chrome/Artifacts";
+import { intoScope, outOfScope, scopeRef, scopedPlacements, scopedRoot, shownSummary } from "./scope";
 
 /** View parameters from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -174,7 +176,10 @@ export function CadView({
   focusOn,
   onSelect,
   inspector = true,
+  scope,
+  emptyHint,
 }: {
+  /** The root system: every path a host gives or hears is from it. */
   system: ModuleDef;
   lookup: ModuleLookup;
   source: LoadedSource;
@@ -189,16 +194,28 @@ export function CadView({
   focusOn?: { path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean };
   /** Show the inspector card (the app's panel toggle; closed by default on a narrow view, PB-861). */
   inspector?: boolean;
-  /** Every selection change (for the host). */
+  /** Every selection change (for the host), by paths from the root. */
   onSelect?: (sel: CadSelection) => void;
+  /**
+   * The module to show, by instance path from the root (PB-897): that module
+   * alone, in its own coordinates. Absent or empty: the whole assembly.
+   */
+  scope?: string[];
+  /** What a host adds where a module has nothing to draw (how its model is made). */
+  emptyHint?: ReactNode;
 }) {
   const display = source.display.spatial ?? {};
   const resolve = source.resolveArtifact;
   const appearanceOf = (defId: string) => display.appearance?.[defId];
+  // the module shown: the root, or the one at `scope` (a path that names none shows the root)
+  const scopeKey = (scope ?? []).join("/");
+  const scoped = useMemo(() => (scopeKey ? defAt(system, lookup, scopeKey.split("/")) : undefined), [system, lookup, scopeKey]);
+  const at = scoped ? scopeKey : "";
+  const shown = scoped ?? system;
   const hints = useMemo(
-    () => Object.entries(display.placements ?? {}).map(([key, h]) => ({ path: key.split("/"), matrix: h.matrix, note: h.note ?? "placed by a display hint" })),
+    () => scopedPlacements(display.placements, at),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [source],
+    [source, at],
   );
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
@@ -243,7 +260,8 @@ export function CadView({
   const [caption, setCaption] = useState<[string, string] | null>(null);
 
   const allDefs = useMemo(() => {
-    const out = new Map<string, ModuleDef>();
+    // the shown module itself too: a board drawn as its own body has a manifest of its own
+    const out = new Map<string, ModuleDef>([[shown.id, shown]]);
     const walk = (d: ModuleDef) => {
       for (const c of d.children ?? []) {
         const def = lookup(c.moduleDefId);
@@ -253,20 +271,38 @@ export function CadView({
         }
       }
     };
-    walk(system);
+    walk(shown);
     return [...out.values()];
-  }, [system, lookup]);
+  }, [shown, lookup]);
   useEffect(() => {
     loadManifests(allDefs, resolve).then(setManifests);
   }, [allDefs]);
 
   const model: CadModel | null = useMemo(
-    () => (manifests ? buildCadModel(system, lookup, manifests, hints, display.root ? display.root.split("/") : undefined) : null),
+    () => (manifests ? buildCadModel(shown, lookup, manifests, hints, scopedRoot(display.root, at)) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [system, lookup, manifests, hints],
+    [shown, lookup, manifests, hints],
   );
+  /** What the view shows of the module, and what nothing places (the caption, and the empty state). */
+  const summary = useMemo(() => (model ? shownSummary(model, shown, lookup) : null), [model, shown, lookup]);
+  // a module on its own whose parts nothing joins: one part alone is not a picture of it
+  const nothing = !!summary && !!at && summary.loose;
 
-  const findings = useMemo(() => (model ? findingAnchors(model, diagnostics, hostDiagnostics) : []), [model, diagnostics, hostDiagnostics]);
+  // findings name paths from the root: inside a module's view, the ones that lie in it
+  const findings = useMemo(() => {
+    if (!model) return [];
+    if (!at) return findingAnchors(model, diagnostics, hostDiagnostics);
+    const own = diagnostics.flatMap((d) => {
+      const refs = d.refs.flatMap((r) => scopeRef(r, at) ?? []);
+      return refs.length ? [{ ...d, refs }] : [];
+    });
+    const fromHost = hostDiagnostics.flatMap((d) => {
+      if (!d.entity) return [];
+      const id = d.entity.kind === "link" ? scopeRef(`link:${d.entity.id}`, at)?.slice(5) : scopeRef(d.entity.id, at);
+      return id === undefined ? [] : [{ ...d, entity: { ...d.entity, id } }];
+    });
+    return findingAnchors(model, own, fromHost);
+  }, [model, diagnostics, hostDiagnostics, at]);
   const showFindings = findingsChoice ?? findings.some((f) => f.host);
 
   // ---- scene lifecycle -----------------------------------------------------
@@ -318,7 +354,7 @@ export function CadView({
       count++;
       if (!cancelled) setLoaded(count);
     };
-    for (const body of model.bodies) {
+    for (const body of nothing ? [] : model.bodies) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
       obj.userData.key = body.key;
@@ -398,7 +434,7 @@ export function CadView({
     harnessGroup.current.clear();
     harnessObjs.current.clear();
     harnessMaterials.current = [];
-    for (const hp of model.assembly.harnesses) {
+    for (const hp of nothing ? [] : model.assembly.harnesses) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
       obj.matrix.copy(toMatrix4(hp.matrix));
@@ -422,7 +458,7 @@ export function CadView({
         bump();
       }));
     }
-    for (const hw of model.assembly.hardware) {
+    for (const hw of nothing ? [] : model.assembly.hardware) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
       const base = toMatrix4(hw.matrix);
@@ -453,7 +489,7 @@ export function CadView({
     return () => {
       cancelled = true;
     };
-  }, [model]);
+  }, [model, nothing]);
 
   // ---- explode: each body up the stack, or along the mate that placed it ------
   useEffect(() => {
@@ -669,14 +705,16 @@ export function CadView({
       return (where === "top" ? rec.top : rec.centre).clone().applyMatrix4(rec.obj.matrix);
     };
     const hintsL = display.labels ?? {};
-    const names = instanceNames(system, lookup);
-    const nameOf = (path: string) => names.get(path) ?? path;
+    const names = instanceNames(shown, lookup);
+    const nameOf = (path: string) => names.get(path) ?? (path || shown.name);
+    // display hints name instances by their paths from the root
+    const full = (key: string) => (key.includes("#") ? `${outOfScope(key.split("#")[0], at)}#${key.split("#")[1]}` : outOfScope(key, at));
     // a name shared by several instances (four "Motor"s) is qualified by the parent's name
     const sameName = (path: string) => [...names.entries()].filter(([p, n]) => n === nameOf(path) && p !== path && model.bodies.some((b) => b.key === p)).length > 0;
     const rootKey = model.bodies.find((b) => !b.via && !b.hint)?.key;
     if (labelKinds.has("module")) {
       for (const b of model.bodies) {
-        const h = hintsL.modules?.[b.key];
+        const h = hintsL.modules?.[full(b.key)];
         if (h?.hide) continue;
         const path = b.key.split("#")[0];
         const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -696,7 +734,7 @@ export function CadView({
         return p.divideScalar(list.length);
       };
       for (const harness of [...new Set(model.assembly.hardware.map((h) => h.harness))]) {
-        const h = hintsL.harnesses?.[harness];
+        const h = hintsL.harnesses?.[full(harness)];
         if (h?.hide) continue;
         const list = model.assembly.hardware.filter((x) => x.harness === harness);
         // short names from the harness's own child refs ("M2 x 12 screw", "5 mm spacer")
@@ -710,7 +748,7 @@ export function CadView({
         items.push({ id: `h:${harness}`, kind: "harness", title: h?.title ?? nameOf(harness), sub, anchor: hwAnchor(harness), onClick: () => setSel({ mate: list[0].linkId }) });
       }
       for (const hp of model.assembly.harnesses) {
-        const h = hintsL.harnesses?.[hp.key];
+        const h = hintsL.harnesses?.[full(hp.key)];
         if (h?.hide) continue;
         const m = routeManifest(model, hp);
         items.push({
@@ -825,12 +863,16 @@ export function CadView({
     if (grid) grid.visible = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, loaded, model]);
+  /** Bodies that hold another (shells): what X-ray has to see through. None: the control is disabled and says so. */
+  const [shells, setShells] = useState(0);
   useEffect(() => {
     // a body whose bounds hold another body's centre is a shell (an enclosure): x-ray makes it see-through
     const recs = [...bodies.current.values()].filter((r) => !r.box.isEmpty());
     const world = new Map(recs.map((r) => [r, r.box.clone().applyMatrix4(r.base)]));
+    let count = 0;
     for (const r of recs) {
       const shell = recs.some((o) => o !== r && world.get(r)!.containsPoint(world.get(o)!.getCenter(new THREE.Vector3())));
+      if (shell) count++;
       for (const m of r.materials) {
         const base = (m.userData.base ??= { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite }) as { transparent: boolean; opacity: number; depthWrite: boolean };
         const see = xray && shell;
@@ -840,7 +882,9 @@ export function CadView({
         m.needsUpdate = true;
       }
     }
-  }, [xray, loaded, model]);
+    setShells(count);
+    handle.current?.renderOnce();
+  }, [xray, loaded, model, settled]);
 
   // ---- selection overlays: interface geometry per direction, frames ----------
   useEffect(() => {
@@ -984,9 +1028,11 @@ export function CadView({
       }
     }
     if (selBody && sel.component) {
-      // a component inside the body (a board's part): its node glows
+      // a component inside the body (a board's part): its node, named by its id in the body, glows
+      const holder = selBody.key.split("#")[0];
+      const node = holder && sel.component.startsWith(`${holder}/`) ? sel.component.slice(holder.length + 1) : sel.component;
       objOf(selBody.key)?.traverse((o) => {
-        if (o.name !== sel.component) return;
+        if (o.name !== node) return;
         o.traverse((x) => {
           const mesh = x as THREE.Mesh;
           if (!mesh.isMesh) return;
@@ -1040,7 +1086,10 @@ export function CadView({
       else {
         const k = hit.object.userData.bodyKey as string;
         const hwMate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
-        const component = hit.object.userData.component as string | undefined;
+        const child = hit.object.userData.component as string | undefined;
+        // a component is named by its instance path in the model (the body's path, then its id in the body), as a host's focus names it
+        const holder = k.split("#")[0];
+        const component = child === undefined ? undefined : holder ? `${holder}/${child}` : child;
         setSel(hwMate ? { mate: hwMate } : component ? { body: k, component } : { body: k });
       }
     };
@@ -1054,7 +1103,8 @@ export function CadView({
 
   // ---- camera helpers and the capture API ---------------------------------------
   /** The direction drawn up (a display hint; default +z) and the rotation from +z to it. */
-  const upVec = useMemo(() => new THREE.Vector3(...(display.view?.up ?? [0, 0, 1])).normalize(), [source]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the project's saved view (its up direction, its camera) is the assembly's: a module on its own is seen in its own coordinates
+  const upVec = useMemo(() => new THREE.Vector3(...((at ? undefined : display.view?.up) ?? [0, 0, 1])).normalize(), [source, at]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!upRef.current.equals(upVec)) {
     upRef.current = upVec.clone();
     stackPlan.current = null;
@@ -1173,7 +1223,7 @@ export function CadView({
   }, [applyExplode, loaded, settled]);
   // the opening camera (once): the URL's az/el/dist, else the project's saved view, else the defaults;
   // the model is fitted once every model has loaded unless a distance was given (PB-873)
-  const saved = display.view?.camera;
+  const saved = at ? undefined : display.view?.camera;
   const opening = {
     az: Number(params.get("az") ?? saved?.azimuth ?? -58),
     el: Number(params.get("el") ?? saved?.elevation ?? 28),
@@ -1212,8 +1262,10 @@ export function CadView({
   useEffect(() => {
     if (!focusOn || !model || focused.current === focusOn.seq) return;
     focused.current = focusOn.seq;
-    const key = focusOn.path;
     if (focusOn.kind === "none") return setSel({});
+    // the host names paths from the root: in a module's view, what lies outside it is not there to select
+    const key = intoScope(focusOn.path, at);
+    if (key === undefined) return;
     if (focusOn.kind === "link") {
       if (model.assembly.mates.some((m) => m.linkId === key)) setSel({ mate: key });
       return;
@@ -1236,7 +1288,11 @@ export function CadView({
   }, [sel, loaded]);
   const selectHandler = useRef(onSelect);
   selectHandler.current = onSelect;
-  useEffect(() => selectHandler.current?.(sel), [sel]);
+  // the host hears paths from the root
+  useEffect(() => {
+    const out = (p: string | undefined) => (p === undefined ? undefined : p.includes("#") ? `${outOfScope(p.split("#")[0], at)}#${p.split("#")[1]}` : outOfScope(p, at));
+    selectHandler.current?.({ ...sel, ...(sel.body !== undefined ? { body: out(sel.body) } : {}), ...(sel.component !== undefined ? { component: out(sel.component) } : {}), ...(sel.harness !== undefined ? { harness: out(sel.harness) } : {}), ...(sel.mate !== undefined ? { mate: out(sel.mate) } : {}) });
+  }, [sel, at]);
 
   const toggleKind = (k: LabelKind) =>
     setLabelKinds((s) => {
@@ -1329,7 +1385,15 @@ export function CadView({
                 </div>
               )}
             </div>
-            <IconButton icon="scan-eye" label="X-ray: see through bodies that hold others" tooltipSide="top" pressed={xray} onClick={() => setXray(!xray)} />
+            <IconButton
+              icon="scan-eye"
+              label={shells ? "X-ray: see through bodies that hold others" : "X-ray: nothing to see through here (no body holds another)"}
+              tooltipSide="top"
+              pressed={xray && shells > 0}
+              aria-disabled={!shells || undefined}
+              className={shells ? undefined : "cursor-default opacity-40 hover:bg-transparent"}
+              onClick={() => shells && setXray(!xray)}
+            />
             {findings.length > 0 && (
               <IconButton
                 icon="triangle-alert"
@@ -1354,6 +1418,37 @@ export function CadView({
           </Toolbar>
         )}
         {!model && <div className="cad-loading">Loading manifests…</div>}
+        {model && summary && !present && (nothing || (settled && !bodies.current.size) || (settled && loaded === 0)) ? (
+          <div className="cad-empty" role="status">
+            <Icon name="box" size={26} strokeWidth={1.25} />
+            <div className="cad-empty-title">{shown.name} has no 3D model yet</div>
+            <p>
+              {summary.loose
+                ? `Its ${summary.parts} parts have nothing that says where they sit: no body of the module's own (a GLB artifact that shows them in place), and no mechanical links between them.`
+                : "Nothing here has a body to draw (a GLB artifact)."}
+            </p>
+            {emptyHint && <p>{emptyHint}</p>}
+          </div>
+        ) : (
+          model && summary && !present && (
+            <div className="cad-scope" data-tooltip={summary.unplaced.length ? `Not placed (nothing says where they sit): ${summary.unplaced.slice(0, 12).map((u) => u.name).join(", ")}${summary.unplaced.length > 12 ? ` and ${summary.unplaced.length - 12} more` : ""}` : undefined} data-tooltip-side="bottom">
+              <span className="cad-scope-name">{shown.name}</span>
+              <span className="cad-scope-what">
+                {summary.ownBody
+                  ? summary.parts
+                    ? `with its ${summary.parts} parts`
+                    : "on its own"
+                  : summary.parts === 0
+                    ? "on its own"
+                    : summary.unplaced.length
+                      ? `${summary.placed.length} of ${summary.parts} parts placed${summary.placed.length === 1 ? `: ${summary.placed[0].name}` : ""}`
+                      : at
+                        ? `its ${summary.parts} parts, assembled`
+                        : "the whole assembly"}
+              </span>
+            </div>
+          )
+        )}
         {present && (
           <div className="cad-caption">
             <div className="cad-caption-brand">
