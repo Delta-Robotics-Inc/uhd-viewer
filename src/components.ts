@@ -36,6 +36,13 @@ export type { Panel, Goto } from "./chrome/Chrome";
 // ---- views
 export { DiagramCanvas, DiagramToolbar, DiagramLegend, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
+// the inspector's details on their own, for a host with an inspector of its own
+export { SelectionDetails, type SelectionDetailsProps, type DetailsTarget } from "./viewer/details";
+export { ArtifactCard, ArtifactCards, ArtifactGrid, type ArtifactCardProps } from "./chrome/ArtifactCards";
+export { EvidenceSection } from "./chrome/Evidence";
+export { artifactCard, artifactCards, classifyArtifact, evidenceSourceCards, groupArtifactCards, ARTIFACT_GROUPS, type ArtifactCardModel, type ArtifactCardOptions, type ArtifactGroup, type ArtifactKind, type ArtifactPreview, type ArtifactSourceRow } from "./model/artifacts";
+export type { EvidenceFiles, SourceRow, Verification } from "./model/evidence";
+export { HostContext, type HostActions } from "./host/context";
 
 // ---- primitives
 export { ScrollArea, type ScrollAreaProps } from "./ui/ScrollArea";

@@ -1,8 +1,9 @@
 /**
- * Artifacts in the inspector: a module's or harness's thumbnail, and its body
- * CAD in a small viewer that turns slowly until grabbed, then orbits with the
- * pointer (drag to rotate, scroll to zoom, right-drag to pan). Other CAD and
- * drawing files are listed with a link to open them.
+ * Artifacts in the inspector: a module's or harness's picture, its body CAD
+ * in a small viewer that turns slowly until grabbed, then orbits with the
+ * pointer (drag to rotate, scroll to zoom, right-drag to pan), and every
+ * artifact as a card (ArtifactCards.tsx): images, models, board drawings,
+ * datasheets, documents, design files and data.
  */
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -10,8 +11,9 @@ import type { ArtifactDef, ModuleDef } from "@uhd/types/index.js";
 import { glbFor } from "../cad/model";
 import { cadWrapper, createScene, loadGlb, materialFor } from "../cad/scene";
 import type { Appearance } from "../source/source";
-import { Icon } from "../canvas/Icon";
-import { isBoardDrawing } from "../model/outputs";
+import { circuitOutputs, isBoardDrawing } from "../model/outputs";
+import { artifactCards } from "../model/artifacts";
+import { ArtifactCards } from "./ArtifactCards";
 import { useHost } from "../host/context";
 
 import type { ArtifactResolver } from "../api";
@@ -91,59 +93,96 @@ export function AssemblyArtifacts({
     }
   };
   walk(def, 0);
-  if (!parts.length) return null;
   const cur = parts[Math.min(pick, parts.length - 1)];
   return (
     <>
-      <div className="section-title">ARTIFACTS · PARTS</div>
-      <div className="artifact-parts">
-        {parts.map((p, i) => (
-          <button key={p.def.id} className={`mini${p === cur ? " on" : ""}`} onClick={() => setPick(i)}>
-            {p.name.toUpperCase()}
-          </button>
-        ))}
-      </div>
-      <ArtifactsSection def={cur.def} resolve={resolve} appearance={appearance?.[cur.def.id]} titled={false} />
-    </>
-  );
-}
-
-export function ArtifactsSection({ def, resolve, appearance, titled = true }: { def?: ModuleDef; resolve: ArtifactResolver; appearance?: Appearance; titled?: boolean }) {
-  if (!def) return null;
-  const thumb = thumbnailOf(def);
-  const glb = glbFor(def);
-  const files = (def.artifacts ?? []).filter((a) => a !== glb && a !== thumb && !isBoardDrawing(a) && (a.role === "body" || a.role === "drawing") && (a.filePath || a.url));
-  if (!thumb && !glb && !files.length) return null;
-  return (
-    <>
-      {titled && <div className="section-title">ARTIFACTS</div>}
-      {thumb && <Thumbnail url={urlOf(def, thumb, resolve)} name={thumb.name} />}
-      {glb && <CadPreview def={def} url={urlOf(def, glb, resolve)} appearance={appearance} />}
-      {files.length > 0 && (
-        <div className="artifact-files">
-          {files.map((a) => {
-            const url = urlOf(def, a, resolve);
-            return (
-              <ArtifactLink key={a.id} defId={def.id} artifactId={a.id} href={url} title={a.filePath ?? a.url}>
-                <Icon name={a.role === "drawing" ? "file-text" : "box"} size={11} />
-                <span className="artifact-name">{a.name}</span>
-                <span className="artifact-format">{(a.format ?? a.type).toUpperCase()}</span>
-              </ArtifactLink>
-            );
-          })}
-        </div>
+      {/* the module's own artifacts (documents, sources) come first; its parts' follow */}
+      <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} />
+      {cur && (
+        <>
+          <div className="section-title">ARTIFACTS · PARTS</div>
+          <div className="artifact-parts">
+            {parts.map((p, i) => (
+              <button key={p.def.id} className={`mini${p === cur ? " on" : ""}`} onClick={() => setPick(i)}>
+                {p.name.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <ArtifactsSection def={cur.def} resolve={resolve} appearance={appearance?.[cur.def.id]} titled={false} />
+        </>
       )}
     </>
   );
 }
 
-function Thumbnail({ url, name }: { url?: string; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!url || failed) return null;
+/**
+ * A definition's artifacts: its picture, its body model (turning in a small
+ * 3D preview, unless the host shows models as cards), and every artifact as
+ * a card under its kind. A board's drawings and outputs are left to the
+ * board's own section (BoardViews).
+ */
+export function ArtifactsSection({ def, resolve, appearance, titled = true }: { def?: ModuleDef; resolve: ArtifactResolver; appearance?: Appearance; titled?: boolean }) {
+  const host = useHost();
+  if (!def) return null;
+  const live = host.artifactModels !== "cards";
+  const thumb = thumbnailOf(def);
+  const glb = live ? glbFor(def) : undefined;
+  // a board's drawings and outputs are its own section's cards (BoardViews)
+  const outs = circuitOutputs(def);
+  const board = new Set(outs ? Object.values(outs).filter(Boolean) : []);
+  const files = host.evidence?.(def.id);
+  const cards = artifactCards(def, resolve, {
+    // shown above: the picture and the turning model
+    skip: (a) => a === thumb || a === glb || board.has(a),
+    previewFor: host.artifactPreview,
+    remoteImages: host.remoteImages,
+    sources: files?.sources,
+  });
+  if (!thumb && !glb && !cards.length) return null;
   return (
-    <div className="artifact-thumb">
-      <img src={url} alt={name} onError={() => setFailed(true)} />
-    </div>
+    <>
+      {titled && <div className="section-title">ARTIFACTS · {(def.artifacts ?? []).filter((a) => (a.filePath || a.url) && !board.has(a)).length}</div>}
+      {thumb && <Thumbnail defId={def.id} artifactId={thumb.id} url={urlOf(def, thumb, resolve)} name={thumb.name} remote={!thumb.filePath} />}
+      {glb && <CadPreview def={def} url={urlOf(def, glb, resolve)} appearance={appearance} />}
+      <ArtifactCards cards={cards} />
+    </>
+  );
+}
+
+/** The part's picture, large: the first card of its artifacts. A click opens it. */
+function Thumbnail({ defId, artifactId, url, name, remote }: { defId: string; artifactId: string; url?: string; name: string; remote: boolean }) {
+  const { openArtifact, remoteImages } = useHost();
+  const [failed, setFailed] = useState(false);
+  if (!url || failed || (remote && remoteImages === false)) return null;
+  return (
+    <a
+      className="artifact-thumb"
+      href={openArtifact ? undefined : url}
+      target="_blank"
+      rel="noreferrer"
+      role={openArtifact ? "button" : undefined}
+      tabIndex={0}
+      title={name}
+      data-artifact={artifactId}
+      onClick={
+        openArtifact &&
+        ((e) => {
+          e.preventDefault();
+          openArtifact(defId, artifactId);
+        })
+      }
+      onKeyDown={
+        openArtifact &&
+        ((e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openArtifact(defId, artifactId);
+          }
+        })
+      }
+    >
+      <img src={url} alt={name} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+    </a>
   );
 }
 
