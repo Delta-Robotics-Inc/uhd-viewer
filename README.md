@@ -69,8 +69,26 @@ lanes) it also opens or closes it, as its +/− box does.
   - Mechanical ports are square.
   - Ground links show as ground symbols; *GND WIRES* draws them as wires instead.
 - **Classification (D7):** domain, DRC health (from `validateLinks`), and electrical signal type, each with its own legend.
+- **Isolating a legend entry (PB-946):** every entry of the legend is a button.
+  - A click isolates it: the links of that signal type, domain or state stay, with the interfaces and modules
+    they touch (and the nets of that kind, and the container that holds any of them); everything else on the
+    level fades. A link that carries several kinds (a cable with power and a UART) stays for each of them.
+  - A click on it again, **Esc**, or the × in the legend's header shows everything again. A click on another
+    entry switches to it; with Shift, Ctrl or Cmd it joins (or leaves) the ones held.
+  - The legend lists a kind it otherwise leaves out (SPI, CAN, analog, digital, another domain) on a level
+    that has it, so every colour on screen has an entry. An entry the level has nothing of is disabled and
+    says so.
+  - What is isolated is the viewer's state, not the model's: it holds while the bundle rebuilds and from
+    level to level, and it ends when the classification changes. It is not a selection, so the host is not
+    told (`selectionChanged` says what is selected, as before). `?isolate=power,uart` opens with entries held.
+  - The model: `src/model/isolate.ts` (`isolate`, `presentKeys`, `toggleIsolated`); a shell with a legend
+    card of its own draws `DiagramLegendItems` and `IsolationClear` in it.
 - **Hierarchy (D8, D9):**
   - Groups (dashed) and modules (solid) expand in place, and double-click toggles expansion.
+  - A module expanded in place holds what is in it (PB-897): its children are laid out inside it as their
+    own level would be (unless the display file places them), it wraps them with room for their links, the
+    links between them are routed inside it, and with a hand layout of the level the cards beside and below
+    it move by what it grew. A child dragged left of it or above it stops at its edge.
   - Exports show as boundary ports, with dashed pass-through lines to the child's port.
   - *Open as canvas* drills into a module. Its exports become sheet ports on the canvas edges, and a breadcrumb in the header leads back.
 - **Inspector:** by default it shows the hierarchy of modules and links. Selecting a module shows its details and interfaces; selecting a link shows its child links and diagnostics.

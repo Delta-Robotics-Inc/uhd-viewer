@@ -505,17 +505,20 @@
   border-color: var(--uhd-border);
 }
 
-.container {
+/* a module or group expanded in place. Not `.container`, and not `.group`: a host's Tailwind build that
+   scans the viewer makes utilities of those names, and `.container`'s max-width per breakpoint then cut
+   the outline short of the modules inside it (PB-897: "links escape their container") */
+.module-container {
   border-radius: 12px;
   background: color-mix(in oklab, var(--uhd-node) 25%, transparent);
   border: 2px solid var(--uhd-node-border);
 }
-.container.group {
+.module-container.is-group {
   background: var(--uhd-group);
   border: 1.5px dashed var(--uhd-group-border);
   border-radius: 6px;
 }
-.container.selected {
+.module-container.selected {
   border-color: var(--uhd-accent);
 }
 .container-label {

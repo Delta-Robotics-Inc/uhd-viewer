@@ -116,9 +116,30 @@ export class GridRouter {
 
   /**
    * Route from a port (on `fromSide` of its card) to another port, through
-   * `pins` in order. Returns the polyline in canvas coordinates.
+   * `pins` in order. Returns the polyline in canvas coordinates. With
+   * `within`, the route stays inside that rectangle (a link between two
+   * modules of a container expanded in place never leaves the container);
+   * where no such route exists it is routed without the limit.
    */
-  route(from: Pt, fromSide: Side, to: Pt, toSide: Side, pins: Pt[] = []): Pt[] {
+  route(from: Pt, fromSide: Side, to: Pt, toSide: Side, pins: Pt[] = [], within?: Rect): Pt[] {
+    if (within) {
+      const region = { x0: Math.ceil(within.x / GRID), y0: Math.ceil(within.y / GRID), x1: Math.floor((within.x + within.w) / GRID), y1: Math.floor((within.y + within.h) / GRID) };
+      this.region = region;
+      try {
+        const inside = this.routeOnce(from, fromSide, to, toSide, pins, true);
+        if (inside) return inside;
+      } finally {
+        this.region = undefined;
+      }
+    }
+    return this.routeOnce(from, fromSide, to, toSide, pins, false)!;
+  }
+
+  /** The cells a search may use, in grid coordinates (a container's inside), when a route is kept within one. */
+  private region: { x0: number; y0: number; x1: number; y1: number } | undefined;
+
+  /** One routing attempt; `strict` gives up (undefined, nothing marked) where a leg finds no way instead of jogging straight. */
+  private routeOnce(from: Pt, fromSide: Side, to: Pt, toSide: Side, pins: Pt[], strict: boolean): Pt[] | undefined {
     const d0 = SIDE_DIR[fromSide];
     const dEnd = SIDE_DIR[toSide];
     const s: Pt = [snap(from[0]) / GRID + DIRS[d0][0], snap(from[1]) / GRID + DIRS[d0][1]];
@@ -137,6 +158,7 @@ export class GridRouter {
         this.search(from, dir, stops[k], arrive) ??
         (this.thorough ? this.search(from, dir, stops[k], arrive, Infinity) ?? (arrive >= 0 ? this.search(from, dir, stops[k], -1, Infinity) : undefined) : undefined);
       if (!leg) {
+        if (strict) return undefined;
         cells.push(stops[k]);
         continue;
       }
@@ -149,7 +171,7 @@ export class GridRouter {
   }
 
   private search(start: Pt, startDir: number, goal: Pt, arriveDir: number, budget?: number): { cells: Pt[]; dir: number } | undefined {
-    const { g, prev, stamp } = this;
+    const { g, prev, stamp, region } = this;
     const gen = ++this.gen;
     const cost = (st: number) => (stamp[st] === gen ? g[st] : Infinity);
     const si = this.idx(start[0], start[1]);
@@ -182,6 +204,7 @@ export class GridRouter {
         const nx = cx + DIRS[nd][0];
         const ny = cy + DIRS[nd][1];
         if (nx < 0 || ny < 0 || nx >= this.W || ny >= this.H) continue;
+        if (region && (nx + this.x0 < region.x0 || nx + this.x0 > region.x1 || ny + this.y0 < region.y0 || ny + this.y0 > region.y1)) continue;
         const ni = ny * this.W + nx;
         if (this.blocked[ni] && ni !== gi) continue;
         const horizontal = nd % 2 === 0;

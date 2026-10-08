@@ -126,7 +126,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
   const { node, box } = data;
   const group = node.kind === "group";
   return (
-    <div className={`container${group ? " group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
+    <div className={`module-container${group ? " is-group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
       {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
         <Icon name={node.icon} size={12} strokeWidth={1.8} />
