@@ -137,6 +137,18 @@ describe("the inspector's details on their own", () => {
     expect(html).not.toMatch(/<img [^>]*\.glb/);
   });
 
+  it("keeps a picture it may not load as a card: no artifact disappears", () => {
+    const def = { id: "p", name: "P", kind: "module", interfaces: [], artifacts: [art({ id: "photo", name: "Photo", url: "https://example.com/p.jpg" }), art({ id: "ds", type: "datasheet", url: "https://example.com/ds.pdf" })] } as unknown as ModuleDef;
+    const shown = renderToStaticMarkup(createElement(SelectionDetails, { definitions: [def], target: { kind: "definition", id: "p" } }));
+    // loaded: the picture is shown large, above the cards
+    expect(shown).toContain('class="artifact-thumb"');
+    expect(count(shown, /class="uhd-artifact-card /g)).toBe(1);
+    const held = renderToStaticMarkup(createElement(SelectionDetails, { definitions: [def], target: { kind: "definition", id: "p" }, host: { remoteImages: false } }));
+    expect(held).not.toContain("<img");
+    expect(count(held, /class="uhd-artifact-card /g)).toBe(2);
+    expect(held).toContain('data-artifact="photo"');
+  });
+
   it("shows a component inside a board, a link of the system, a definition on its own, and the root", () => {
     expect(render({ target: { kind: "module", path: "board/u2" } })).toContain("fixture-imu-lga12");
     const link = render({ target: { kind: "link", owner: "", ids: ["board_mount"] } });

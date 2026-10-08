@@ -125,7 +125,9 @@ export function ArtifactsSection({ def, resolve, appearance, titled = true }: { 
   const host = useHost();
   if (!def) return null;
   const live = host.artifactModels !== "cards";
-  const thumb = thumbnailOf(def);
+  const picture = thumbnailOf(def);
+  // the picture is shown large only when it may be loaded; one at a web address a host does not load stays a card (its icon and host)
+  const thumb = picture && !(host.remoteImages === false && !picture.filePath) && urlOf(def, picture, resolve) ? picture : undefined;
   const glb = live ? glbFor(def) : undefined;
   // a board's drawings and outputs are its own section's cards (BoardViews)
   const outs = circuitOutputs(def);
