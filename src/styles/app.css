@@ -278,6 +278,25 @@
   text-align: right;
   word-break: break-all;
 }
+/* the details on their own in a host's inspector (a side bar): a value breaks between words where it can, and only
+   a word longer than the line inside it; narrower than 248px (a side bar of 220px) the key is over its value, where
+   side by side a long value would be cut into pieces of a few letters */
+.uhd-selection-details {
+  container: uhd-details / inline-size;
+}
+.uhd-selection-details .kv .v {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+@container uhd-details (width < 248px) {
+  .kv {
+    flex-direction: column;
+    gap: 1px;
+  }
+  .kv .v {
+    text-align: left;
+  }
+}
 .description {
   color: var(--uhd-text-muted);
   font-size: 10.5px;
