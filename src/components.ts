@@ -25,22 +25,24 @@ export { renderViewer } from "./viewer/mount";
 export { parseHostMessage, isViewerEvent, originAllowed, PREFIX as HOST_MESSAGE_PREFIX } from "./host/protocol";
 
 // ---- the model and its state
-export { UhdViewer, ViewerProvider, useViewer, useViewerSource, useViewerController, type AppProps as UhdViewerOptions, type UhdViewerProps, type HostLink, type ViewerController } from "./viewer/controller";
+export { UhdViewer, ViewerBoundary, ViewerProvider, useViewer, useViewerSource, useViewerController, type AppProps as UhdViewerOptions, type UhdViewerProps, type HostLink, type ViewerController } from "./viewer/controller";
 export type { LoadedSource } from "./source/source";
+export { tolerantSystem, isPlaceholder, type MissingDefinition, type LeftOut, type TolerantSystem } from "./source/tolerant";
 export type { Classification } from "./model/classification";
-export { CLASSIFICATIONS, colorFor, legendFor } from "./model/classification";
+export { CLASSIFICATIONS, colorFor, legendFor, classKey, type LegendEntry } from "./model/classification";
+export { isolate, presentKeys, linkKeys, toggleIsolated, type Isolation } from "./model/isolate";
 export type { ViewModel, ViewNode, ViewLink } from "./model/types";
 export type { Selection } from "./canvas/Canvas";
 export type { Panel, Goto } from "./chrome/Chrome";
 
 // ---- views
-export { DiagramCanvas, DiagramToolbar, DiagramLegend, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps } from "./viewer/views";
+export { DiagramCanvas, DiagramToolbar, DiagramLegend, DiagramLegendItems, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
 
 // ---- primitives
 export { ScrollArea, type ScrollAreaProps } from "./ui/ScrollArea";
 export { Toolbar, ToolbarSeparator, IconButton, ToggleGroup, type ToolbarProps, type IconButtonProps, type ToggleGroupProps } from "./ui/Toolbar";
-export { Legend, LegendItem } from "./ui/Legend";
+export { Legend, LegendItem, type LegendItemProps } from "./ui/Legend";
 export { InspectorPanel, Section, PropertyRow, Badge, StatusDot, EmptyState, type InspectorPanelProps, type Tone } from "./ui/Inspector";
 export { Tooltips } from "./ui/Tooltips";
 export { Icon } from "./canvas/Icon";

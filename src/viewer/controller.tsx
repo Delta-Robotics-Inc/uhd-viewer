@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import { buildView, levelModule, withOverrides } from "../model/from-uhd";
 import { systemDiagnostics } from "../model/diagnostics";
 import type { Classification } from "../model/classification";
+import { isolate, presentKeys, toggleIsolated } from "../model/isolate";
 import type { ViewLink } from "../model/types";
 import { computeLayout, type ComputedLayout, type LevelLayout, type LinkLayout } from "../layout/layout";
 import { tapRails } from "../layout/taps";
@@ -152,7 +153,18 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const DEFAULT_EXPANDED = source.display.diagram?.expanded ?? [];
   const [scenarioId, setScenarioId] = useState(params.get("scenario") ?? "nominal");
   const [drill, setDrill] = useState<string[]>(list("drill") ?? []);
-  const [mode, setMode] = useState<Classification>((params.get("mode") as Classification) ?? "domain");
+  const [mode, setModeState] = useState<Classification>((params.get("mode") as Classification) ?? "domain");
+  // legend entries isolated in the current classification (?isolate=power,uart): the rest of the level fades
+  const [isolated, setIsolated] = useState<ReadonlySet<string>>(() => new Set(list("isolate") ?? []));
+  // another classification has other entries: nothing of the old one stays isolated
+  const setMode = useCallback((m: Classification) => {
+    setModeState((was) => {
+      if (was !== m) setIsolated(new Set());
+      return m;
+    });
+  }, []);
+  const onIsolate = useCallback((key: string, add = false) => setIsolated((cur) => toggleIsolated(cur, key, add)), []);
+  const clearIsolated = useCallback(() => setIsolated((cur) => (cur.size ? new Set() : cur)), []);
   const [conductors, setConductors] = useState(params.get("detail") === "conductors");
   const [showGrounds, setShowGrounds] = useState(params.get("grounds") === "1");
   const [expanded, setExpanded] = useState<Set<string>>(new Set([...DEFAULT_EXPANDED, ...(list("expand") ?? [])]));
@@ -181,6 +193,21 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   );
   // what the canvas draws: the level, with each supply rail as taps beside the parts it feeds
   const drawn = useMemo(() => tapRails(vm), [vm]);
+  // what the legend lists as on this level, and what stays while entries of it are isolated
+  const present = useMemo(() => presentKeys(drawn, mode), [drawn, mode]);
+  const isolation = useMemo(() => isolate(drawn, mode, isolated), [drawn, mode, isolated]);
+  // Escape shows everything again (unless it is typed into a field, or something else took it)
+  useEffect(() => {
+    if (!isolated.size || typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      clearIsolated();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isolated, clearIsolated]);
   const hand = HAND_LAYOUTS[levelKey];
   // while something is dragged only the links it touches are rerouted; all of them once it is dropped
   const [live, setLive] = useState<Live | null>(null);
@@ -332,7 +359,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
           }
           return;
         }
-        // the diagram's level (the 3D view shows the whole assembly at any level)
+        // the level: the diagram's, and the module the 3D view shows (the root: the whole assembly)
         case "uhd-viewer:drill":
           setDrill(sameDrill(drillTarget(sys, lookup, m.path)));
           setSelection(null);
@@ -432,6 +459,12 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     setConductors,
     showGrounds,
     setShowGrounds,
+    // legend entries isolated (the rest fades): the keys held, what stays on this level, what the level has
+    isolated,
+    isolation,
+    present,
+    onIsolate,
+    clearIsolated,
     panel,
     setPanel,
     selection,
@@ -511,8 +544,45 @@ export function UhdViewer({ children, ...props }: UhdViewerProps) {
     );
   if (!source) return <div className="load-state">Loading UHD bundle…</div>;
   return (
-    <ViewerProvider source={source} options={props} host={props.host}>
-      {children}
-    </ViewerProvider>
+    <ViewerBoundary source={source}>
+      <ViewerProvider source={source} options={props} host={props.host}>
+        {children}
+      </ViewerProvider>
+    </ViewerBoundary>
   );
+}
+
+/**
+ * A bundle the viewer cannot draw says so in place, instead of leaving an
+ * empty page: what failed, and that the next bundle is tried again (a
+ * producer that rebuilds on a source edit sends one).
+ */
+export class ViewerBoundary extends Component<{ source: LoadedSource; children?: ReactNode }, { failed?: { source: LoadedSource; message: string } }> {
+  state: { failed?: { source: LoadedSource; message: string } } = {};
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("uhd-viewer: could not draw the bundle", error, info.componentStack);
+    this.setState({ failed: { source: this.props.source, message: error?.message || String(error) } });
+  }
+
+  static getDerivedStateFromError(): null {
+    return null;
+  }
+
+  render() {
+    const failed = this.state.failed;
+    // another bundle is another try
+    if (failed && failed.source === this.props.source) {
+      return (
+        <div className="load-state error draw-error" role="alert">
+          <div>
+            <b>This bundle could not be drawn.</b>
+            <p>{failed.message}</p>
+            <p className="draw-error-note">The view comes back by itself when the bundle changes.</p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

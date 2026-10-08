@@ -69,8 +69,26 @@ lanes) it also opens or closes it, as its +/− box does.
   - Mechanical ports are square.
   - Ground links show as ground symbols; *GND WIRES* draws them as wires instead.
 - **Classification (D7):** domain, DRC health (from `validateLinks`), and electrical signal type, each with its own legend.
+- **Isolating a legend entry (PB-946):** every entry of the legend is a button.
+  - A click isolates it: the links of that signal type, domain or state stay, with the interfaces and modules
+    they touch (and the nets of that kind, and the container that holds any of them); everything else on the
+    level fades. A link that carries several kinds (a cable with power and a UART) stays for each of them.
+  - A click on it again, **Esc**, or the × in the legend's header shows everything again. A click on another
+    entry switches to it; with Shift, Ctrl or Cmd it joins (or leaves) the ones held.
+  - The legend lists a kind it otherwise leaves out (SPI, CAN, analog, digital, another domain) on a level
+    that has it, so every colour on screen has an entry. An entry the level has nothing of is disabled and
+    says so.
+  - What is isolated is the viewer's state, not the model's: it holds while the bundle rebuilds and from
+    level to level, and it ends when the classification changes. It is not a selection, so the host is not
+    told (`selectionChanged` says what is selected, as before). `?isolate=power,uart` opens with entries held.
+  - The model: `src/model/isolate.ts` (`isolate`, `presentKeys`, `toggleIsolated`); a shell with a legend
+    card of its own draws `DiagramLegendItems` and `IsolationClear` in it.
 - **Hierarchy (D8, D9):**
   - Groups (dashed) and modules (solid) expand in place, and double-click toggles expansion.
+  - A module expanded in place holds what is in it (PB-897): its children are laid out inside it as their
+    own level would be (unless the display file places them), it wraps them with room for their links, the
+    links between them are routed inside it, and with a hand layout of the level the cards beside and below
+    it move by what it grew. A child dragged left of it or above it stops at its edge.
   - Exports show as boundary ports, with dashed pass-through lines to the child's port.
   - *Open as canvas* drills into a module. Its exports become sheet ports on the canvas edges, and a breadcrumb in the header leads back.
 - **Inspector:** by default it shows the hierarchy of modules and links. Selecting a module shows its details and interfaces; selecting a link shows its child links and diagnostics.
@@ -290,7 +308,8 @@ Samples to try it on: [fixtures/](fixtures/README.md).
   its components inside it (selectable by instance path). An enclosure's
   `body.glb` with named bodies (`back`, `lid`) comes apart when exploded.
   *Section* cuts the model across X, Y or Z; *X-ray* makes bodies that hold
-  others see-through; *Findings* pins errors and warnings (the viewer's own
+  others see-through (where no body holds another, a board on its own, the
+  control is disabled and says so); *Findings* pins errors and warnings (the viewer's own
   and the host's fit and route findings) where they are. It is on by default
   only when the host sent findings that land on the model.
 
@@ -329,7 +348,15 @@ hints, appearance, keyed by instance path). It never imports a project.
 - Without display hints, the diagram lays itself out and 3D labels are derived
   from instance names, harness children and mates; the assembly is placed from
   the top-level module with the most interface frames.
-- The 3D view opens fitted to the whole assembly once every model has loaded.
+- The 3D view shows what is being viewed (PB-897): at the root the whole assembly; on a module's level
+  that module alone, in its own coordinates (a board as its `board.glb` with its components, not where its
+  enclosure holds it). A card in the corner names what is shown and how much of it is placed ("1 of 2 parts
+  placed: LiPo cell"; its tooltip lists the rest). A module with nothing to draw says so in the middle of
+  the view, and why: no body of its own, and nothing that places its parts. `Scene3D` takes the module as
+  `scope` (default: the level) and a host's `emptyHint` (how the model is made).
+- The scene is lit for the background it is seen against (PB-946): on a dark one a dark part is told from
+  it by its faces, each lit to a tone of its own.
+- The 3D view opens fitted to what it shows once every model has loaded.
   `spatial.view` in the display hints can set how it opens: `up` (the model
   direction drawn up, default `[0, 0, 1]`; a watch modelled display-down says
   `[0, 0, -1]`) and `camera` (`azimuth`, `elevation` in degrees about `up`,
@@ -433,7 +460,7 @@ messages are the same either way:
 | --- | --- | --- |
 | host → viewer | `{type: "uhd-viewer:focus", path}` | Drill to the level that holds the module at instance path `path` (`"arm_fl/motor"`), select it, open the inspector and bring the module into view. A module already drawn on the current level (also inside a module expanded in place) is selected there. In the 3D view its body is selected and looked at. |
 | | `{type: "uhd-viewer:select", ids, reveal?}` | Select the first of `ids` drawn on the current level: a module, a net, or a link. Ids are canonical (as `selectionChanged` reports them) or relative to the level; `node:` and `link:` prefixes pick the kind. An empty list clears the selection. When the selection is off screen or under the inspector, the diagram pans to it (zooming out only if it must, never in); `reveal: false` leaves the view where it is. In the 3D view it selects there too, without moving the camera: the module's body (or, for an id not on the diagram's level, the first full instance path) or the mate of a link; nets and links without a mate are not drawn in 3D, so they leave the 3D selection alone. |
-| | `{type: "uhd-viewer:drill", path}` | Show the level of an instance path (`""` is the root), as far as it names modules with children. A level of the diagram: the 3D view shows the whole assembly at any level, so there it sets the level the diagram returns to. |
+| | `{type: "uhd-viewer:drill", path}` | Show the level of an instance path (`""` is the root), as far as it names modules with children: the diagram's level, and the module the 3D view shows (the root: the whole assembly). |
 | | `{type: "uhd-viewer:setView", view}` | `"diagram"` or `"3d"`. |
 | viewer → host | `{type: "uhd-viewer:ready"}` | The model is on screen. Messages sent earlier wait for it. |
 | | `{type: "uhd-viewer:selectionChanged", selection}` | Every change of the selection, in the diagram or the 3D view: `{kind: "node" \| "link", id, defId?}` or `null`. Ids are canonical paths from the root: a module's instance path, a net or boundary interface as `board:v3v3`, a link as its owner's path and id (`stack/fc_esc`, as UHD's system checks name links). `defId` is the module's definition (for a link, the module that declares it). |

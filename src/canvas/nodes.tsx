@@ -19,6 +19,8 @@ export interface NodeData extends Record<string, unknown> {
   ribbonPorts?: Set<string>;
   /** The host's mark for the node's definition: the corner dot takes its tone. */
   mark?: NodeMark;
+  /** Legend entries are isolated and the node stays: its ports that stay (the others fade). Absent: nothing is isolated. */
+  keptPorts?: Set<string>;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
@@ -62,7 +64,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
             x={p.x - box.x - border}
             y={p.y - box.y - border}
             color={portColor(p, mode)}
-            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode)}
+            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode) || (data.keptPorts ? !data.keptPorts.has(p.port.id) : false)}
             exported={Boolean(p.port.exported) && node.expanded}
             label={labels}
             ground={onlyGround && !showGrounds}
@@ -103,7 +105,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
   const chips = circle ? { shown: [], rest: 0 } : fitChips(node.label, box, data.groups, insets);
   return (
     <div
-      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}`}
+      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}${node.missing ? " missing" : ""}`}
       style={{ width: box.w, height: box.h, ["--status" as string]: STATUS[node.status] }}
       title={node.description}
     >
@@ -115,6 +117,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
       <div className="module-body" style={circle ? undefined : { padding: `${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px` }}>
         <Icon name={node.icon} size={circle ? 18 : 22} strokeWidth={1.6} />
         <div className="module-title">{node.label}</div>
+        {node.missing && <div className="module-missing">not in this bundle</div>}
         {!circle && <PortGroups shown={chips.shown} rest={chips.rest} all={data.groups} mode={data.mode} />}
       </div>
       <Ports data={data} labels={!circle} border={2} />
@@ -126,7 +129,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
   const { node, box } = data;
   const group = node.kind === "group";
   return (
-    <div className={`container${group ? " group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
+    <div className={`module-container${group ? " is-group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
       {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
         <Icon name={node.icon} size={12} strokeWidth={1.8} />

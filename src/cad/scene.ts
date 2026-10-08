@@ -58,6 +58,13 @@ export function sceneColors(theme: Pick<SceneTheme, "accent" | "highlight"> = { 
   };
 }
 
+/** WCAG relative luminance of a colour (0 black … 1 white). */
+export function relativeLuminance(c: THREE.Color): number {
+  const srgb = c.clone().convertLinearToSRGB();
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(srgb.r) + 0.7152 * lin(srgb.g) + 0.0722 * lin(srgb.b);
+}
+
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<GLTF | null>>();
 
@@ -296,13 +303,39 @@ export function createScene(container: HTMLElement): SceneHandle {
   controls.target.set(0, 0, 20);
   controls.enableDamping = true;
 
-  scene.add(new THREE.HemisphereLight(0xf5f5f4, 0x1c1917, 1.4));
+  const hemi = new THREE.HemisphereLight(0xf5f5f4, 0x1c1917, 1.4);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
   key.position.set(200, -150, 400);
   scene.add(key);
   const rim = new THREE.DirectionalLight(0xffedd5, 0.8);
   rim.position.set(-300, 250, 120);
   scene.add(rim);
+  // a fill that travels with the camera, from below and beside it: the faces the key light leaves in shade (a
+  // part's side walls, a board seen from below) get a tone of their own whichever way the model is turned,
+  // and the faces the key already lights get next to nothing more
+  const head = new THREE.DirectionalLight(0xffffff, 0);
+  head.position.set(-0.8, -0.55, 0.6);
+  camera.add(head);
+  camera.add(head.target);
+  head.target.position.set(0, 0, 0);
+  scene.add(camera);
+  /**
+   * Light for the background the model is seen against (PB-946). On a dark
+   * background a dark part (a black board, a cell in its sleeve) has to be
+   * told from it by its lit faces: the sky's bounce is lifted so no face
+   * falls to black, and the camera's fill gives the faces in shade a tone
+   * of their own. On a light background the same part stands out
+   * by itself, and that much light would wash pale parts out.
+   */
+  const lightFor = (background: THREE.Color) => {
+    const dark = relativeLuminance(background) < 0.2;
+    hemi.groundColor.setHex(dark ? 0x78716c : 0x1c1917);
+    hemi.intensity = dark ? 1.7 : 1.4;
+    head.intensity = dark ? 3.5 : 0.8;
+    rim.intensity = dark ? 1.2 : 0.8;
+  };
+  lightFor(scene.background as THREE.Color);
 
   let grid = new THREE.GridHelper(600, 60, 0x3a3a3a, 0x262626);
   grid.rotation.x = Math.PI / 2;
@@ -402,6 +435,7 @@ export function createScene(container: HTMLElement): SceneHandle {
     colors,
     setTheme: (theme) => {
       scene.background = new THREE.Color(theme.background);
+      lightFor(scene.background as THREE.Color);
       setGridColors(theme.grid, theme.gridMinor);
       Object.assign(colors, sceneColors(theme));
       renderOnce(1 / 30);

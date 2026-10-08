@@ -249,6 +249,88 @@ function fillMissing(vm: ViewModel, hand: LevelLayout, sizes: Record<string, { w
   return out;
 }
 
+/** Room kept inside a container expanded in place: left and right of its modules, under its label, and below them (where its links run). */
+const CONTAINER_PAD = { left: 48, top: 64, right: 48, bottom: 48 };
+
+/**
+ * A module expanded in place whose children the display file does not place
+ * (PB-897): the children are laid out as their own level would be (a row, or
+ * a board's clusters and junctions), inside the container, and the container
+ * takes the size that holds them with room for their links. Deepest
+ * containers first, so one that holds another is laid out around its size.
+ * Returns the children's positions relative to their container; `sizes` gets
+ * the containers' sizes. A container the display file sizes, or whose
+ * children it places, is left as it says.
+ */
+function containerLayouts(vm: ViewModel, hand: LevelLayout | undefined, sizes: Record<string, { w: number; h: number }>): Record<string, { x: number; y: number }> {
+  const rel: Record<string, { x: number; y: number }> = {};
+  const depth = (id: string) => {
+    let d = 0;
+    for (let n = vm.nodes.find((x) => x.id === id); n?.parent; n = vm.nodes.find((x) => x.id === n!.parent)) d++;
+    return d;
+  };
+  const containers = vm.nodes.filter((n) => n.expanded).sort((a, b) => depth(b.id) - depth(a.id));
+  for (const c of containers) {
+    const kids = vm.nodes.filter((n) => n.parent === c.id);
+    if (!kids.length) continue;
+    const placed = (n: ViewNode) => hand?.nodes[n.id]?.x !== undefined && hand?.nodes[n.id]?.y !== undefined;
+    const missing = kids.filter((n) => !placed(n));
+    if (!missing.length) continue;
+    const ids = new Set(kids.map((k) => k.id));
+    if (missing.length === kids.length) {
+      // none placed: the level's own automatic layout, moved into the container
+      const sub: ViewModel = { ...vm, nodes: kids.map((k) => ({ ...k, parent: undefined })), links: vm.links.filter((l) => ids.has(l.source.node) && ids.has(l.target.node)) };
+      const at = autoPositions(sub, sizes);
+      const minX = Math.min(...kids.map((k) => at[k.id].x));
+      const minY = Math.min(...kids.map((k) => at[k.id].y));
+      for (const k of kids) rel[k.id] = { x: snap(at[k.id].x - minX + CONTAINER_PAD.left), y: snap(at[k.id].y - minY + CONTAINER_PAD.top) };
+    } else {
+      // some placed (a part added since the layout was saved): the others at the free spot nearest what they are linked to
+      const boxes: Record<string, Box> = {};
+      for (const k of kids) if (placed(k)) boxes[k.id] = { x: hand!.nodes[k.id].x!, y: hand!.nodes[k.id].y!, ...sizes[k.id] };
+      const neighbours = (id: string) =>
+        vm.links
+          .filter((l) => !l.ground && (l.source.node === id || l.target.node === id))
+          .map((l) => (l.source.node === id ? l.target.node : l.source.node))
+          .filter((o) => boxes[o]);
+      for (const k of missing.sort((a, b) => neighbours(b.id).length - neighbours(a.id).length || a.id.localeCompare(b.id))) {
+        const ns = neighbours(k.id);
+        const known = Object.values(boxes);
+        const s = sizes[k.id];
+        const ideal: [number, number] = ns.length
+          ? [ns.reduce((t, o) => t + boxes[o].x + boxes[o].w / 2, 0) / ns.length, ns.reduce((t, o) => t + boxes[o].y + boxes[o].h / 2, 0) / ns.length]
+          : [Math.max(...known.map((b) => b.x + b.w)) + 80 + s.w / 2, CONTAINER_PAD.top + s.h / 2];
+        const spot = freeSpot(ideal, s.w, s.h, known, { x: 40, y: 24 });
+        // never left of, or above, the container's own padding
+        const at = { x: Math.max(CONTAINER_PAD.left, spot.x), y: Math.max(CONTAINER_PAD.top, spot.y) };
+        boxes[k.id] = { ...at, ...s };
+        rel[k.id] = { x: snap(at.x), y: snap(at.y) };
+      }
+    }
+    if (hand?.nodes[c.id]?.w) continue;
+    const right = Math.max(...kids.map((k) => (rel[k.id]?.x ?? hand?.nodes[k.id]?.x ?? 0) + sizes[k.id].w));
+    const bottom = Math.max(...kids.map((k) => (rel[k.id]?.y ?? hand?.nodes[k.id]?.y ?? 0) + sizes[k.id].h));
+    const up = (v: number) => Math.ceil(v / GRID) * GRID;
+    sizes[c.id] = { w: up(Math.max(sizes[c.id].w, right + CONTAINER_PAD.right)), h: up(Math.max(sizes[c.id].h, bottom + CONTAINER_PAD.bottom)) };
+  }
+  return rel;
+}
+
+/** The container (a module expanded in place) that holds both ends of a link, if one does: the innermost. */
+function sharedContainer(vm: ViewModel, byId: Map<string, ViewNode>, a: string, b: string): ViewNode | undefined {
+  const chain = (id: string) => {
+    const out: string[] = [];
+    const self = byId.get(id);
+    // a container's own boundary port is on its outline: the line from it inward is inside it
+    if (self?.expanded) out.push(id);
+    for (let p = self?.parent; p; p = byId.get(p)?.parent) out.push(p);
+    return out;
+  };
+  const inB = new Set(chain(b));
+  const id = chain(a).find((x) => inB.has(x));
+  return id ? byId.get(id) : undefined;
+}
+
 /** Nearest free grid position between lo and hi (exclusive) on one side of a card. */
 function gridSlot(v: number, lo: number, hi: number, used: Map<string, Set<number>>, key: string): number {
   const taken = used.get(key) ?? new Set<number>();
@@ -304,15 +386,43 @@ export function computeLayout(
     sizes[node.id] = { w: up(hand0?.w ?? d.w), h: up(hand0?.h ?? d.h) };
   }
 
+  // modules expanded in place: their children's places inside them, and the size that holds them
+  const collapsed: Record<string, { w: number; h: number }> = {};
+  for (const n of vm.nodes) if (n.expanded) collapsed[n.id] = { ...sizes[n.id] };
+  const inner = containerLayouts(vm, hand, sizes);
+
   // positions (absolute)
   const auto = hand ? fillMissing(vm, hand, sizes) : autoPositions(vm, sizes);
+  // a hand layout places the cards for their collapsed sizes: one that grew when expanded in place
+  // makes room, moving the cards beside and below it by what it grew (not the ones the user dragged)
+  const shift: Record<string, { x: number; y: number }> = {};
+  if (hand) {
+    for (const c of vm.nodes.filter((n) => n.expanded && !n.parent && !hand.nodes[n.id]?.w)) {
+      const at = hand.nodes[c.id] ?? auto[c.id];
+      if (at?.x === undefined || at?.y === undefined) continue;
+      const was = collapsed[c.id];
+      const grewX = sizes[c.id].w - was.w;
+      const grewY = sizes[c.id].h - was.h;
+      if (grewX <= 0 && grewY <= 0) continue;
+      for (const n of vm.nodes) {
+        if (n === c || n.parent || overrides[n.id]) continue;
+        const p = hand.nodes[n.id] ?? auto[n.id];
+        if (p?.x === undefined || p?.y === undefined) continue;
+        const s = (shift[n.id] ??= { x: 0, y: 0 });
+        // beside it (overlapping its rows) and to its right: pushed right; below it: pushed down
+        const rows = p.y < at.y! + sizes[c.id].h && p.y + sizes[n.id].h > at.y!;
+        if (grewX > 0 && rows && p.x >= at.x! + was.w) s.x += grewX;
+        else if (grewY > 0 && p.y >= at.y! + was.h && p.x < at.x! + sizes[c.id].w && p.x + sizes[n.id].w > at.x!) s.y += grewY;
+      }
+    }
+  }
   const boxes: Record<string, Box> = {};
   const place = (node: ViewNode) => {
     if (boxes[node.id]) return;
     const own = hand?.nodes[node.id];
     const size = sizes[node.id];
-    let x = own?.x ?? auto[node.id]?.x ?? 0;
-    let y = own?.y ?? auto[node.id]?.y ?? 0;
+    let x = (own?.x ?? inner[node.id]?.x ?? auto[node.id]?.x ?? 0) + (shift[node.id]?.x ?? 0);
+    let y = (own?.y ?? inner[node.id]?.y ?? auto[node.id]?.y ?? 0) + (shift[node.id]?.y ?? 0);
     if (node.parent) {
       const parent = vm.nodes.find((n) => n.id === node.parent)!;
       place(parent);
@@ -325,10 +435,17 @@ export function computeLayout(
       x = o.x;
       y = o.y;
     }
+    if (node.parent) {
+      // a module stays inside its container: it grows to the right and down, never to the left or above its label
+      const p = boxes[node.parent];
+      x = Math.max(x, p.x + GRID);
+      y = Math.max(y, p.y + 2 * GRID);
+    }
     boxes[node.id] = { x: snap(x), y: snap(y), ...size };
   };
   // containers without a hand size wrap their children
   for (const node of vm.nodes) place(node);
+  const kidsOf = (id: string) => vm.nodes.filter((n) => n.parent === id);
   const wrapContainers = () => {
     for (const node of vm.nodes.filter((n) => n.expanded)) {
       if (hand?.nodes[node.id]?.w) continue;
@@ -337,8 +454,10 @@ export function computeLayout(
       const b = boxes[node.id];
       const maxX = Math.max(...kids.map((k) => k.x + k.w));
       const maxY = Math.max(...kids.map((k) => k.y + k.h));
-      b.w = Math.ceil(Math.max(b.w, maxX - b.x + 28) / GRID) * GRID;
-      b.h = Math.ceil(Math.max(b.h, maxY - b.y + 24) / GRID) * GRID;
+      // a container laid out here keeps room for its links around its modules; one the display file lays out keeps its tighter wrap
+      const laid = kidsOf(node.id).some((k) => inner[k.id]);
+      b.w = Math.ceil(Math.max(b.w, maxX - b.x + (laid ? CONTAINER_PAD.right : 28)) / GRID) * GRID;
+      b.h = Math.ceil(Math.max(b.h, maxY - b.y + (laid ? CONTAINER_PAD.bottom : 24)) / GRID) * GRID;
     }
   };
   wrapContainers();
@@ -497,6 +616,13 @@ export function computeLayout(
   const routes: Record<string, Pt[]> = {};
   const pins: Record<string, Pt[]> = {};
   const bends: Record<string, Pt[]> = {};
+  const byId = new Map(vm.nodes.map((n) => [n.id, n]));
+  /** Where a link between two modules of one container may run: inside it, under its label and off its outline. */
+  const regionOf = (link: ViewLink): Box | undefined => {
+    const c = sharedContainer(vm, byId, link.source.node, link.target.node);
+    const b = c && boxes[c.id];
+    return b ? { x: b.x + GRID, y: b.y + 2 * GRID, w: b.w - 2 * GRID, h: b.h - 3 * GRID } : undefined;
+  };
   const obstacleNodes = vm.nodes.filter((n) => !n.expanded);
   const obstacles = obstacleNodes.map((n) => boxes[n.id]);
   const router = new GridRouter(obstacles, Object.values(ports).map((p) => [p.x, p.y] as Pt), 12, !live);
@@ -530,10 +656,10 @@ export function computeLayout(
     // goes round the cards like the rest
     if (link.passThrough) {
       const plain = route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
-      const intoContainer = fromContainer || vm.nodes.find((n) => n.id === link.target.node)?.expanded;
       const ends = new Set([link.source.node, link.target.node]);
-      routes[link.id] = intoContainer || !crossesCards(plain, obstacleNodes.filter((n) => !ends.has(n.id)).map((n) => boxes[n.id])) ? plain : router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
-    } else routes[link.id] = router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp);
+      // a line from a container's boundary inward too: round the cards it does not end at, and inside the container
+      routes[link.id] = !crossesCards(plain, obstacleNodes.filter((n) => !ends.has(n.id)).map((n) => boxes[n.id])) ? plain : router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp, regionOf(link));
+    } else routes[link.id] = router.route([a.x, a.y], sa, [b.x, b.y], b.side, wp, regionOf(link));
     const pts = routes[link.id];
     // automatic waypoints: every interior corner that is not a pin
     bends[link.id] = pts.slice(1, -1).filter((p) => !wp.some((w) => Math.abs(w[0] - p[0]) < 1 && Math.abs(w[1] - p[1]) < 1));
