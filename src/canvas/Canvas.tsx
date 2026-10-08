@@ -20,6 +20,7 @@ import type { LevelLayout, LinkLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
+import type { Isolation } from "../model/isolate";
 import type { Live } from "../viewer/controller";
 import { revealViewport, selectionBounds } from "./reveal";
 
@@ -60,6 +61,8 @@ export interface CanvasProps {
   onNodeContext?: (id: string, x: number, y: number) => void;
   /** The host's marks by definition id (`ViewerOptions.nodeMarks`). */
   marks?: Record<string, NodeMark>;
+  /** Legend entries are isolated: what stays at full strength (the rest fades). */
+  isolation?: Isolation | null;
 }
 
 /**
@@ -80,6 +83,7 @@ export function Canvas(props: CanvasProps) {
   const nodeCache = useRef(new Map<string, { key: unknown[]; value: Node<NodeData> }>());
   const edgeCache = useRef(new Map<string, { key: unknown[]; value: Edge<LinkData> }>());
   const { vm, layout, mode, selection } = props;
+  const isolation = props.isolation ?? null;
 
   // a selected link derived over nets lights up the lines it runs over
   const derivedSel = selection?.kind === "link" ? vm.derived.find((d) => d.id === selection.id) : undefined;
@@ -109,14 +113,18 @@ export function Canvas(props: CanvasProps) {
       const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
       const selected = selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf);
       const mark = node.defId ? props.marks?.[node.defId] : undefined;
-      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label];
+      // isolated legend entries: a node none of their links touch fades, and on one that stays, the other ports
+      const out = isolation ? !isolation.nodes.has(node.id) : false;
+      const keptPorts = isolation && !out ? ports.filter((p) => isolation.ports.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id) : undefined;
+      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label, out, keptPorts ?? null];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.kind === "net" ? "net" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
-        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts, ...(mark ? { mark } : {}) },
+        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts, ...(mark ? { mark } : {}), ...(keptPorts ? { keptPorts: new Set(keptPorts) } : {}) },
         selected,
+        ...(out ? { className: "isolated-out" } : {}),
         style: { width: box.w, height: box.h },
         // size and handle positions are known from the layout: handing them over means React Flow
         // never drops its measured handle bounds when a node object is replaced (which blanked
@@ -130,7 +138,7 @@ export function Canvas(props: CanvasProps) {
         zIndex: node.expanded ? 0 : 2,
       }));
     });
-  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts]);
+  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts, isolation]);
 
   const { onSelect } = props;
   const onSelectLink = useCallback((id: string) => onSelect({ kind: "link", id }), [onSelect]);
@@ -142,7 +150,9 @@ export function Canvas(props: CanvasProps) {
         const color = colorFor(link, mode);
         const selected = selectedIds.has(link.linkId);
         const open = props.openLinks.has(link.linkId);
+        const faded = isFaded(link, mode) || (isolation ? !isolation.links.has(link.id) : false);
         const key = [
+          faded,
           link, layout.routes[link.id], color, mode, props.detail, open, props.openLinks, layout.runs[link.id], layout.labelAt[link.id],
           layout.labelFixed[link.id], layout.pins[link.id], layout.bends[link.id], layout.edits[link.id], selected,
           props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink,
@@ -160,7 +170,7 @@ export function Canvas(props: CanvasProps) {
             link,
             points: layout.routes[link.id],
             color,
-            faded: isFaded(link, mode),
+            faded,
             mode,
             detail: props.detail,
             open,
@@ -180,7 +190,7 @@ export function Canvas(props: CanvasProps) {
           },
         }));
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink, isolation]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {

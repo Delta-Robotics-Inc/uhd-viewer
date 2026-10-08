@@ -403,6 +403,21 @@
 .react-flow__node {
   font-family: var(--uhd-font-ui);
 }
+/* a legend entry is isolated and none of its links touch this node */
+.react-flow__node {
+  transition: opacity 0.15s ease;
+}
+.react-flow__node.isolated-out {
+  opacity: 0.22;
+}
+[data-uhd-scheme^="high-contrast"] .react-flow__node.isolated-out {
+  opacity: 0.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node {
+    transition: none;
+  }
+}
 .module-card {
   position: relative;
   background: var(--uhd-node);

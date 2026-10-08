@@ -19,6 +19,8 @@ export interface NodeData extends Record<string, unknown> {
   ribbonPorts?: Set<string>;
   /** The host's mark for the node's definition: the corner dot takes its tone. */
   mark?: NodeMark;
+  /** Legend entries are isolated and the node stays: its ports that stay (the others fade). Absent: nothing is isolated. */
+  keptPorts?: Set<string>;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
@@ -62,7 +64,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
             x={p.x - box.x - border}
             y={p.y - box.y - border}
             color={portColor(p, mode)}
-            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode)}
+            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode) || (data.keptPorts ? !data.keptPorts.has(p.port.id) : false)}
             exported={Boolean(p.port.exported) && node.expanded}
             label={labels}
             ground={onlyGround && !showGrounds}
