@@ -86,8 +86,9 @@ export class GridRouter {
    */
   constructor(obstacles: Rect[], extra: Pt[] = [], margin = 12, thorough = true) {
     this.thorough = thorough;
-    const xs = [...obstacles.flatMap((b) => [b.x, b.x + b.w]), ...extra.map((p) => p[0])];
-    const ys = [...obstacles.flatMap((b) => [b.y, b.y + b.h]), ...extra.map((p) => p[1])];
+    // a level with nothing on it (a new system with no modules yet) still has a grid: one cell at the origin
+    const xs = [...obstacles.flatMap((b) => [b.x, b.x + b.w]), ...extra.map((p) => p[0]), ...(obstacles.length || extra.length ? [] : [0])];
+    const ys = [...obstacles.flatMap((b) => [b.y, b.y + b.h]), ...extra.map((p) => p[1]), ...(obstacles.length || extra.length ? [] : [0])];
     this.x0 = Math.floor(Math.min(...xs) / GRID) - margin;
     this.y0 = Math.floor(Math.min(...ys) / GRID) - margin;
     this.W = Math.ceil(Math.max(...xs) / GRID) + margin - this.x0 + 1;

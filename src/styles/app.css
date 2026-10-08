@@ -403,6 +403,33 @@
 .react-flow__node {
   font-family: var(--uhd-font-ui);
 }
+/* a level with nothing on it says so */
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: calc(var(--uhd-inset-top, 0px) + 16px) 24px 72px;
+  text-align: center;
+  font: 12px/1.5 var(--uhd-font-ui);
+  color: var(--uhd-text-muted);
+  pointer-events: none;
+}
+.canvas-empty.covered-right {
+  padding-right: min(396px, 50%);
+}
+.canvas-empty > * {
+  max-width: min(420px, 100%);
+  margin: 0;
+}
+.canvas-empty-title {
+  font-size: 13px;
+  color: var(--uhd-text);
+}
 /* a legend entry is isolated and none of its links touch this node */
 .react-flow__node {
   transition: opacity 0.15s ease;

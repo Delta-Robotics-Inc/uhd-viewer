@@ -58,6 +58,12 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, cla
         marks={c.options.nodeMarks}
         isolation={c.isolation}
       />
+      {c.drawn.nodes.length === 0 && (
+        <div className={cx("canvas-empty", covered && "covered-right")} role="status">
+          <div className="canvas-empty-title">{c.levelDef.name} has no modules yet</div>
+          <p>Modules appear here as children are added to its definition, and links as they are joined.</p>
+        </div>
+      )}
       {toolbar && <DiagramToolbar coveredRight={covered} />}
       {legend && <DiagramLegend />}
       {c.pair && <PairView vm={c.vm} link={c.pair} mode={c.mode} onClose={() => c.setPairLink(null)} />}
