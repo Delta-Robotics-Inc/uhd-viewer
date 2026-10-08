@@ -4,7 +4,7 @@
  * scene, the inspector panels and a module's context menu. Shells place them;
  * none of them is app chrome.
  */
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { Canvas, fitPadding } from "../canvas/Canvas";
 import { PairView } from "../chrome/PairView";
@@ -146,28 +146,96 @@ export function DiagramToolbar({ coveredRight, className, controls = true }: { c
   );
 }
 
-const DiagramLegendView = memo(function DiagramLegendView({ mode, className }: { mode: Classification; className?: string }) {
+interface LegendItemsProps {
+  mode: Classification;
+  present: ReadonlySet<string>;
+  isolated: ReadonlySet<string>;
+  onIsolate: (key: string, add?: boolean) => void;
+}
+
+const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated, onIsolate }: LegendItemsProps) {
+  const what = mode === "signal" ? "signal type" : mode === "domain" ? "domain" : "state";
   return (
-    <Legend title={CLASSIFICATIONS.find((x) => x.id === mode)?.label} className={cx("legend", className)}>
-      {legendFor(mode).map((item) => (
-        <LegendItem key={item.label} color={item.color} label={item.label} />
-      ))}
-    </Legend>
+    <>
+      {legendFor(mode, present).map((item) => {
+        const pressed = isolated.has(item.key);
+        const absent = !present.has(item.key) && !pressed;
+        return (
+          <LegendItem
+            key={item.key}
+            color={item.color}
+            label={item.label}
+            onSelect={(add) => onIsolate(item.key, add)}
+            pressed={pressed}
+            dimmed={isolated.size > 0 && !pressed}
+            absent={absent}
+            hint={absent ? `Nothing on this level is of this ${what}` : pressed ? (isolated.size > 1 ? "Stop isolating this one" : "Show everything again") : `Isolate: fade everything that is not of this ${what}`}
+            hintShortcut={absent ? undefined : pressed && isolated.size === 1 ? "Esc" : "Shift+click: hold several"}
+          />
+        );
+      })}
+    </>
   );
 });
 
-/** What the link colours mean in the current classification. */
-export function DiagramLegend({ className }: { className?: string }) {
+/**
+ * The entries of the current classification's legend, as buttons: a click
+ * isolates one (its links stay, with the interfaces and modules they touch;
+ * the rest of the level fades), a click on it again shows everything, a
+ * click on another switches, and Shift, Ctrl or Cmd holds several. For a
+ * shell that draws its own legend card.
+ */
+export function DiagramLegendItems() {
   const c = useViewer();
-  return <DiagramLegendView mode={c.mode} className={className} />;
+  return <LegendItemsView mode={c.mode} present={c.present} isolated={c.isolated} onIsolate={c.onIsolate} />;
 }
 
-/** The assembled 3D model of the whole system, with its own toolbar and (optionally) its inspector. */
-export function Scene3D({ inspector }: { inspector?: boolean }) {
+/** The way back from an isolated legend entry to everything (shown only while something is isolated). */
+export function IsolationClear({ className }: { className?: string }) {
+  const c = useViewer();
+  if (!c.isolated.size) return null;
+  return <IconButton icon="x" size="sm" tooltipSide="top" label="Show everything again" shortcut="Esc" onClick={c.clearIsolated} className={cx("size-6", className)} />;
+}
+
+/** What the link colours mean in the current classification; a click on an entry isolates it. */
+export function DiagramLegend({ className }: { className?: string }) {
   const c = useViewer();
   return (
+    <Legend className={cx("legend", className)}>
+      <div className="mb-0.5 flex min-h-6 items-center justify-between gap-2">
+        <span className="font-label text-[10px] tracking-[0.8px] text-fg-muted uppercase">{CLASSIFICATIONS.find((x) => x.id === c.mode)?.label}</span>
+        <IsolationClear className="-my-1 -mr-1.5" />
+      </div>
+      <DiagramLegendItems />
+    </Legend>
+  );
+}
+
+export interface Scene3DProps {
+  /** Show the 3D view's own inspector card. Default: the inspector panel is open. */
+  inspector?: boolean;
+  /**
+   * The module to show, by instance path from the root. Default: the level
+   * the viewer is on (`drill`), so the root shows the whole assembly and a
+   * module shows that module alone. A shell whose tab is on a module with no
+   * level of its own (a part) passes that module's path.
+   */
+  scope?: string[];
+  /** What the shell adds where a module has nothing to draw (how its 3D model is made). */
+  emptyHint?: ReactNode;
+}
+
+/**
+ * The 3D model of what is being viewed: the whole assembly at the root, one
+ * module alone (in its own coordinates) on that module's level. With its own
+ * toolbar and (optionally) its inspector.
+ */
+export function Scene3D({ inspector, scope, emptyHint }: Scene3DProps) {
+  const c = useViewer();
+  const shown = scope ?? c.drill;
+  return (
     <CadView
-      key={c.scenario.id}
+      key={`${c.scenario.id}|${shown.join("/")}`}
       system={c.system}
       lookup={c.scenario.lookup}
       source={c.source}
@@ -176,6 +244,8 @@ export function Scene3D({ inspector }: { inspector?: boolean }) {
       focusOn={c.cadFocus}
       onSelect={c.onCadSelect}
       inspector={inspector ?? Boolean(c.panel)}
+      scope={shown}
+      emptyHint={emptyHint}
     />
   );
 }
