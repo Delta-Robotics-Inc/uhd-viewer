@@ -153,6 +153,17 @@ describe("the inspector's details on their own", () => {
     expect(render({ target: { kind: "module", path: "" } })).toContain("sample-imu-pod");
   });
 
+  it("shows an instance the diagram does not draw as a node by its definition, at its path", () => {
+    // a module below a component that the level does not open: found by walking the path
+    const nested = JSON.parse(JSON.stringify(bundle)) as UhdBundle;
+    const defs = nested.definitions as unknown as ModuleDef[];
+    defs.push({ id: "screw-stack", name: "Screw stack", kind: "harness", interfaces: [], fastenerStack: [] } as unknown as ModuleDef);
+    defs.find((d) => d.id === nested.root)!.children!.push({ id: "screws", moduleDefId: "screw-stack", name: "Screws" } as never);
+    const html = renderToStaticMarkup(createElement(SelectionDetails, { bundle: nested, target: { kind: "module", path: "screws" } }));
+    expect(html).toContain("screw-stack");
+    expect(html).toContain(">screws<");
+  });
+
   it("says nothing of its own when the target is not in the bundle", () => {
     expect(render({ target: { kind: "module", path: "nowhere" }, missing: "gone" })).toBe("gone");
     expect(render({ target: { kind: "link", owner: "", ids: ["nope"] }, missing: "gone" })).toBe("gone");

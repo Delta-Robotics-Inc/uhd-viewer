@@ -60,8 +60,8 @@ function Picture({ preview, icon, alt }: { preview?: ArtifactPreview; icon: stri
       className={cx(
         // its size is the grid's to say (styles/ui.css): a picture over the text, or a square at its left in a narrow panel
         "uhd-artifact-picture relative grid shrink-0 place-items-center overflow-hidden",
-        // a picture sits on the preview matte (photos and drawings are made for a light page); an icon on a quiet wash
-        image ? "bg-[var(--uhd-preview)]" : "bg-[color-mix(in_oklab,var(--uhd-text)_5%,transparent)]",
+        // a picture sits on the preview matte (photos, drawings and models are made for a light page); an icon on a quiet wash
+        shown ? "bg-[var(--uhd-preview)]" : "bg-[color-mix(in_oklab,var(--uhd-text)_5%,transparent)]",
       )}
     >
       {shown ? (

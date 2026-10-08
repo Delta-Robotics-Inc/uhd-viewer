@@ -23,7 +23,8 @@ import { AssemblyArtifacts, ArtifactsSection } from "../chrome/Artifacts";
 import { BoardViews, DerivedDetails, DerivedList } from "../chrome/BoardInspector";
 import { PairPreview, pairEnds } from "../chrome/PairView";
 import { HostContext, type HostActions } from "../host/context";
-import { drillTarget, focusTarget, fullId, selectTarget } from "../host/targets";
+import { defAt } from "../cad/model";
+import { drillTarget, focusTarget, fullId, instancePrefix, selectTarget } from "../host/targets";
 import type { Classification } from "../model/classification";
 import { systemDiagnostics } from "../model/diagnostics";
 import { buildView, levelModule } from "../model/from-uhd";
@@ -73,12 +74,12 @@ interface Resolved {
 }
 
 /** A definition shown on its own: the one child of an empty module, so its ports and package read as in a system. */
-function alone(def: ModuleDef, lookup: ModuleLookup): Resolved {
+function alone(def: ModuleDef, lookup: ModuleLookup, path = ""): Resolved {
   const root = { id: "\u0000details", name: def.name, kind: "module", interfaces: [], children: [{ id: "it", moduleDefId: def.id, name: def.name }], links: [] } as unknown as ModuleDef;
   const vm = buildView(root, (id) => (id === def.id ? def : lookup(id)), [], { expanded: NONE });
   const node = vm.nodes.find((n) => n.id === "it");
-  // no path: it is not an instance
-  return { vm: { ...vm, links: [], derived: [] }, drill: [], ...(node ? { node: { ...node, id: "" } } : {}) };
+  // its path when it is an instance the diagram does not draw; none for a definition
+  return { vm: { ...vm, links: [], derived: [] }, drill: [], ...(node ? { node: { ...node, id: path } } : {}) };
 }
 
 export function SelectionDetails({ bundle, definitions, target, resolveArtifact = NO_FILES, host, mode = "domain", boardDrawings = false, onSelect, onPair, missing = null, className }: SelectionDetailsProps) {
@@ -120,7 +121,11 @@ export function SelectionDetails({ bundle, definitions, target, resolveArtifact 
         if (!t.selection) return target.path.split("/").filter(Boolean).length ? undefined : alone(system, lookup);
         const vm = buildView(system, lookup, t.drill, { expanded: NONE, diagnostics });
         const node = vm.nodes.find((n) => n.id === t.selection!.id);
-        return node ? { vm, drill: t.drill, node, levelDef: levelModule(system, t.drill, lookup).def } : undefined;
+        if (node) return { vm, drill: t.drill, node, levelDef: levelModule(system, t.drill, lookup).def };
+        // an instance the diagram does not draw as a node (a fastener stack, a harness that carries no link here): its definition, at its path
+        const parts = target.path.split("/").filter(Boolean);
+        const def = defAt(system, lookup, parts);
+        return def && instancePrefix(system, lookup, parts).length === parts.length ? alone(def, lookup, parts.join("/")) : undefined;
       }
       const drill = drillTarget(system, lookup, target.owner);
       // a link declared by a module the level does not open (a harness): drawn when that module is expanded in place
