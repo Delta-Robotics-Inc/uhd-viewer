@@ -36,6 +36,16 @@ export interface ViewerLayout {
   links: Record<string, Record<string, LinkLayout>>;
 }
 
+/** The tones a mark can take; each is a token of the theme (`--uhd-mark-<tone>`). */
+export type NodeMarkTone = "neutral" | "info" | "ok" | "warning" | "error";
+
+/** A host's mark on a module (`ViewerOptions.nodeMarks`). */
+export interface NodeMark {
+  tone: NodeMarkTone;
+  /** What the mark means, for the tooltip. */
+  label?: string;
+}
+
 export interface ViewerOptions {
   /** The bundle itself. Relative artifact paths resolve against `bundleUrl` when both are given. */
   bundle?: UhdBundle;
@@ -52,6 +62,14 @@ export interface ViewerOptions {
    * the nominal scenario only.
    */
   diagnostics?: UhdBundleDiagnostic[];
+  /**
+   * A mark per definition, by definition id: the dot in the corner of every
+   * module card drawn from that definition takes the mark's tone and says its
+   * label on hover. For what the host knows about a part and the bundle does
+   * not (where it comes from, whether it was reviewed). A module with no mark
+   * keeps the dot of its links' state.
+   */
+  nodeMarks?: Record<string, NodeMark>;
   /**
    * The layout edits to show (only used together with `onLayoutChange`). A
    * different layout passed later through `update` replaces the viewer's
@@ -82,6 +100,22 @@ export interface ViewerOptions {
    */
   onOpenArtifact?: (request: { defId: string; artifactId: string }) => void;
   /**
+   * The user asked to open a module on its own (a double-click on it, OPEN IN
+   * NEW TAB in its context menu): `path` is its instance path from the root.
+   * Given: double-click opens the module there (a host's new tab or window),
+   * and expanding it in place moves to the context menu. Not given:
+   * double-click expands the module in place.
+   */
+  onOpenModule?: (request: { path: string }) => void;
+  /**
+   * The user asked for the pair view of a link (the inspector's pair
+   * preview). Given: the host shows it (its own tab or window); otherwise
+   * the viewer opens it over the diagram. `linkId` is the link as a
+   * selection names it, `a` and `b` the instance paths of the two modules it
+   * joins.
+   */
+  onOpenPair?: (request: { linkId: string; a: string; b: string }) => void;
+  /**
    * Talk to the parent window over `postMessage` (the viewer in a frame):
    * host messages are accepted from `window.parent` only, and only from the
    * listed origins (exact origins, `scheme://*`, or `*`; default: the page's
@@ -89,7 +123,34 @@ export interface ViewerOptions {
    * then go to the parent. `true` uses the defaults. Off unless given.
    */
   parentWindow?: boolean | { origins?: string[] };
+
+  /**
+   * How the viewer looks: its own `"dark"` (default) or `"light"` theme,
+   * `"system"` (whichever the system prefers), `"vscode"` (follows the VS Code
+   * colour theme of the webview it runs in, high contrast included), a theme
+   * of the host's (tokens it leaves out come from the default), or an adapter
+   * that tells the viewer when the host's theme changes.
+   */
+  theme?: ViewerThemeOption;
 }
+
+/** A theme: values for the viewer's semantic tokens (docs: README, "Theming"). */
+export interface ViewerTheme {
+  id: string;
+  label: string;
+  scheme: "dark" | "light" | "high-contrast" | "high-contrast-light";
+  /** Token values by token name (`accent`, `surface`, `textMuted`, …): any CSS value, `var(...)` included. */
+  tokens: Partial<Record<string, string>>;
+}
+
+/** Where a host's theme comes from, when it can change while the viewer is open. */
+export interface ViewerThemeAdapter {
+  id: string;
+  current(): ViewerTheme;
+  subscribe?(onChange: (theme: ViewerTheme) => void): () => void;
+}
+
+export type ViewerThemeOption = "dark" | "light" | "system" | "vscode" | ViewerTheme | ViewerThemeAdapter;
 
 /** What a view shows: the diagram or the assembled 3D model. */
 export type ViewerView = "diagram" | "3d";
@@ -125,7 +186,9 @@ export type ViewerEvent =
   | { type: "uhd-viewer:ready" }
   | { type: "uhd-viewer:selectionChanged"; selection: ViewerSelection | null }
   | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
-  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string };
+  | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string }
+  | { type: "uhd-viewer:openModule"; path: string }
+  | { type: "uhd-viewer:openPair"; linkId: string; a: string; b: string };
 
 export interface ViewerHandle {
   /**

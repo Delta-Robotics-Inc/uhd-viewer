@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  // declarations of the component library (scripts/build-components-types.mjs)
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/components/types",
+    // UHD is compiled in from the sibling checkout (the @uhd alias), so the root is the parent folder; its declarations are dropped and its imports point at @deltarobotics/uhd
+    "rootDir": "..",
+    "types": ["vite/client"]
+  },
+  "include": [],
+  "files": ["src/components.ts"]
+}

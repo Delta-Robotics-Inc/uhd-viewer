@@ -13,13 +13,15 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import type { ViewModel } from "../model/types";
+import type { NodeMark } from "../api";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import type { ComputedLayout } from "../layout/layout";
 import type { LevelLayout, LinkLayout } from "../layout/layout";
 import { nodeTypes, type NodeData } from "./nodes";
 import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
-import type { Live } from "../App";
+import type { Isolation } from "../model/isolate";
+import type { Live } from "../viewer/controller";
 import { revealViewport, selectionBounds } from "./reveal";
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
@@ -46,6 +48,8 @@ export interface CanvasProps {
   onLayout: (linkId: string, patch: LinkLayout) => void;
   onPins: (linkId: string, pins: Pt[]) => void;
   onToggleExpand: (id: string) => void;
+  /** Double-click on a node (default: expand it in place). */
+  onOpenNode?: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
   /** A drag starts (what moves) or ends (null): the layout reroutes only what moves meanwhile. */
   onLive: (live: Live | null) => void;
@@ -55,6 +59,10 @@ export interface CanvasProps {
   reveal?: { selection: NonNullable<Selection>; seq: number };
   /** Right-click on a node: its context menu at the pointer (the browser's own when not given). */
   onNodeContext?: (id: string, x: number, y: number) => void;
+  /** The host's marks by definition id (`ViewerOptions.nodeMarks`). */
+  marks?: Record<string, NodeMark>;
+  /** Legend entries are isolated: what stays at full strength (the rest fades). */
+  isolation?: Isolation | null;
 }
 
 /**
@@ -75,6 +83,7 @@ export function Canvas(props: CanvasProps) {
   const nodeCache = useRef(new Map<string, { key: unknown[]; value: Node<NodeData> }>());
   const edgeCache = useRef(new Map<string, { key: unknown[]; value: Edge<LinkData> }>());
   const { vm, layout, mode, selection } = props;
+  const isolation = props.isolation ?? null;
 
   // a selected link derived over nets lights up the lines it runs over
   const derivedSel = selection?.kind === "link" ? vm.derived.find((d) => d.id === selection.id) : undefined;
@@ -103,14 +112,19 @@ export function Canvas(props: CanvasProps) {
       const portKey = ports.map((p) => [p.port.id, p.x, p.y, p.side, p.links.map((l) => l.id + l.state).join()]);
       const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
       const selected = selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf);
-      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected];
+      const mark = node.defId ? props.marks?.[node.defId] : undefined;
+      // isolated legend entries: a node none of their links touch fades, and on one that stays, the other ports
+      const out = isolation ? !isolation.nodes.has(node.id) : false;
+      const keptPorts = isolation && !out ? ports.filter((p) => isolation.ports.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id) : undefined;
+      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label, out, keptPorts ?? null];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.kind === "net" ? "net" : node.expanded ? "container" : "module",
         position: parentBox ? { x: box.x - parentBox.x, y: box.y - parentBox.y } : { x: box.x, y: box.y },
         ...(node.parent ? { parentId: node.parent } : {}),
-        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts },
+        data: { node, box, ports, groups: layout.groups[node.id] ?? [], mode, showGrounds: props.showGrounds, selectedPorts, ribbonPorts, ...(mark ? { mark } : {}), ...(keptPorts ? { keptPorts: new Set(keptPorts) } : {}) },
         selected,
+        ...(out ? { className: "isolated-out" } : {}),
         style: { width: box.w, height: box.h },
         // size and handle positions are known from the layout: handing them over means React Flow
         // never drops its measured handle bounds when a node object is replaced (which blanked
@@ -124,7 +138,7 @@ export function Canvas(props: CanvasProps) {
         zIndex: node.expanded ? 0 : 2,
       }));
     });
-  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts]);
+  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts, isolation]);
 
   const { onSelect } = props;
   const onSelectLink = useCallback((id: string) => onSelect({ kind: "link", id }), [onSelect]);
@@ -136,7 +150,9 @@ export function Canvas(props: CanvasProps) {
         const color = colorFor(link, mode);
         const selected = selectedIds.has(link.linkId);
         const open = props.openLinks.has(link.linkId);
+        const faded = isFaded(link, mode) || (isolation ? !isolation.links.has(link.id) : false);
         const key = [
+          faded,
           link, layout.routes[link.id], color, mode, props.detail, open, props.openLinks, layout.runs[link.id], layout.labelAt[link.id],
           layout.labelFixed[link.id], layout.pins[link.id], layout.bends[link.id], layout.edits[link.id], selected,
           props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink,
@@ -154,7 +170,7 @@ export function Canvas(props: CanvasProps) {
             link,
             points: layout.routes[link.id],
             color,
-            faded: isFaded(link, mode),
+            faded,
             mode,
             detail: props.detail,
             open,
@@ -174,7 +190,7 @@ export function Canvas(props: CanvasProps) {
           },
         }));
       });
-  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink]);
+  }, [vm, layout, mode, selection, props.openLinks, props.detail, props.hand, props.onToggleLink, props.onLayout, props.onPins, props.onLive, onSelectLink, isolation]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {
@@ -231,7 +247,7 @@ export function Canvas(props: CanvasProps) {
       onNodeDragStart={(_, n, all) => props.onLive({ nodes: new Set([n.id, ...all.map((x) => x.id)]) })}
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
-      onNodeDoubleClick={(_, n) => props.onToggleExpand(n.id)}
+      onNodeDoubleClick={(_, n) => (props.onOpenNode ?? props.onToggleExpand)(n.id)}
       onNodeContextMenu={
         props.onNodeContext &&
         ((e, n) => {
@@ -251,7 +267,7 @@ export function Canvas(props: CanvasProps) {
       maxZoom={2.5}
       attributionPosition="bottom-left"
     >
-      <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--canvas-dot)" bgColor="var(--canvas-bg)" />
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--uhd-canvas-dot)" bgColor="var(--uhd-canvas)" />
     </ReactFlow>
   );
 }

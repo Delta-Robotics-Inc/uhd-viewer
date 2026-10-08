@@ -10,6 +10,7 @@ import type { ModuleDef } from "@uhd/types/index.js";
 import type { ModuleLookup } from "@uhd/system/index.js";
 import type { LevelLayout } from "../layout/layout";
 import type { ArtifactResolver, ViewerOptions } from "../api";
+import { tolerantSystem, type LeftOut, type MissingDefinition } from "./tolerant";
 
 export interface ViewerScenario {
   id: string;
@@ -17,6 +18,10 @@ export interface ViewerScenario {
   description: string;
   system: ModuleDef;
   lookup: ModuleLookup;
+  /** Definitions the bundle names and does not hold: drawn as placeholders (source/tolerant.ts). */
+  missing: MissingDefinition[];
+  /** Links and exports that could not be resolved, and are not drawn. */
+  leftOut: LeftOut[];
 }
 
 /** Surface appearance for a definition (and optionally named sub-bodies of its CAD). */
@@ -79,9 +84,11 @@ export interface LoadedSource {
   scenarios: ViewerScenario[];
   /** URL for a definition's artifact file path, or undefined if it cannot be resolved. */
   resolveArtifact: ArtifactResolver;
-  /** Findings from the bundle's producer (e.g. ProtoBoard's aggregated check). */
+  /** Findings from the bundle's producer (e.g. Protoboard's aggregated check). */
   hostDiagnostics: UhdBundleDiagnostic[];
   display: DisplayConfig;
+  /** The bundle as loaded (for host views that read more of it than the viewer draws). */
+  bundle: UhdBundle;
 }
 
 export interface SourceOptions {
@@ -152,10 +159,13 @@ export function sourceFromBundle(bundle: UhdBundle, url: string, options: Source
     resolveArtifact: host ? (definitionId, filePath) => host(definitionId, filePath, fallback) : fallback,
     hostDiagnostics: bundle.diagnostics ?? [],
     display: (bundle.display ?? {}) as DisplayConfig,
+    bundle,
   };
 }
 
-function sys(bundle: UhdBundle, scenario?: string): { system: ModuleDef; lookup: ModuleLookup } {
-  const { root, lookup } = bundleSystem(bundle, scenario);
-  return { system: root, lookup };
+function sys(bundle: UhdBundle, scenario?: string): Pick<ViewerScenario, "system" | "lookup" | "missing" | "leftOut"> {
+  const raw = bundleSystem(bundle, scenario);
+  // a bundle that names what it does not hold still draws, and says what it lacks
+  const { root, lookup, missing, leftOut } = tolerantSystem(raw.root, raw.lookup);
+  return { system: root, lookup, missing, leftOut };
 }

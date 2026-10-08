@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UhdBundle } from "@uhd/types/bundle.js";
-import type { ViewerLayout } from "../src/api";
+import type { ViewerLayout, ViewerOptions } from "../src/api";
 import { mergeOptions, sameLayout } from "../src/options";
 
 const bundle = { schema: "uhd.bundle/v0", root: "sys", definitions: [] } as unknown as UhdBundle;
@@ -22,6 +22,14 @@ describe("update()", () => {
     const next = mergeOptions({ bundle, bundleUrl: "/a.json" }, { bundle: rebuilt });
     expect(next.bundle).toBe(rebuilt);
     expect(next.bundleUrl).toBe("/a.json");
+  });
+
+  it("carries a host's marks, and replaces them whole when the host sends new ones", () => {
+    const first = mergeOptions<ViewerOptions>({ bundle }, { nodeMarks: { mcu: { tone: "ok", label: "Reviewed" }, cell: { tone: "neutral" } } });
+    expect(first.nodeMarks).toEqual({ mcu: { tone: "ok", label: "Reviewed" }, cell: { tone: "neutral" } });
+    // a later update that does not mention marks keeps them; one that does replaces them
+    expect(mergeOptions(first, { diagnostics: [] }).nodeMarks).toBe(first.nodeMarks);
+    expect(mergeOptions(first, { nodeMarks: { mcu: { tone: "warning" } } }).nodeMarks).toEqual({ mcu: { tone: "warning" } });
   });
 
   it("does not change the current options", () => {

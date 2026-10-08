@@ -1,21 +1,20 @@
 /**
- * Renders the viewer into an element: shared by the standalone app (main.tsx)
- * and the library entry for hosts (lib.tsx). The handle carries the host
- * channel: its methods send host messages, events go to the options'
- * callbacks and, with `parentWindow`, to the parent window.
+ * Renders a viewer shell into an element: the standalone app (app/main.tsx,
+ * lib.tsx's mountViewer) or a host's own shell built from the library's views
+ * (`renderViewer(el, options, Shell)`). The handle carries the host channel:
+ * its methods send host messages, events go to the options' callbacks and,
+ * with `parentWindow`, to the parent window. The shell receives the options
+ * and the channel (`host`) as props and passes them to `UhdViewer`.
  */
-import { StrictMode } from "react";
+import { StrictMode, type ComponentType } from "react";
 import { createRoot } from "react-dom/client";
-import "@xyflow/react/dist/style.css";
-import "./styles/tokens.css";
-import "./styles/app.css";
-import App, { type AppProps, type HostLink } from "./App";
-import type { ViewerEvent, ViewerHandle, ViewerOptions } from "./api";
-import { mergeOptions } from "./options";
-import { commandBus, connectParent, deliver, type ChannelWindow, type ParentChannel } from "./host/channel";
-import { parseHostMessage } from "./host/protocol";
+import type { AppProps, HostLink } from "./controller";
+import type { ViewerEvent, ViewerHandle, ViewerOptions } from "../api";
+import { mergeOptions } from "../options";
+import { commandBus, connectParent, deliver, type ChannelWindow, type ParentChannel } from "../host/channel";
+import { parseHostMessage } from "../host/protocol";
 
-export function render(element: HTMLElement, props: AppProps): ViewerHandle {
+export function renderViewer<P extends AppProps>(element: HTMLElement, props: P, Shell: ComponentType<P>): ViewerHandle {
   const root = createRoot(element);
   const bus = commandBus();
   let current = props;
@@ -34,13 +33,17 @@ export function render(element: HTMLElement, props: AppProps): ViewerHandle {
   const hostLink = (): HostLink => {
     const source = Boolean(current.onOpenSource || parent);
     const artifact = Boolean(current.onOpenArtifact || parent);
-    if (!host || host.source !== source || host.artifact !== artifact) host = { bus, emit, source, artifact };
+    // only a host that says it opens modules changes what double-click does
+    const module = Boolean(current.onOpenModule);
+    // a pair view of the host's own only when the host takes it (a frame's parent keeps the viewer's)
+    const pair = Boolean(current.onOpenPair);
+    if (!host || host.source !== source || host.artifact !== artifact || host.module !== module || Boolean(host.pair) !== pair) host = { bus, emit, source, artifact, module, pair };
     return host;
   };
   const draw = () =>
     root.render(
       <StrictMode>
-        <App {...current} host={hostLink()} />
+        <Shell {...current} host={hostLink()} />
       </StrictMode>,
     );
   draw();
@@ -52,7 +55,7 @@ export function render(element: HTMLElement, props: AppProps): ViewerHandle {
   return {
     update(options) {
       const before = current.parentWindow;
-      current = mergeOptions(current, options);
+      current = mergeOptions(current, options as Partial<P>);
       if ("parentWindow" in options && JSON.stringify(before) !== JSON.stringify(current.parentWindow)) connect(current.parentWindow);
       draw();
     },

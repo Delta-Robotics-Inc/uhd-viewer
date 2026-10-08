@@ -5,6 +5,7 @@
  * schematic) with pan and zoom, where a selected component is marked and a
  * click on a component selects it.
  */
+import { ScrollArea } from "../ui/ScrollArea";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtifactDef, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { GeometryManifest } from "@uhd/system/geometry.js";
@@ -14,7 +15,9 @@ import { circuitOutputs, drawingFits, footprintAt, footprints, parsePnp, toDrawi
 import type { ArtifactResolver } from "../api";
 import type { Selection } from "../canvas/Canvas";
 import { Icon } from "../canvas/Icon";
-import { ArtifactLink } from "./Artifacts";
+import { artifactCards } from "../model/artifacts";
+import { useHost } from "../host/context";
+import { ArtifactCards } from "./ArtifactCards";
 
 const STATE_LABEL: Record<string, string> = { configured: "CONFIGURED", partial: "PARTIAL", incompatible: "INCOMPATIBLE", unconfigured: "NOT CONFIGURED" };
 
@@ -95,7 +98,7 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
         PINS · {pins.length}
         {netOf.size > 0 && <span className="muted"> · {netOf.size} ON NETS</span>}
       </div>
-      <div className="pin-table-wrap">
+      <ScrollArea className="pin-table-wrap" axis="both">
         <table className="child-table pin-table">
           <thead>
             <tr>
@@ -116,7 +119,7 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollArea>
     </>
   );
 }
@@ -141,16 +144,18 @@ export function DerivedList({ items, title, onSelect }: { items: ViewDerived[]; 
 }
 
 /** A net: its voltage, its members and their pins, and the links derived over it. */
-export function NetDetails({ node, vm, onSelect }: { node: ViewNode; vm: ViewModel; onSelect: (s: Selection) => void }) {
+export function NetDetails({ node, vm, onSelect, bare }: { node: ViewNode; vm: ViewModel; onSelect: (s: Selection) => void; bare?: boolean }) {
   const net = node.net!;
   const lines = vm.links.filter((l) => l.net && l.target.node === node.id);
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name={node.icon} size={16} />
-        <span>{node.label}</span>
-        <span className="tree-tag">NET</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name={node.icon} size={16} />
+          <span>{node.label}</span>
+          <span className="tree-tag">NET</span>
+        </div>
+      )}
       <Row k="VOLTAGE" v={net.voltage ?? (net.ground ? "0 V (ground)" : "not stated")} />
       <Row k="CARRIES" v={net.signal.toUpperCase()} />
       <Row k="PINS" v={String(net.pins)} />
@@ -170,14 +175,16 @@ export function NetDetails({ node, vm, onSelect }: { node: ViewNode; vm: ViewMod
 }
 
 /** A link derived over nets, shown by name: its ends, nets, conductors and findings. */
-export function DerivedDetails({ d, vm, onSelect }: { d: ViewDerived; vm: ViewModel; onSelect: (s: Selection) => void }) {
+export function DerivedDetails({ d, vm, onSelect, bare }: { d: ViewDerived; vm: ViewModel; onSelect: (s: Selection) => void; bare?: boolean }) {
   const label = (id: string) => vm.nodes.find((n) => n.id === id)?.label ?? id;
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name="git-merge" size={16} />
-        <span>{d.name.toUpperCase()}</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name="git-merge" size={16} />
+          <span>{d.name.toUpperCase()}</span>
+        </div>
+      )}
       <Row k="PROTOCOL" v={d.protocol} />
       <Row k="STATE" v={STATE_LABEL[d.state]} />
       <Row k="DERIVED" v="over board nets (not stored)" />
@@ -244,10 +251,10 @@ const TABS: { id: Tab; label: string }[] = [
 const urlOf = (def: ModuleDef, a: ArtifactDef | undefined, resolve: ArtifactResolver) => (a ? (a.url ?? (a.filePath ? resolve(def.id, a.filePath) : undefined)) : undefined);
 
 /** The pick-and-place rows and geometry manifest of a board, fetched once per board. */
-function usePlacement(def: ModuleDef, resolve: ArtifactResolver) {
+function usePlacement(def: ModuleDef, resolve: ArtifactResolver, enabled = true) {
   const outs = circuitOutputs(def);
-  const pnpUrl = urlOf(def, outs?.pnp, resolve);
-  const manifestUrl = urlOf(def, outs?.manifest, resolve);
+  const pnpUrl = enabled ? urlOf(def, outs?.pnp, resolve) : undefined;
+  const manifestUrl = enabled ? urlOf(def, outs?.manifest, resolve) : undefined;
   const [data, setData] = useState<{ pnp: PnpRow[]; manifest?: GeometryManifest } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -272,24 +279,29 @@ export function BoardViews({
   resolve,
   highlight,
   onPick,
+  drawings = true,
 }: {
+  /** The drawings with pan and zoom (default). False: the outputs as cards only, nothing fetched. */
+  drawings?: boolean;
   def: ModuleDef;
   lookup: (id: string) => ModuleDef | undefined;
   resolve: ArtifactResolver;
   highlight?: string;
   onPick?: (instance: string) => void;
 }) {
+  const host = useHost();
   const outs = circuitOutputs(def);
-  const placement = usePlacement(def, resolve);
+  const placement = usePlacement(def, resolve, drawings);
   const fps = useMemo(() => (placement ? footprints(def, lookup, placement.pnp, placement.manifest) : []), [def, lookup, placement]);
   const tabs = TABS.filter((t) => outs?.[t.id]);
   const marked = fps.find((f) => f.instance === highlight);
   const [tab, setTab] = useState<Tab | undefined>(undefined);
   // follow the highlighted component to the side it is on, until a tab is chosen by hand
   const current = tab ?? (marked?.side && outs?.[marked.side] ? marked.side : tabs[0]?.id);
-  if (!outs || !tabs.length || !current) return null;
-  const files = [outs.bom, outs.pnp, outs.netlist, outs.manifest, outs.glb].filter((a): a is ArtifactDef => Boolean(a));
-  const sample = [outs.top, outs.bottom, outs.schematic, ...files].some((a) => a?.tags?.includes("sample"));
+  if (!outs) return null;
+  const files = [outs.top, outs.bottom, outs.schematic, outs.bom, outs.pnp, outs.netlist, outs.manifest, outs.glb].filter((a): a is ArtifactDef => Boolean(a));
+  const shown = new Set(files);
+  const sample = files.some((a) => a?.tags?.includes("sample"));
   return (
     <>
       <div className="section-title">
@@ -298,32 +310,20 @@ export function BoardViews({
           {sample && <span className="sample-tag">SAMPLE</span>}
         </span>
       </div>
-      <div className="artifact-parts board-tabs">
-        {tabs.map((t) => (
-          <button key={t.id} className={`mini${t.id === current ? " on" : ""}`} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <Drawing
-        key={current}
-        url={urlOf(def, outs[current], resolve)}
-        side={current === "schematic" ? undefined : current}
-        fps={fps}
-        highlight={highlight}
-        onPick={onPick}
-      />
-      {files.length > 0 && (
-        <div className="artifact-files">
-          {files.map((a) => (
-            <ArtifactLink key={a.id} defId={def.id} artifactId={a.id} href={urlOf(def, a, resolve)} title={a.filePath ?? a.url}>
-              <Icon name={/csv|json/.test(a.format ?? "") ? "file-text" : "box"} size={11} />
-              <span className="artifact-name">{(a.filePath ?? a.url ?? a.name).split("/").pop()}</span>
-              <span className="artifact-format">{(a.format ?? a.type).toUpperCase()}</span>
-            </ArtifactLink>
-          ))}
-        </div>
+      {drawings && current && (
+        <>
+          <div className="artifact-parts board-tabs">
+            {tabs.map((t) => (
+              <button key={t.id} className={`mini${t.id === current ? " on" : ""}`} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <Drawing key={current} url={urlOf(def, outs[current], resolve)} side={current === "schematic" ? undefined : current} fps={fps} highlight={highlight} onPick={onPick} />
+        </>
       )}
+      {/* the board's outputs, each a card (the drawings too, where they are not shown above) */}
+      <ArtifactCards cards={artifactCards(def, resolve, { skip: (a) => !shown.has(a) || (drawings && tabs.some((t) => outs[t.id] === a)), previewFor: host.artifactPreview, remoteImages: host.remoteImages })} />
     </>
   );
 }

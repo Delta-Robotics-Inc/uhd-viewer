@@ -1,5 +1,4 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { useReactFlow } from "@xyflow/react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { ScopedDiagnostic } from "../model/diagnostics";
@@ -8,138 +7,17 @@ import { BoardViews, DerivedDetails, DerivedList, NetDetails, PackageSection, Pi
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
-import { CLASSIFICATIONS, colorFor, legendFor, type Classification } from "../model/classification";
-import { evidenceFor } from "../model/evidence";
+import { colorFor, type Classification } from "../model/classification";
+import { EvidenceSection } from "./Evidence";
 import { Icon } from "../canvas/Icon";
-import { fitPadding, type Selection } from "../canvas/Canvas";
+import type { Selection } from "../canvas/Canvas";
 import { fullId, linkOwner, selectableLink } from "../host/targets";
 import { useHost } from "../host/context";
-
-// ---------------------------------------------------------------------------
-// Header: breadcrumb (D9), scenario, classification (D7), detail (D5)
-// ---------------------------------------------------------------------------
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { id: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="segmented">
-      {options.map((o) => (
-        <button key={o.id} className={o.id === value ? "on" : ""} onClick={() => onChange(o.id)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function HeaderView(props: {
-  vm: ViewModel;
-  onNavigate: (depth: number) => void;
-  scenarios: { id: string; label: string }[];
-  scenario: string;
-  onScenario: (id: string) => void;
-  mode: Classification;
-  onMode: (m: Classification) => void;
-  conductors: boolean;
-  onConductors: (c: boolean) => void;
-  showGrounds: boolean;
-  onGrounds: (g: boolean) => void;
-  view: "diagram" | "3d";
-  onView: (v: "diagram" | "3d") => void;
-}) {
-  return (
-    <header className="header">
-      <div className="brand">
-        <span className="brand-mark">UHD</span>
-        <span className="brand-name">VIEWER</span>
-      </div>
-      <span className="sep" />
-      <nav className="breadcrumb">
-        {props.vm.path.map((p, i) => (
-          <span key={p.id || "root"} className="crumb-wrap">
-            {i > 0 && <Icon name="chevron-right" size={12} className="crumb-sep" />}
-            <button className={`crumb${i === props.vm.path.length - 1 ? " current" : ""}`} onClick={() => props.onNavigate(i)}>
-              {p.label.toUpperCase()}
-            </button>
-          </span>
-        ))}
-      </nav>
-      <div className="header-controls">
-        <Segmented
-          options={[
-            { id: "diagram", label: "Diagram" },
-            { id: "3d", label: "3D" },
-          ]}
-          value={props.view}
-          onChange={props.onView}
-        />
-        <span className="sep" />
-        <label className="scenario">
-          <Icon name="flask-conical" size={12} />
-          <select value={props.scenario} onChange={(e) => props.onScenario(e.target.value)}>
-            {props.scenarios.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="sep" />
-        <Segmented options={CLASSIFICATIONS} value={props.mode} onChange={props.onMode} />
-        <span className="sep" />
-        <Segmented
-          options={[
-            { id: "bundled", label: "Basic" },
-            { id: "conductors", label: "Ribbon" },
-          ]}
-          value={props.conductors ? "conductors" : "bundled"}
-          onChange={(v) => props.onConductors(v === "conductors")}
-        />
-        <button className={`chip-toggle${props.showGrounds ? " on" : ""}`} onClick={() => props.onGrounds(!props.showGrounds)}>
-          GND wires
-        </button>
-      </div>
-    </header>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Left activity bar (layout decision D11)
-// ---------------------------------------------------------------------------
+import { ScrollArea } from "../ui/ScrollArea";
+import { IconButton } from "../ui/Toolbar";
+import { PairPreview } from "./PairView";
 
 export type Panel = "hierarchy" | "checks";
-
-function ActivityBarView({ panel, onPanel, errors }: { panel: Panel | null; onPanel: (p: Panel | null) => void; errors: number }) {
-  const items: { id?: Panel; icon: string; label: string }[] = [
-    { id: "hierarchy", icon: "list-tree", label: "Hierarchy" },
-    { id: "checks", icon: "shield-check", label: "System checks" },
-    { icon: "search", label: "Search (planned)" },
-    { icon: "package", label: "Parts library (planned)" },
-  ];
-  return (
-    <aside className="activity-bar">
-      {items.map((it) => (
-        <button
-          key={it.icon}
-          className={`activity${it.id && panel === it.id ? " on" : ""}`}
-          title={it.label}
-          disabled={!it.id}
-          onClick={() => it.id && onPanel(panel === it.id ? null : it.id)}
-        >
-          <Icon name={it.icon} size={16} />
-          {it.id === "checks" && errors > 0 && <span className="badge">{errors}</span>}
-        </button>
-      ))}
-    </aside>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Inspector
@@ -162,81 +40,7 @@ function Row({ k, v }: { k: string; v?: string }) {
   );
 }
 
-function EvidenceSection({ def }: { def?: ModuleDef }) {
-  const ev = evidenceFor(def);
-  if (!ev || (!ev.sources.length && !ev.performance.length)) return null;
-  const v = ev.verification;
-  return (
-    <>
-      <div className="section-title">EVIDENCE</div>
-      <div className="evidence">
-        {!ev.filesKnown ? null : v?.audit ? (
-          <div className={`audit ${v.audit.wrong + v.audit.unsupported > 0 ? "repaired" : "ok"}`}>
-            <Icon name="badge-check" size={13} />
-            <span>
-              AUDITED {v.audit.confirmed}/{v.audit.checked} FACTS
-            </span>
-            {v.repairs && <span className="muted"> · {v.repairs}</span>}
-          </div>
-        ) : (
-          <div className="audit pending">
-            <Icon name="circle-dashed" size={13} /> <span>NOT YET AUDITED</span>
-          </div>
-        )}
-        {ev.performance.map((p) => (
-          <div key={p.kind} className="facts">
-            <div className="facts-title">{p.kind.toUpperCase()}</div>
-            {p.facts.map(([k, val]) => (
-              <Row key={k} k={k.toUpperCase()} v={val} />
-            ))}
-          </div>
-        ))}
-        {ev.assumptions.length > 0 && (
-          <div className="facts">
-            <div className="facts-title warn">ASSUMPTIONS · {ev.assumptions.length}</div>
-            {ev.assumptions.map((a) => (
-              <p key={a.field} className="note">
-                <b>{a.field}</b>
-                {a.value ? ` = ${a.value}` : ""}
-                {a.reason ? ` — ${a.reason}` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-        {ev.discrepancies.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">SOURCE CONFLICTS · {ev.discrepancies.length}</div>
-            {ev.discrepancies.map((d) => (
-              <p key={d.field} className="note">
-                <b>{d.field}</b>
-                {d.resolution ? ` — ${d.resolution}` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-        {ev.gaps.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">OPEN DATA GAPS · {ev.gaps.length}</div>
-            <p className="note">{ev.gaps.join(" · ")}</p>
-          </div>
-        )}
-        {ev.sources.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">SOURCES · {ev.sources.length}</div>
-            {ev.sources.map((s) => (
-              <a key={s.id} className="source" href={s.url} target="_blank" rel="noreferrer">
-                <span className={`authority ${s.authority}`}>{s.authority.slice(0, 5).toUpperCase()}</span>
-                <span>{s.title}</span>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-function NodeDetails({
+export function NodeDetails({
   node,
   vm,
   mode,
@@ -247,6 +51,7 @@ function NodeDetails({
   artifacts,
   board,
   onOpenSource,
+  bare,
 }: {
   node: ViewNode;
   vm: ViewModel;
@@ -261,22 +66,26 @@ function NodeDetails({
   board?: React.ReactNode;
   /** Ask the host to open the module's source (only when a host takes it). */
   onOpenSource?: () => void;
+  /** No title and no action buttons: the host draws its own header and actions. */
+  bare?: boolean;
 }) {
-  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} />;
+  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} bare={bare} />;
   const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name={node.icon} size={16} />
-        <span>{node.label}</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name={node.icon} size={16} />
+          <span>{node.label}</span>
+        </div>
+      )}
       <Row k="KIND" v={node.kind.toUpperCase()} />
       <Row k="DEFINITION" v={node.defId} />
       <Row k="MANUFACTURER" v={node.manufacturer} />
       <Row k="PART NUMBER" v={node.partNumber} />
       <Row k="PATH" v={node.id} />
       {node.description && <p className="description">{node.description}</p>}
-      {(node.childCount > 0 || onOpenSource) && (
+      {!bare && (node.childCount > 0 || onOpenSource) && (
         <div className="actions">
           {node.childCount > 0 && <button onClick={() => onToggleExpand(node.id)}>{node.expanded ? "COLLAPSE" : "EXPAND IN PLACE"}</button>}
           {node.childCount > 0 && <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>}
@@ -323,7 +132,7 @@ function NodeDetails({
   );
 }
 
-function LinkDetails({
+export function LinkDetails({
   link,
   mode,
   open,
@@ -335,9 +144,15 @@ function LinkDetails({
   harness,
   derived,
   onOpenSource,
+  preview,
+  bare,
 }: {
+  /** No title and no action buttons: the host draws its own header and actions. */
+  bare?: boolean;
   /** Ask the host to open the source that declares the link (only when a host takes it). */
   onOpenSource?: () => void;
+  /** The pair the link joins, small (its button opens the pair view). */
+  preview?: React.ReactNode;
   /** The harness carrying the link: its artifacts (thumbnail, CAD). */
   harness?: React.ReactNode;
   /** Functional links that run over this line (a grouped net membership). */
@@ -365,24 +180,29 @@ function LinkDetails({
   };
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name="cable" size={16} color={color} />
-        <span>{link.name.toUpperCase()}</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name="cable" size={16} color={color} />
+          <span>{link.name.toUpperCase()}</span>
+        </div>
+      )}
       <Row k="PROTOCOL" v={link.protocol} />
       <Row k="DOMAIN" v={link.domain} />
       <Row k="STATE" v={STATE_LABEL[link.state]} />
       <Row k="HARNESS" v={link.run?.name ?? link.harness} />
       <Row k="NET" v={link.net?.name} />
-      <div className="actions">
-        {!link.net && <button onClick={onPair}>PAIR VIEW</button>}
-        {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
-        {onOpenSource && (
-          <button className="open-source" onClick={onOpenSource}>
-            OPEN SOURCE
-          </button>
-        )}
-      </div>
+      {preview}
+      {!bare && (
+        <div className="actions">
+          {!link.net && !preview && <button onClick={onPair}>PAIR VIEW</button>}
+          {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
+          {onOpenSource && (
+            <button className="open-source" onClick={onOpenSource}>
+              OPEN SOURCE
+            </button>
+          )}
+        </div>
+      )}
       {harness}
       {link.children.length > 0 && (
         <>
@@ -641,6 +461,7 @@ function Checks({
 }
 
 function InspectorView(props: {
+  className?: string;
   vm: ViewModel;
   panel: Panel;
   onPanel: (p: Panel) => void;
@@ -700,20 +521,17 @@ function InspectorView(props: {
     );
   };
 
+  const errors = props.diagnostics.filter((d) => d.severity === "error").length + props.hostDiagnostics.filter((d) => d.severity === "error").length;
   return (
-    <aside className="inspector">
+    <aside className={`inspector${props.className ? ` ${props.className}` : ""}`}>
       <div className="inspector-header">
         <span>INSPECTOR</span>
         <span className="section-actions">
-          <button className={`mini${!selection && props.panel === "hierarchy" ? " on" : ""}`} onClick={() => { props.onSelect(null); props.onPanel("hierarchy"); }}>
-            HIERARCHY
-          </button>
-          <button className={`mini${!selection && props.panel === "checks" ? " on" : ""}`} onClick={() => { props.onSelect(null); props.onPanel("checks"); }}>
-            CHECKS
-          </button>
+          <IconButton size="sm" icon="list-tree" label="Hierarchy" pressed={!selection && props.panel === "hierarchy"} onClick={() => { props.onSelect(null); props.onPanel("hierarchy"); }} />
+          <IconButton size="sm" icon="shield-check" label="System checks" pressed={!selection && props.panel === "checks"} badge={errors || undefined} onClick={() => { props.onSelect(null); props.onPanel("checks"); }} />
         </span>
       </div>
-      <div className="inspector-body">
+      <ScrollArea className="inspector-scroll" contentClassName="inspector-body">
         {node ? (
           <NodeDetails
             node={node}
@@ -734,6 +552,7 @@ function InspectorView(props: {
             open={props.openLinks.has(link.linkId)}
             onToggle={props.onToggleLink}
             onPair={() => props.onPair(link)}
+            preview={!link.net && <PairPreview vm={vm} link={link} mode={props.mode} onOpen={() => props.onPair(link)} />}
             bSlots={props.bSlotsFor(link)}
             onOpenSource={(() => {
               const owner = linkOwner(vm, link.linkId, levelDefId);
@@ -767,7 +586,7 @@ function InspectorView(props: {
             }
           />
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 }
@@ -818,46 +637,5 @@ export function NodeMenu({ x, y, items, onClose }: { x: number; y: number; items
   );
 }
 
-// ---------------------------------------------------------------------------
-// Bottom toolbar and legend
-// ---------------------------------------------------------------------------
-
-function ToolbarView({ onReset, inspector = false }: { onReset: () => void; inspector?: boolean }) {
-  const flow = useReactFlow();
-  const tools = [
-    { icon: "maximize", label: "Fit view", run: () => flow.fitView({ padding: fitPadding(inspector), maxZoom: 1.25, duration: 300 }) },
-    { icon: "zoom-in", label: "Zoom in", run: () => flow.zoomIn({ duration: 200 }) },
-    { icon: "zoom-out", label: "Zoom out", run: () => flow.zoomOut({ duration: 200 }) },
-    { icon: "rotate-ccw", label: "Reset layout", run: onReset },
-  ];
-  return (
-    <div className="toolbar">
-      {tools.map((t) => (
-        <button key={t.icon} title={t.label} onClick={t.run}>
-          <Icon name={t.icon} size={15} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function LegendView({ mode }: { mode: Classification }) {
-  return (
-    <div className="legend">
-      <div className="legend-title">{CLASSIFICATIONS.find((c) => c.id === mode)?.label}</div>
-      {legendFor(mode).map((item) => (
-        <div key={item.label} className="legend-item">
-          <span className="legend-swatch" style={{ background: item.color }} />
-          <span>{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** Memoised: re-renders only when its props change, not on every frame of a canvas drag. */
-export const Header = memo(HeaderView);
-export const ActivityBar = memo(ActivityBarView);
 export const Inspector = memo(InspectorView);
-export const Toolbar = memo(ToolbarView);
-export const Legend = memo(LegendView);

@@ -1,9 +1,11 @@
 import type { Node, NodeProps } from "@xyflow/react";
 import type { Box, PlacedPort, PortGroup } from "../layout/layout";
 import type { ViewNode } from "../model/types";
+import type { NodeMark } from "../api";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import { Icon } from "./Icon";
 import { Port } from "./Port";
+import { cardInsets, chipText, fitChips, sideLabelWidth } from "../layout/card-body";
 
 export interface NodeData extends Record<string, unknown> {
   node: ViewNode;
@@ -15,6 +17,10 @@ export interface NodeData extends Record<string, unknown> {
   selectedPorts: Set<string>;
   /** Ports ("node|port") whose link draws its own pin handle (ribbon mode): no dot. */
   ribbonPorts?: Set<string>;
+  /** The host's mark for the node's definition: the corner dot takes its tone. */
+  mark?: NodeMark;
+  /** Legend entries are isolated and the node stays: its ports that stay (the others fade). Absent: nothing is isolated. */
+  keptPorts?: Set<string>;
 }
 
 export type ModuleNodeType = Node<NodeData, "module">;
@@ -24,10 +30,10 @@ export type HarnessNodeType = Node<NodeData, "harness">;
 export type NetNodeType = Node<NodeData, "net">;
 
 const STATUS: Record<string, string> = {
-  configured: "var(--drc-configured)",
-  partial: "var(--drc-partial)",
-  incompatible: "var(--drc-incompatible)",
-  unconfigured: "var(--drc-unconfigured)",
+  configured: "var(--uhd-drc-configured)",
+  partial: "var(--uhd-drc-partial)",
+  incompatible: "var(--uhd-drc-incompatible)",
+  unconfigured: "var(--uhd-drc-unconfigured)",
 };
 
 function portColor(p: PlacedPort, mode: Classification): string {
@@ -45,7 +51,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   const perSide = (side: string) => ports.filter((q) => q.side === side).length;
   const widthFor = (p: PlacedPort) =>
     p.side === "left" || p.side === "right"
-      ? Math.max(40, box.w / 2 - 54)
+      ? sideLabelWidth(box.w)
       : Math.max(30, Math.min(84, (box.w - 32) / (perSide(p.side) + 1) - 4));
   return (
     <>
@@ -58,7 +64,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
             x={p.x - box.x - border}
             y={p.y - box.y - border}
             color={portColor(p, mode)}
-            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode)}
+            faded={isFaded({ domain: p.port.domain, protocol: p.port.protocol }, mode) || (data.keptPorts ? !data.keptPorts.has(p.port.id) : false)}
             exported={Boolean(p.port.exported) && node.expanded}
             label={labels}
             ground={onlyGround && !showGrounds}
@@ -72,18 +78,21 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   );
 }
 
-function PortGroups({ groups, mode }: { groups: PortGroup[]; mode: Classification }) {
-  if (!groups.length) return null;
-  const shown = groups.slice(0, 4);
-  const rest = groups.slice(4).reduce((n, g) => n + g.count, 0);
+function PortGroups({ shown, rest, all, mode }: { shown: PortGroup[]; rest: number; all: PortGroup[]; mode: Classification }) {
+  if (!shown.length && !rest) return null;
+  const folded = all.slice(shown.length);
   return (
     <div className="port-groups">
       {shown.map((g) => (
         <span key={g.protocol} className="port-group" style={{ borderColor: colorFor({ domain: g.domain, protocol: g.protocol }, mode) }}>
-          {g.protocol.replace(/_/g, " ").toUpperCase()} ×{g.count}
+          {chipText(g)}
         </span>
       ))}
-      {rest > 0 && <span className="port-group muted">+{rest}</span>}
+      {rest > 0 && (
+        <span className="port-group muted" title={folded.map(chipText).join(" · ")}>
+          +{rest}
+        </span>
+      )}
     </div>
   );
 }
@@ -91,17 +100,25 @@ function PortGroups({ groups, mode }: { groups: PortGroup[]; mode: Classificatio
 export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
   const { node, box } = data;
   const circle = node.shape === "circle";
+  // the body sits between the rows of labels of the ports on the top and bottom edges
+  const insets = cardInsets(data.ports.map((p) => ({ side: p.side, name: p.port.name })), box.w);
+  const chips = circle ? { shown: [], rest: 0 } : fitChips(node.label, box, data.groups, insets);
   return (
     <div
-      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}`}
+      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}${node.missing ? " missing" : ""}`}
       style={{ width: box.w, height: box.h, ["--status" as string]: STATUS[node.status] }}
       title={node.description}
     >
-      <span className="status-dot" style={{ background: STATUS[node.status] }} />
-      <div className="module-body">
+      {data.mark ? (
+        <span className="status-dot mark" data-tone={data.mark.tone} data-tooltip={data.mark.label} role={data.mark.label ? "img" : undefined} aria-label={data.mark.label} />
+      ) : (
+        <span className="status-dot" style={{ background: STATUS[node.status] }} />
+      )}
+      <div className="module-body" style={circle ? undefined : { padding: `${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px` }}>
         <Icon name={node.icon} size={circle ? 18 : 22} strokeWidth={1.6} />
         <div className="module-title">{node.label}</div>
-        {!circle && <PortGroups groups={data.groups} mode={data.mode} />}
+        {node.missing && <div className="module-missing">not in this bundle</div>}
+        {!circle && <PortGroups shown={chips.shown} rest={chips.rest} all={data.groups} mode={data.mode} />}
       </div>
       <Ports data={data} labels={!circle} border={2} />
     </div>
@@ -112,7 +129,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
   const { node, box } = data;
   const group = node.kind === "group";
   return (
-    <div className={`container${group ? " group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
+    <div className={`module-container${group ? " is-group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
       {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
         <Icon name={node.icon} size={12} strokeWidth={1.8} />
@@ -127,7 +144,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
 export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
   const { node, box } = data;
   const port = data.ports[0];
-  const color = port ? portColor(port, data.mode) : "var(--text-muted)";
+  const color = port ? portColor(port, data.mode) : "var(--uhd-text-muted)";
   return (
     <div className={`sheet-port${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }}>
       <Icon name={port?.side === "left" ? "arrow-left-from-line" : "arrow-right-to-line"} size={12} color={color} />
@@ -140,7 +157,7 @@ export function SheetNode({ data, selected }: NodeProps<SheetNodeType>) {
 /** A harness module drawn as the carrier node its links pass through (design D2, board 04). */
 export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
   const { node, box } = data;
-  const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--text-muted)";
+  const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--uhd-text-muted)";
   return (
     <div className={`harness-node${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }} title={node.description}>
       <Icon name={node.icon} size={12} color={color} />

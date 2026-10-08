@@ -5,6 +5,7 @@ import { at } from "../src/canvas/geometry";
 import { computeLayout } from "../src/layout/layout";
 import { buildView } from "../src/model/from-uhd";
 import { IMU_BOARD, lookupBoardModule } from "../../uhd/test/fixtures/imu-board";
+import type { ModuleDef } from "@uhd/types/index.js";
 
 type R = { x: number; y: number; w: number; h: number };
 const overlap = (a: R, b: R) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -205,5 +206,16 @@ describe("board layout (a level with nets)", () => {
       if (opens) continue; // a link that opens keeps its label (its toggle) wherever it fits best
       for (const n of top) expect(overlap(rect, layout.boxes[n.id]), `label ${id} on ${n.id}`).toBe(false);
     }
+  });
+});
+
+describe("a level with nothing on it (a new system with no modules yet)", () => {
+  it("lays out without failing: no boxes, no routes", () => {
+    const empty: ModuleDef = { id: "new", name: "New", kind: "module", interfaces: [], children: [], links: [] } as unknown as ModuleDef;
+    const vm = buildView(empty, () => undefined, [], { expanded: new Set() });
+    expect(vm.nodes).toEqual([]);
+    const layout = computeLayout(vm, undefined, {}, false);
+    expect(layout.boxes).toEqual({});
+    expect(layout.routes).toEqual({});
   });
 });

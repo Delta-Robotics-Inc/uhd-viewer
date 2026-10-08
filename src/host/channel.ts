@@ -45,6 +45,10 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
       return options.onOpenSource?.({ defId: event.defId, ...(event.instancePath !== undefined ? { instancePath: event.instancePath } : {}) });
     case "uhd-viewer:openArtifact":
       return options.onOpenArtifact?.({ defId: event.defId, artifactId: event.artifactId });
+    case "uhd-viewer:openModule":
+      return options.onOpenModule?.({ path: event.path });
+    case "uhd-viewer:openPair":
+      return options.onOpenPair?.({ linkId: event.linkId, a: event.a, b: event.b });
   }
 }
 

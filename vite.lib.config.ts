@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 
 // Library build for hosts (src/lib.tsx → dist/lib): one ES module with its own
@@ -7,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const uhdRoot = fileURLToPath(new URL("../uhd", import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // library mode leaves process.env alone; React reads NODE_ENV
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
   resolve: { alias: { "@uhd": `${uhdRoot}/src` } },

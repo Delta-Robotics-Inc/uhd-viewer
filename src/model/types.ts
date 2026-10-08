@@ -61,6 +61,8 @@ export interface ViewNode {
    * selects the net.
    */
   tapOf?: string;
+  /** The bundle does not hold this module's definition: a placeholder with the interfaces its links name. */
+  missing?: boolean;
 }
 
 /** A net on a board (UHD `Net` interface, exposed: false), as a junction node. */

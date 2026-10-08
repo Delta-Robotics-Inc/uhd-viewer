@@ -1,0 +1,48 @@
+/* Tailwind 4 theme for the viewer's tokens: utilities such as bg-surface,
+ * text-muted, border-subtle and ring-focus read the --uhd-* tokens, so a
+ * component styled with them follows whatever theme the host applies.
+ * Shells that build on the viewer import this file into their own Tailwind
+ * build (`@import "@deltarobotics/uhd-viewer/tailwind-theme.css";`) and get
+ * the same names. */
+@theme inline {
+  --color-background: var(--uhd-background);
+  --color-canvas: var(--uhd-canvas);
+  --color-surface: var(--uhd-surface);
+  --color-raised: var(--uhd-surface-raised);
+  --color-sunken: var(--uhd-surface-sunken);
+  --color-overlay: var(--uhd-overlay);
+  --color-scrim: var(--uhd-scrim);
+  --color-muted: var(--uhd-muted);
+  --color-hover: var(--uhd-hover);
+  --color-active: var(--uhd-active);
+  --color-node: var(--uhd-node);
+  --color-fg: var(--uhd-text);
+  --color-fg-muted: var(--uhd-text-muted);
+  --color-fg-faint: var(--uhd-text-faint);
+  --color-on-accent: var(--uhd-text-on-accent);
+  --color-link: var(--uhd-text-link);
+  --color-line: var(--uhd-border);
+  --color-line-subtle: var(--uhd-border-subtle);
+  --color-line-strong: var(--uhd-border-strong);
+  --color-contrast: var(--uhd-contrast-border);
+  --color-contrast-active: var(--uhd-contrast-active-border);
+  --color-accent: var(--uhd-accent);
+  --color-accent-hover: var(--uhd-accent-hover);
+  --color-accent-tint: var(--uhd-accent-tint);
+  --color-highlight: var(--uhd-highlight);
+  --color-focus: var(--uhd-focus-ring);
+  --color-selection: var(--uhd-selection);
+  --color-selection-fg: var(--uhd-selection-text);
+  --color-thumb: var(--uhd-scrollbar-thumb);
+  --color-thumb-hover: var(--uhd-scrollbar-thumb-hover);
+  --color-error: var(--uhd-severity-error);
+  --color-warning: var(--uhd-severity-warning);
+  --color-info: var(--uhd-severity-info);
+  --color-ok: var(--uhd-severity-ok);
+  --font-ui: var(--uhd-font-ui);
+  --font-label: var(--uhd-font-label);
+  --font-code: var(--uhd-font-mono);
+  --radius-panel: var(--uhd-radius);
+  --shadow-panel: var(--uhd-shadow-md);
+  --shadow-float: var(--uhd-shadow-lg);
+}
