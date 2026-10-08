@@ -27,3 +27,50 @@
     transition: none;
   }
 }
+
+/* Artifact cards (chrome/ArtifactCards.tsx): the layout that depends on the
+ * room there is. It is written here, not as container-variant utilities: a
+ * host with a Tailwind build of its own emits the plain utilities again after
+ * the viewer's, and a variant would lose to them. Colours stay utilities.
+ * Two or more cards a row where they fit; below 264px one card a row, its
+ * picture at the left. */
+.uhd-artifact-grid {
+  container-type: inline-size;
+}
+.uhd-artifact-grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 6px;
+}
+.uhd-artifact-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.uhd-artifact-picture {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+.uhd-artifact-text {
+  border-top-width: 1px;
+  border-top-style: solid;
+}
+@container (width < 264px) {
+  .uhd-artifact-grid-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .uhd-artifact-card {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .uhd-artifact-picture {
+    width: 56px;
+    aspect-ratio: auto;
+    min-height: 52px;
+  }
+  .uhd-artifact-text {
+    border-top-width: 0;
+    border-left-width: 1px;
+    border-left-style: solid;
+  }
+}

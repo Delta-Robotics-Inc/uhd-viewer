@@ -8,7 +8,7 @@ import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
 import { colorFor, type Classification } from "../model/classification";
-import { evidenceFor } from "../model/evidence";
+import { EvidenceSection } from "./Evidence";
 import { Icon } from "../canvas/Icon";
 import type { Selection } from "../canvas/Canvas";
 import { fullId, linkOwner, selectableLink } from "../host/targets";
@@ -40,81 +40,7 @@ function Row({ k, v }: { k: string; v?: string }) {
   );
 }
 
-function EvidenceSection({ def }: { def?: ModuleDef }) {
-  const ev = evidenceFor(def);
-  if (!ev || (!ev.sources.length && !ev.performance.length)) return null;
-  const v = ev.verification;
-  return (
-    <>
-      <div className="section-title">EVIDENCE</div>
-      <div className="evidence">
-        {!ev.filesKnown ? null : v?.audit ? (
-          <div className={`audit ${v.audit.wrong + v.audit.unsupported > 0 ? "repaired" : "ok"}`}>
-            <Icon name="badge-check" size={13} />
-            <span>
-              AUDITED {v.audit.confirmed}/{v.audit.checked} FACTS
-            </span>
-            {v.repairs && <span className="muted"> · {v.repairs}</span>}
-          </div>
-        ) : (
-          <div className="audit pending">
-            <Icon name="circle-dashed" size={13} /> <span>NOT YET AUDITED</span>
-          </div>
-        )}
-        {ev.performance.map((p) => (
-          <div key={p.kind} className="facts">
-            <div className="facts-title">{p.kind.toUpperCase()}</div>
-            {p.facts.map(([k, val]) => (
-              <Row key={k} k={k.toUpperCase()} v={val} />
-            ))}
-          </div>
-        ))}
-        {ev.assumptions.length > 0 && (
-          <div className="facts">
-            <div className="facts-title warn">ASSUMPTIONS · {ev.assumptions.length}</div>
-            {ev.assumptions.map((a) => (
-              <p key={a.field} className="note">
-                <b>{a.field}</b>
-                {a.value ? ` = ${a.value}` : ""}
-                {a.reason ? ` — ${a.reason}` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-        {ev.discrepancies.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">SOURCE CONFLICTS · {ev.discrepancies.length}</div>
-            {ev.discrepancies.map((d) => (
-              <p key={d.field} className="note">
-                <b>{d.field}</b>
-                {d.resolution ? ` — ${d.resolution}` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-        {ev.gaps.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">OPEN DATA GAPS · {ev.gaps.length}</div>
-            <p className="note">{ev.gaps.join(" · ")}</p>
-          </div>
-        )}
-        {ev.sources.length > 0 && (
-          <div className="facts">
-            <div className="facts-title">SOURCES · {ev.sources.length}</div>
-            {ev.sources.map((s) => (
-              <a key={s.id} className="source" href={s.url} target="_blank" rel="noreferrer">
-                <span className={`authority ${s.authority}`}>{s.authority.slice(0, 5).toUpperCase()}</span>
-                <span>{s.title}</span>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-function NodeDetails({
+export function NodeDetails({
   node,
   vm,
   mode,
@@ -125,6 +51,7 @@ function NodeDetails({
   artifacts,
   board,
   onOpenSource,
+  bare,
 }: {
   node: ViewNode;
   vm: ViewModel;
@@ -139,22 +66,26 @@ function NodeDetails({
   board?: React.ReactNode;
   /** Ask the host to open the module's source (only when a host takes it). */
   onOpenSource?: () => void;
+  /** No title and no action buttons: the host draws its own header and actions. */
+  bare?: boolean;
 }) {
-  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} />;
+  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} bare={bare} />;
   const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name={node.icon} size={16} />
-        <span>{node.label}</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name={node.icon} size={16} />
+          <span>{node.label}</span>
+        </div>
+      )}
       <Row k="KIND" v={node.kind.toUpperCase()} />
       <Row k="DEFINITION" v={node.defId} />
       <Row k="MANUFACTURER" v={node.manufacturer} />
       <Row k="PART NUMBER" v={node.partNumber} />
       <Row k="PATH" v={node.id} />
       {node.description && <p className="description">{node.description}</p>}
-      {(node.childCount > 0 || onOpenSource) && (
+      {!bare && (node.childCount > 0 || onOpenSource) && (
         <div className="actions">
           {node.childCount > 0 && <button onClick={() => onToggleExpand(node.id)}>{node.expanded ? "COLLAPSE" : "EXPAND IN PLACE"}</button>}
           {node.childCount > 0 && <button onClick={() => onDrill(node.id)}>OPEN AS CANVAS</button>}
@@ -201,7 +132,7 @@ function NodeDetails({
   );
 }
 
-function LinkDetails({
+export function LinkDetails({
   link,
   mode,
   open,
@@ -214,7 +145,10 @@ function LinkDetails({
   derived,
   onOpenSource,
   preview,
+  bare,
 }: {
+  /** No title and no action buttons: the host draws its own header and actions. */
+  bare?: boolean;
   /** Ask the host to open the source that declares the link (only when a host takes it). */
   onOpenSource?: () => void;
   /** The pair the link joins, small (its button opens the pair view). */
@@ -246,25 +180,29 @@ function LinkDetails({
   };
   return (
     <div className="details">
-      <div className="details-title">
-        <Icon name="cable" size={16} color={color} />
-        <span>{link.name.toUpperCase()}</span>
-      </div>
+      {!bare && (
+        <div className="details-title">
+          <Icon name="cable" size={16} color={color} />
+          <span>{link.name.toUpperCase()}</span>
+        </div>
+      )}
       <Row k="PROTOCOL" v={link.protocol} />
       <Row k="DOMAIN" v={link.domain} />
       <Row k="STATE" v={STATE_LABEL[link.state]} />
       <Row k="HARNESS" v={link.run?.name ?? link.harness} />
       <Row k="NET" v={link.net?.name} />
       {preview}
-      <div className="actions">
-        {!link.net && !preview && <button onClick={onPair}>PAIR VIEW</button>}
-        {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
-        {onOpenSource && (
-          <button className="open-source" onClick={onOpenSource}>
-            OPEN SOURCE
-          </button>
-        )}
-      </div>
+      {!bare && (
+        <div className="actions">
+          {!link.net && !preview && <button onClick={onPair}>PAIR VIEW</button>}
+          {link.children.length > 1 && <button onClick={() => onToggle(link.linkId)}>{open ? "CLOSE LINK" : "OPEN LINK"}</button>}
+          {onOpenSource && (
+            <button className="open-source" onClick={onOpenSource}>
+              OPEN SOURCE
+            </button>
+          )}
+        </div>
+      )}
       {harness}
       {link.children.length > 0 && (
         <>

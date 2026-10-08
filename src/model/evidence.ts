@@ -16,6 +16,7 @@ export interface SourceRow {
   type: string;
   authority: string;
   supports?: string[];
+  fetched_at?: string;
 }
 
 export interface Verification {
@@ -52,14 +53,20 @@ export interface Evidence {
 const show = (v: unknown): string =>
   typeof v === "string" ? v : Array.isArray(v) ? v.map(show).join(", ") : typeof v === "object" && v ? JSON.stringify(v) : String(v);
 
-export function evidenceFor(def: ModuleDef | undefined): Evidence | undefined {
+/** A definition's evidence files as a host gives them (`files`), else as registered. */
+export interface EvidenceFiles {
+  sources?: SourceRow[];
+  verification?: Verification;
+}
+
+export function evidenceFor(def: ModuleDef | undefined, files?: EvidenceFiles): Evidence | undefined {
   if (!def) return undefined;
   const traits: TraitDef[] = [def, ...def.interfaces].flatMap((x) => x.traits ?? []);
   const params = (t: TraitDef) => (t.params ?? {}) as Record<string, unknown>;
-  const verification = VERIFICATION_BY_PART[def.id];
+  const verification = files?.verification ?? VERIFICATION_BY_PART[def.id];
   return {
-    filesKnown,
-    sources: SOURCES_BY_PART[def.id] ?? [],
+    filesKnown: filesKnown || Boolean(files?.sources || files?.verification),
+    sources: files?.sources ?? SOURCES_BY_PART[def.id] ?? [],
     verification,
     performance: traits
       .filter((t) => t.type === "performance")

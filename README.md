@@ -213,6 +213,51 @@ no mark keeps the dot of its links' state. A tone's colour is the theme's:
 severity colour (the faint text colour for `neutral`). The viewer does not
 know what a mark means.
 
+**Artifacts as cards (PB-940).** The inspector shows every artifact of a
+definition as a card: images, 3D and STEP models, a board's schematic and PCB
+drawings, datasheets, documents, design files and data, each under its kind
+with a count. A card has a picture (the image itself, loaded lazily; else the
+kind's icon), the title, the kind and where the artifact comes from (a file's
+name and the tool that wrote it, or the host of its URL). A click opens it:
+through the host when it takes artifacts (`onOpenArtifact`), else its URL in a
+new tab. The part's picture and its body model (turning in a small 3D
+preview) stay above the cards. `artifactCards(def, resolve, options)`
+(`src/model/artifacts.ts`) is the list without React; `ArtifactCard`,
+`ArtifactGrid` and `ArtifactCards` draw it. The cards' layout follows the
+room there is (a container query in `src/styles/ui.css`): two or more a row,
+or one a row with the picture at the left below 264 px.
+
+**The inspector's details on their own.** `SelectionDetails` is what
+`ViewerInspector` shows for a selected module, link or net, without a viewer
+around it: for a host with an inspector of its own (a native side view) that
+selects by path. The same components draw both.
+
+```tsx
+<ThemeProvider adapter={vscodeThemeAdapter()}>
+  <SelectionDetails
+    bundle={bundle}
+    target={{ kind: "module", path: "stack/esc" }} // or { kind: "link", owner, ids } or { kind: "definition", id }
+    resolveArtifact={(defId, filePath) => urlFor(defId, filePath)}
+    host={{ openArtifact, openLink, artifactPreview, drawModel, remoteImages: false, evidence }}
+    onSelect={({ kind, id }) => showInViewer(kind, id)}
+  />
+</ThemeProvider>
+```
+
+It models the level that holds the target as the viewer does (links, nets,
+checks) and draws nothing else. It has no title and no text buttons: the host
+draws its own header and actions. By default it loads no model
+(`artifactModels: "cards"`): a model is a card, with the picture the host
+gives for it (`artifactPreview`: an exported preview image, or a model small
+enough to draw, which `drawModel` turns into a picture when the card scrolls
+into view). `remoteImages: false` keeps pictures to the files the host
+resolves. `evidence(defId)` gives a part's `sources.json` rows and
+`verification.json`: the evidence section then says whether the facts were
+audited and lists the sources as cards (the kind of source, its host, its
+authority, when it was fetched), and a datasheet's card says the same of its
+source. `definitions` adds definitions that are not in the bundle (a library
+part shown on its own), with or without a bundle.
+
 Styles are Tailwind 4 (no Preflight; everything in cascade layers, so a host
 page's own rules win). Scroll containers are Radix ScrollAreas with thin,
 auto-hiding, themed scrollbars; toolbars are icon buttons with tooltips.
