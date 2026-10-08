@@ -105,7 +105,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
   const chips = circle ? { shown: [], rest: 0 } : fitChips(node.label, box, data.groups, insets);
   return (
     <div
-      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}`}
+      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}${node.missing ? " missing" : ""}`}
       style={{ width: box.w, height: box.h, ["--status" as string]: STATUS[node.status] }}
       title={node.description}
     >
@@ -117,6 +117,7 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
       <div className="module-body" style={circle ? undefined : { padding: `${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px` }}>
         <Icon name={node.icon} size={circle ? 18 : 22} strokeWidth={1.6} />
         <div className="module-title">{node.label}</div>
+        {node.missing && <div className="module-missing">not in this bundle</div>}
         {!circle && <PortGroups shown={chips.shown} rest={chips.rest} all={data.groups} mode={data.mode} />}
       </div>
       <Ports data={data} labels={!circle} border={2} />

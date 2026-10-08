@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
@@ -544,8 +544,45 @@ export function UhdViewer({ children, ...props }: UhdViewerProps) {
     );
   if (!source) return <div className="load-state">Loading UHD bundle…</div>;
   return (
-    <ViewerProvider source={source} options={props} host={props.host}>
-      {children}
-    </ViewerProvider>
+    <ViewerBoundary source={source}>
+      <ViewerProvider source={source} options={props} host={props.host}>
+        {children}
+      </ViewerProvider>
+    </ViewerBoundary>
   );
+}
+
+/**
+ * A bundle the viewer cannot draw says so in place, instead of leaving an
+ * empty page: what failed, and that the next bundle is tried again (a
+ * producer that rebuilds on a source edit sends one).
+ */
+export class ViewerBoundary extends Component<{ source: LoadedSource; children?: ReactNode }, { failed?: { source: LoadedSource; message: string } }> {
+  state: { failed?: { source: LoadedSource; message: string } } = {};
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("uhd-viewer: could not draw the bundle", error, info.componentStack);
+    this.setState({ failed: { source: this.props.source, message: error?.message || String(error) } });
+  }
+
+  static getDerivedStateFromError(): null {
+    return null;
+  }
+
+  render() {
+    const failed = this.state.failed;
+    // another bundle is another try
+    if (failed && failed.source === this.props.source) {
+      return (
+        <div className="load-state error draw-error" role="alert">
+          <div>
+            <b>This bundle could not be drawn.</b>
+            <p>{failed.message}</p>
+            <p className="draw-error-note">The view comes back by itself when the bundle changes.</p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

@@ -23,6 +23,7 @@ import type { SystemDiagnostic } from "@uhd/system/checks.js";
 import { isConnector } from "@uhd/protocols/connector.js";
 import { isNetMembership } from "@uhd/system/nets.js";
 import { levelNets, type LevelNets } from "./nets";
+import { isPlaceholder } from "../source/tolerant";
 import type {
   LinkState,
   ViewChildPort,
@@ -461,6 +462,7 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     description: def.description,
     category: def.categories?.[0],
     childCount: def.kind === "harness" ? 0 : (def.children?.length ?? 0),
+    ...(isPlaceholder(def) ? { missing: true } : {}),
   });
 
   /** Harness ports: one in/out pair per carried link. */

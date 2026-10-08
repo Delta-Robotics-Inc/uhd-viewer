@@ -824,6 +824,65 @@
   font-weight: normal;
   letter-spacing: 0.6px;
 }
+/* definitions the bundle names and does not hold: said once, above the diagram */
+.missing-notice {
+  position: absolute;
+  top: calc(var(--uhd-inset-top, 0px) + 8px);
+  left: calc(var(--uhd-inset-left, 0px) + 8px);
+  right: 8px;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: min(560px, calc(100% - 16px - var(--uhd-inset-left, 0px)));
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 7px 8px 7px 10px;
+  font: 11px/1.45 var(--uhd-font-ui);
+  color: var(--uhd-text-muted);
+  background: var(--uhd-surface);
+  border: 1px solid var(--uhd-drc-partial);
+  border-radius: var(--uhd-radius, 8px);
+  box-shadow: var(--uhd-shadow-md);
+}
+.missing-notice.below-banner {
+  top: calc(var(--uhd-inset-top, 0px) + 48px);
+}
+.missing-notice-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--uhd-drc-partial);
+}
+.missing-notice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.missing-notice b {
+  color: var(--uhd-text);
+  font-weight: 600;
+}
+.missing-notice-ids {
+  font-family: var(--uhd-font-mono, var(--uhd-font-label));
+}
+.missing-notice-hint {
+  margin-top: 3px;
+  color: var(--uhd-text);
+}
+/* a command in a host's hint: a span, since a host page may style <code> for another background */
+.missing-notice-hint .cmd {
+  font-family: var(--uhd-font-mono, var(--uhd-font-label));
+  user-select: all;
+}
+/* a placeholder for a definition the bundle does not hold */
+.module-card.missing {
+  border-style: dashed;
+  background: color-mix(in oklab, var(--uhd-node) 70%, transparent);
+}
+.module-missing {
+  font: 9px/1.2 var(--uhd-font-ui);
+  color: var(--uhd-text-muted);
+  text-align: center;
+}
 .activity {
   position: relative;
 }
@@ -1267,7 +1326,8 @@
   font-size: 13px;
   color: var(--uhd-text);
 }
-.cad-empty code {
+.cad-empty code,
+.cad-empty .cmd {
   font-family: var(--uhd-font-mono);
   font-size: 11.5px;
   color: var(--uhd-text);
@@ -2028,6 +2088,25 @@ body {
 }
 .load-state.error {
   color: var(--uhd-drc-incompatible);
+}
+.draw-error {
+  padding: 24px;
+  text-align: center;
+  font: 12px/1.5 var(--uhd-font-ui);
+}
+.draw-error > div {
+  max-width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}
+.draw-error b {
+  font-weight: 600;
+}
+.draw-error p {
+  margin: 6px 0 0;
+  color: var(--uhd-text);
+}
+.draw-error .draw-error-note {
+  color: var(--uhd-text-muted);
 }
 
 /* PB-803: harness regions, lanes and label handles */

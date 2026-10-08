@@ -4,9 +4,10 @@
  * scene, the inspector panels and a module's context menu. Shells place them;
  * none of them is app chrome.
  */
-import { memo, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { Canvas, fitPadding } from "../canvas/Canvas";
+import { Icon } from "../canvas/Icon";
 import { PairView } from "../chrome/PairView";
 import { Inspector, NodeMenu } from "../chrome/Chrome";
 import { CadView } from "../cad/CadView";
@@ -23,16 +24,19 @@ export interface DiagramCanvasProps {
   legend?: boolean;
   /** A panel floats over the canvas's right side: fitting leaves room for it. Default: the inspector panel is open. */
   coveredRight?: boolean;
+  /** What the shell adds to the notice about definitions the bundle does not hold (how its producer gets them). */
+  missingHint?: ReactNode;
   className?: string;
 }
 
 /** The diagram of the current level: modules, interfaces, links and harnesses. */
-export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, className }: DiagramCanvasProps) {
+export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, missingHint, className }: DiagramCanvasProps) {
   const c = useViewer();
   const covered = coveredRight ?? Boolean(c.panel);
   return (
     <main className={cx("canvas", className)}>
       <ScenarioBanner />
+      <MissingNotice hint={missingHint} />
       <Canvas
         key={`${c.scenario.id}/${c.levelKey}`}
         vm={c.drawn}
@@ -82,6 +86,47 @@ export function ScenarioBanner() {
       <span>
         {c.errors} error{c.errors === 1 ? "" : "s"} found by the system checks
       </span>
+    </div>
+  );
+}
+
+/**
+ * Definitions the bundle names and does not hold (source/tolerant.ts): they are
+ * drawn as placeholders, and this says which. It can be put away; a bundle
+ * that lacks something else brings it back.
+ */
+export function MissingNotice({ hint, className }: { hint?: ReactNode; className?: string }) {
+  const c = useViewer();
+  const { missing, leftOut } = c.scenario;
+  const key = `${missing.map((m) => m.id).join(",")}|${leftOut.length}`;
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  if ((!missing.length && !leftOut.length) || dismissed === key) return null;
+  const SHOWN = 4;
+  const ids = missing.map((m) => m.id);
+  const lines = leftOut.filter((l) => l.kind === "link").length;
+  const exports = leftOut.length - lines;
+  const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  return (
+    <div className={cx("missing-notice", c.scenario.id !== "nominal" && "below-banner", className)} role="status" data-missing={ids.length} data-left-out={leftOut.length}>
+      <Icon name="triangle-alert" size={14} strokeWidth={1.8} className="missing-notice-icon" aria-hidden />
+      <div className="missing-notice-text">
+        {ids.length > 0 && (
+          <div>
+            <b>{count(ids.length, "definition")} not in this bundle</b>, drawn as {ids.length === 1 ? "a placeholder" : "placeholders"}:{" "}
+            <span className="missing-notice-ids" title={ids.join("\n")}>
+              {ids.slice(0, SHOWN).join(", ")}
+              {ids.length > SHOWN ? ` and ${ids.length - SHOWN} more` : ""}
+            </span>
+          </div>
+        )}
+        {leftOut.length > 0 && (
+          <div title={leftOut.map((l) => `${l.on} · ${l.kind} ${l.id}: ${l.why}`).join("\n")}>
+            {[lines ? count(lines, "link") : "", exports ? count(exports, "export") : ""].filter(Boolean).join(" and ")} could not be resolved and {leftOut.length === 1 ? "is" : "are"} not drawn.
+          </div>
+        )}
+        {hint ? <div className="missing-notice-hint">{hint}</div> : null}
+      </div>
+      <IconButton icon="x" size="sm" tooltipSide="bottom" label="Hide this notice" onClick={() => setDismissed(key)} className="size-6 shrink-0" />
     </div>
   );
 }
