@@ -207,7 +207,9 @@ every theme. No brand colour is in this package.
 the bundle does not: `nodeMarks` (an option of `mountViewer` and of
 `UhdViewer`) maps a definition id to `{ tone, label }`. The corner dot of
 every module card drawn from that definition takes the tone (`neutral`,
-`info`, `ok`, `warning`, `error`) and says the label on hover; a module with
+`info`, `ok`, `warning`, `error`) and says the label on hover (`shape: "ring"`
+draws the tone as a dashed ring instead of a dot, for a module that stands
+for something not chosen yet); a module with
 no mark keeps the dot of its links' state. A tone's colour is the theme's:
 `--uhd-mark-<tone>` when the host sets it on the viewer's root, else the
 severity colour (the faint text colour for `neutral`). The viewer does not
@@ -511,17 +513,62 @@ messages are the same either way:
 | | `{type: "uhd-viewer:selectionChanged", selection}` | Every change of the selection, in the diagram or the 3D view: `{kind: "node" \| "link", id, defId?}` or `null`. Ids are canonical paths from the root: a module's instance path, a net or boundary interface as `board:v3v3`, a link as its owner's path and id (`stack/fc_esc`, as UHD's system checks name links). `defId` is the module's definition (for a link, the module that declares it). |
 | | `{type: "uhd-viewer:openSource", defId, instancePath?}` | The user asked for a module's source: *OPEN SOURCE* in the inspector (modules and links) or a module's context menu (right-click, on the canvas or in the hierarchy). Offered only when a host takes it. |
 | | `{type: "uhd-viewer:openArtifact", defId, artifactId}` | The user picked an artifact file row in the inspector. Without a host the row opens the file in a new tab, as before. |
-| | `{type: "uhd-viewer:openModule", path}` | The user asked to open a module on its own: a double-click on it, or *OPEN IN NEW TAB* in its context menu. `path` is its instance path from the root. Only with `onOpenModule` (a host that opens modules in tabs of their own); without it a double-click expands the module in place. |
+| | `{type: "uhd-viewer:openModule", path}` | The user asked to open a module on its own: a double-click on it, or *OPEN IN NEW TAB* in its context menu. `path` is its instance path from the root. Only with `onOpenModule` (a host that opens modules in tabs of their own); without it a double-click expands the module in place. Only a module that holds modules is opened: a part with nothing inside has no level of its own, and a double-click on it does nothing. |
+| | `{type: "uhd-viewer:inspect", path, defId?}` | *INSPECT* in a module's context menu. Sent only when the host takes it (`onInspect`, a host with an inspector of its own); otherwise the viewer opens its own inspector panel. The module is selected first (`selectionChanged`). |
 | | `{type: "uhd-viewer:openPair", linkId, a, b}` | The user asked for the pair view of a link (the button on the inspector's pair preview). `linkId` as `selectionChanged` names links; `a` and `b` are the instance paths of the two modules it joins. Sent only when the host takes it (`onOpenPair`); otherwise the viewer opens its own pair view over the diagram. |
 
 With `mountViewer`, the handle has `focus(path)`, `select(ids, { reveal? })`,
 `drill(path)` and `setView(view)`, and `post(message)` for a message object as
 it arrives; the options take `onReady`, `onSelectionChanged`, `onOpenSource`,
-`onOpenArtifact`, `onOpenModule` and `onOpenPair`. Giving `onOpenSource` turns
+`onOpenArtifact`, `onOpenModule`, `onOpenPair` and `onInspect`. Giving `onOpenSource` turns
 on the *OPEN SOURCE* actions; giving `onOpenArtifact` hands artifact rows to
 the host; giving `onOpenModule` makes a double-click open the module
 (expanding it in place stays in its context menu); giving `onOpenPair` hands
 the pair view to the host (a tab of its own).
+
+### The canvas: pointer and keys
+
+The diagram has two pointer tools, chosen in the toolbar (`ToolToggle` for a
+shell's own toolbar) or by key:
+
+| | Select (default, `V`) | Pan (`H`) |
+| --- | --- | --- |
+| Left-drag on the empty canvas | Draws a selection box: the modules wholly inside it are selected | Moves the view |
+| Left-drag on a module | Moves it, with the others selected | Moves the view |
+| Middle-button drag | Moves the view | Moves the view |
+| Space held + left-drag | Moves the view | Moves the view |
+| Wheel, pinch | Zoom | Zoom |
+
+A click with Shift, Ctrl or Cmd held adds a module to the selection or takes
+it out; `Ctrl/Cmd+A` selects every module of the level; `Escape` shows
+everything again when legend entries are isolated, else clears the selection.
+Modules selected together move together, by dragging one or with the arrow
+keys (a grid step; four with Shift). `F` fits the diagram, `+` and `-` zoom,
+`0` is 100 %; a double press of the middle button fits too. A right-click on
+the empty canvas offers *FIT VIEW*, *SELECT ALL* and the other tool; on a
+module, *INSPECT* first. Keys typed into a field are left alone, and keys
+with Ctrl or Cmd other than select-all are the host's. The rules are data in
+`src/canvas/interaction.ts` (`interactionReducer`, `interactionProps`,
+`canvasCommand`).
+
+`selectionChanged` reports one module or link; while several modules are
+selected together it reports `null`.
+
+A module that holds modules shows a chevron at its top left: a click expands
+it in place (and folds it again), a double-click on the module opens it. A
+module with a description shows a small mark beside its dot; the description
+appears on hover in the viewer's tooltip, two lines at most, and in full in
+the inspector. A card grows as wide as the labels of its linked interfaces
+need (up to 272 px; on a level the bundle's display hints lay out, only into
+the room its neighbours leave); a label that still does not fit is cut and
+says its whole name on hover.
+
+**The first view.** A level opens fitted to its diagram, and is fitted again
+when modules come or go (a project still being written), until the user pans
+or zooms. From then on the level keeps the user's viewport: in local
+storage, or, with `onViewportChange`, with the host (`viewports` gives them
+back, keyed by drill level like the layout). A fit the user asks for drops
+the level's viewport, so it opens fitted next time.
 
 Selecting a link shows a small preview of the pair in the inspector: the two
 modules and the link's conductors from one to the other (a crossover

@@ -49,6 +49,8 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
       return options.onOpenModule?.({ path: event.path });
     case "uhd-viewer:openPair":
       return options.onOpenPair?.({ linkId: event.linkId, a: event.a, b: event.b });
+    case "uhd-viewer:inspect":
+      return options.onInspect?.({ path: event.path, ...(event.defId ? { defId: event.defId } : {}) });
   }
 }
 

@@ -1,4 +1,4 @@
-import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
@@ -13,7 +13,8 @@ import type { Pt } from "../canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "../source/source";
 import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "../api";
 import { sameLayout } from "../options";
-import type { Selection } from "../canvas/Canvas";
+import type { Selection, ViewCommand } from "../canvas/Canvas";
+import { applySelectChanges, initialInteraction, interactionReducer, validViewport, type CanvasTool, type Viewport } from "../canvas/interaction";
 import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
 import type { CadSelection } from "../cad/CadView";
 import { defAt } from "../cad/model";
@@ -112,7 +113,14 @@ export interface HostLink {
   module?: boolean;
   /** The host shows the pair view (instead of the viewer's own over the diagram). */
   pair?: boolean;
+  /** The host has an inspector of its own and shows a module there when asked (`onInspect`). */
+  inspect?: boolean;
 }
+
+const NO_GROUP: readonly string[] = [];
+/** Saved viewports as read from storage or a host: only well-formed ones. */
+const viewportsOf = (v: unknown): Record<string, Viewport> =>
+  Object.fromEntries(Object.entries(v && typeof v === "object" ? (v as Record<string, unknown>) : {}).filter((e): e is [string, Viewport] => validViewport(e[1])));
 
 /** Loads the UHD bundle (the viewer's only input): the source once loaded, or why not. */
 export function useViewerSource(props: Pick<AppProps, "bundle" | "bundleUrl" | "resolveArtifact" | "fsRoute">): { source: LoadedSource | null; error: string | null; empty: boolean } {
@@ -169,9 +177,43 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [showGrounds, setShowGrounds] = useState(params.get("grounds") === "1");
   const [expanded, setExpanded] = useState<Set<string>>(new Set([...DEFAULT_EXPANDED, ...(list("expand") ?? [])]));
   const [openLinks, setOpenLinks] = useState<Set<string>>(new Set(list("open") ?? source.display.diagram?.openLinks ?? []));
-  const [selection, setSelection] = useState<Selection>(
-    params.get("select") ? { kind: params.get("select")!.startsWith("link:") ? "link" : "node", id: params.get("select")!.replace(/^(link|node):/, "") } : null,
+  // What is selected: one module or link (`selection`: the inspector and the host follow it), or modules
+  // selected together (`group`: a selection box, clicks with Shift, Ctrl or Cmd, select all; two or more, and
+  // then no `selection`). One state, so changes that arrive together apply in order.
+  const [picked, setPicked] = useState<{ selection: Selection; group: readonly string[] }>(() => ({
+    selection: params.get("select") ? { kind: params.get("select")!.startsWith("link:") ? "link" : "node", id: params.get("select")!.replace(/^(link|node):/, "") } : null,
+    group: NO_GROUP,
+  }));
+  const { selection, group } = picked;
+  const setSelection = useCallback((s: Selection) => setPicked((cur) => (cur.selection === s && !cur.group.length ? cur : { selection: s, group: NO_GROUP })), []);
+  const pickNodes = useCallback((ids: string[], cur: { selection: Selection; group: readonly string[] }) => {
+    if (ids.length > 1) return { selection: null, group: ids };
+    if (ids.length === 1) return cur.selection?.kind === "node" && cur.selection.id === ids[0] && !cur.group.length ? cur : { selection: { kind: "node" as const, id: ids[0] }, group: NO_GROUP };
+    // (nothing left clears a selected module; a selected link is not React Flow's to clear)
+    return cur.selection?.kind === "node" || cur.group.length ? { selection: null, group: NO_GROUP } : cur;
+  }, []);
+  /** React Flow's selection changed (a box, a click with a key held, a press on a module): applied to what is selected now. */
+  const onSelectChanges = useCallback(
+    (changes: readonly { id: string; selected: boolean }[]) =>
+      setPicked((cur) => pickNodes(applySelectChanges(cur.group.length ? cur.group : cur.selection?.kind === "node" ? [cur.selection.id] : [], changes), cur)),
+    [pickNodes],
   );
+  const onSelectNodes = useCallback((ids: string[]) => setPicked((cur) => pickNodes(ids, cur)), [pickNodes]);
+  // the pointer's tool (select or pan) and Space held (canvas/interaction.ts)
+  const [interaction, onInteraction] = useReducer(interactionReducer, initialInteraction);
+  const setTool = useCallback((tool: CanvasTool) => onInteraction({ type: "tool", tool }), []);
+  // fit and zoom asked for outside the canvas (a toolbar, a menu)
+  const [viewCommand, setViewCommand] = useState<ViewCommand>();
+  const commandSeq = useRef(0);
+  const viewDo = useCallback((type: ViewCommand["type"]) => setViewCommand({ type, seq: ++commandSeq.current }), []);
+  const fitView = useCallback(() => viewDo("fit"), [viewDo]);
+  const zoomIn = useCallback(() => viewDo("in"), [viewDo]);
+  const zoomOut = useCallback(() => viewDo("out"), [viewDo]);
+  // where the user left each level's view: the host's when it keeps them (onViewportChange), else local storage
+  const hostedViewports = Boolean(options.onViewportChange);
+  const [viewports, setViewports] = useState<Record<string, Viewport>>(() => viewportsOf(hostedViewports ? options.viewports : load("uhd-viewer:viewports", {})));
+  const viewportHandler = useRef(options.onViewportChange);
+  viewportHandler.current = options.onViewportChange;
   // a narrow host (a VS Code panel beside an editor) starts with the view, not the panel over it (PB-861)
   const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? (typeof window !== "undefined" && window.innerWidth < NARROW ? null : "hierarchy"));
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
@@ -208,6 +250,12 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isolated, clearIsolated]);
+  // Escape on the diagram with nothing isolated clears the selection (isolated entries go first, above)
+  const escapeState = useRef({ isolated, menu: false });
+  const onEscape = useCallback(() => {
+    if (escapeState.current.isolated.size || escapeState.current.menu) return;
+    setSelection(null);
+  }, [setSelection]);
   const hand = HAND_LAYOUTS[levelKey];
   // while something is dragged only the links it touches are rerouted; all of them once it is dropped
   const [live, setLive] = useState<Live | null>(null);
@@ -222,6 +270,22 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   useSaved("uhd-viewer:positions", positions, !hosted);
   useSaved("uhd-viewer:overrides", overrides);
   useSaved("uhd-viewer:links", linkEdits, !hosted);
+  useSaved("uhd-viewer:viewports", viewports, !hostedViewports);
+  const viewportKey = `${scenarioId === "nominal" ? "" : `${scenarioId}:`}${levelKey}`;
+  const onViewport = useCallback(
+    (v: Viewport | null) =>
+      setViewports((all) => {
+        const next = { ...all };
+        if (v) next[viewportKey] = { x: Math.round(v.x * 100) / 100, y: Math.round(v.y * 100) / 100, zoom: Math.round(v.zoom * 10000) / 10000 };
+        else if (viewportKey in next) delete next[viewportKey];
+        else return all;
+        viewportHandler.current?.(next);
+        return next;
+      }),
+    [viewportKey],
+  );
+  // every module of the level (a supply rail once, not its taps; not the level's own boundary ports)
+  const onSelectAll = useCallback(() => onSelectNodes(drawn.nodes.filter((n) => !n.tapOf && !n.sheetPort).map((n) => n.id)), [drawn, onSelectNodes]);
   const applyHostLayout = useCallback((l: ViewerLayout) => {
     setPositions(l.positions);
     setLinkEdits(l.links);
@@ -322,7 +386,9 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // a module's menu (`id`), or the empty canvas's
+  const [menu, setMenu] = useState<{ id?: string; x: number; y: number } | null>(null);
+  escapeState.current = { isolated, menu: Boolean(menu) };
   const seq = useRef(0);
   // what a message applies to: the state of the latest render
   const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm, view });
@@ -396,25 +462,41 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
       openSource: host?.source ? (defId, instancePath) => host.emit({ type: "uhd-viewer:openSource", defId, ...(instancePath ? { instancePath } : {}) }) : undefined,
       openArtifact: host?.artifact ? (defId, artifactId) => host.emit({ type: "uhd-viewer:openArtifact", defId, artifactId }) : undefined,
       openModule: host?.module ? (path) => host.emit({ type: "uhd-viewer:openModule", path }) : undefined,
+      inspect: host?.inspect ? (path, defId) => host.emit({ type: "uhd-viewer:inspect", path, ...(defId ? { defId } : {}) }) : undefined,
     }),
-    [host?.source, host?.artifact, host?.module, host?.emit],
+    [host?.source, host?.artifact, host?.module, host?.inspect, host?.emit],
   );
   /**
-   * Double-click on a node: a module opens on its own when the host takes it
-   * (its new tab); otherwise, or for a net's junction, it expands in place.
+   * Double-click on a node. A module that holds modules opens on its own
+   * when the host takes it (its new tab), else it expands in place. A part
+   * with nothing inside opens nothing: there is no level of its own to show.
    */
   const onOpenNode = useCallback(
     (id: string) => {
-      const node = vm.nodes.find((n) => n.id === id);
-      if (hostActions.openModule && node?.defId && !node.net && !node.tapOf && !node.sheetPort) hostActions.openModule(fullId(drill, id));
-      else onToggleExpand(id);
+      const what = openAction(vm.nodes.find((n) => n.id === id), Boolean(hostActions.openModule));
+      if (what === "open") hostActions.openModule!(fullId(drill, id));
+      else if (what === "expand") onToggleExpand(id);
     },
     [vm, drill, hostActions, onToggleExpand],
   );
   const onNodeContext = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
-  const menuNode = menu ? vm.nodes.find((n) => n.id === menu.id) : undefined;
+  const onPaneContext = useCallback((x: number, y: number) => setMenu({ x, y }), []);
+  const menuNode = menu?.id ? vm.nodes.find((n) => n.id === menu.id) : undefined;
   const menuItems: NodeMenuItem[] = [];
-  if (menuNode?.defId && hostActions.openModule && !menuNode.net) {
+  if (menu && !menu.id) {
+    // the empty canvas
+    menuItems.push({ label: "FIT VIEW", run: () => viewDo("fit") });
+    if (drawn.nodes.length > 1) menuItems.push({ label: "SELECT ALL", run: onSelectAll });
+    menuItems.push(interaction.tool === "pan" ? { label: "SELECT TOOL", run: () => setTool("select") } : { label: "PAN TOOL", run: () => setTool("pan") });
+    if (isolated.size) menuItems.push({ label: "SHOW EVERYTHING", run: clearIsolated });
+  }
+  if (menuNode && !menuNode.sheetPort) {
+    // the host's inspector when it has one, else the viewer's own panel (the module is selected by the right-click)
+    const path = fullId(drill, menuNode.tapOf ?? menuNode.id);
+    const { defId } = menuNode;
+    menuItems.push({ label: "INSPECT", run: () => (hostActions.inspect ? hostActions.inspect(path, defId) : setPanel("hierarchy")) });
+  }
+  if (menuNode && openAction(menuNode, Boolean(hostActions.openModule)) === "open") {
     const path = fullId(drill, menuNode.id);
     menuItems.push({ label: "OPEN IN NEW TAB", run: () => hostActions.openModule!(path) });
   }
@@ -469,6 +551,21 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     setPanel,
     selection,
     setSelection,
+    group,
+    onSelectChanges,
+    onSelectAll,
+    onEscape,
+    // the pointer's tool, and fit and zoom from a toolbar
+    interaction,
+    onInteraction,
+    tool: interaction.tool,
+    setTool,
+    viewCommand,
+    fitView,
+    zoomIn,
+    zoomOut,
+    viewport: viewports[viewportKey] as Viewport | undefined,
+    onViewport,
     openLinks,
     overrides,
     pair,
@@ -493,11 +590,24 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     onCadSelect,
     hostActions,
     onOpenNode,
-    onNodeContext: hostActions.openSource || hostActions.openModule ? onNodeContext : undefined,
+    onNodeContext,
+    onPaneContext,
     menu,
     menuItems,
     closeMenu,
   };
+}
+
+/**
+ * What a double-click on a node does: `open` it on its own (the host's new
+ * tab), `expand` it in place, or `none`. Only a module that holds modules
+ * has a level to open or to expand; a part with nothing inside, a net's
+ * junction, a rail's tap and a boundary port have none.
+ */
+export function openAction(node: { defId?: string; childCount?: number; net?: unknown; tapOf?: string; sheetPort?: unknown } | undefined, hostOpens: boolean): "open" | "expand" | "none" {
+  if (!node || !node.childCount) return "none";
+  if (hostOpens && node.defId && !node.net && !node.tapOf && !node.sheetPort) return "open";
+  return "expand";
 }
 
 /** Everything a view of the loaded model reads (see useViewerController). */
