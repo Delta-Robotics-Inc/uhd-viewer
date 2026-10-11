@@ -76,3 +76,62 @@ describe("layout grows a card to fit its body", () => {
     expect(layout.boxes.board.h).toBe(96);
   });
 });
+
+describe("a card as wide as its labels need (node labels)", () => {
+  const linked = (a: ViewNode, b: ViewNode, ids: [string, string][]): ViewModel =>
+    ({
+      path: [],
+      nodes: [a, b],
+      links: ids.map(([s, t], i) => ({ id: `l${i}`, linkId: `l${i}`, name: `l${i}`, source: { node: a.id, port: s }, target: { node: b.id, port: t }, domain: "electrical", protocol: "custom", state: "configured", children: [], conductors: [] })),
+      derived: [],
+    }) as unknown as ViewModel;
+
+  it("keeps the plain width for short labels and grows for long ones, up to a limit", async () => {
+    const { cardWidth, labelIsCut, CARD_W, CARD_W_MAX, sideLabelWidth: side } = await import("../src/layout/card-body");
+    expect(cardWidth([])).toBe(CARD_W);
+    expect(cardWidth(["vbus", "gnd"])).toBe(CARD_W);
+    const long = cardWidth(["probe_power_out"]);
+    expect(long).toBeGreaterThan(CARD_W);
+    expect(long).toBeLessThanOrEqual(CARD_W_MAX);
+    // at that width the label fits beside the body
+    expect(labelIsCut("probe_power_out", side(long))).toBe(false);
+    expect(labelIsCut("probe_power_out", side(CARD_W))).toBe(true);
+    // past the limit a label is cut (and says its whole name on hover); so is one whose qualifier is left out
+    expect(cardWidth(["a very long interface name that no card should grow for"])).toBe(CARD_W_MAX);
+    expect(labelIsCut("a very long interface name that no card should grow for", side(CARD_W_MAX))).toBe(true);
+    expect(labelIsCut("Lid seal (AS568-040)", 200)).toBe(true);
+    expect(labelIsCut("vbus", 40)).toBe(false);
+  });
+
+  it("grows a card in the layout for the labels of its linked interfaces only", () => {
+    const a = node("a", "Board", [port("probe_power_out"), port("an_unlinked_interface_with_a_long_name")]);
+    const b = node("b", "Probe", [port("in")]);
+    const plain = computeLayout(linked(node("a", "Board", [port("out")]), b, [["out", "in"]]), undefined, {}, false);
+    const grown = computeLayout(linked(a, b, [["probe_power_out", "in"]]), undefined, {}, false);
+    expect(plain.boxes.a.w).toBe(176);
+    expect(grown.boxes.a.w).toBeGreaterThan(176);
+    expect(grown.boxes.a.w).toBeLessThanOrEqual(272);
+    expect(grown.boxes.b.w).toBe(176);
+    // the two cards do not overlap in the automatic layout
+    expect(grown.boxes.a.x + grown.boxes.a.w <= grown.boxes.b.x || grown.boxes.b.x + grown.boxes.b.w <= grown.boxes.a.x).toBe(true);
+  });
+
+  it("grows only into free room on a level the display file lays out, and keeps a width it sets", () => {
+    const a = node("a", "Board", [port("probe_power_out")]);
+    const b = node("b", "Probe", [port("in")]);
+    const vm = linked(a, b, [["probe_power_out", "in"]]);
+    // a neighbour 48 px to the right of the plain card: no room to grow
+    const tight = computeLayout(vm, { nodes: { a: { x: 0, y: 0 }, b: { x: 224, y: 0 } } }, {}, false);
+    expect(tight.boxes.a.w).toBe(176);
+    // far away: it grows
+    const roomy = computeLayout(vm, { nodes: { a: { x: 0, y: 0 }, b: { x: 640, y: 0 } } }, {}, false);
+    expect(roomy.boxes.a.w).toBeGreaterThan(176);
+    expect(roomy.boxes.a.x + roomy.boxes.a.w).toBeLessThan(640);
+    // a neighbour above or below does not hold it back
+    const below = computeLayout(vm, { nodes: { a: { x: 0, y: 0 }, b: { x: 224, y: 400 } } }, {}, false);
+    expect(below.boxes.a.w).toBeGreaterThan(176);
+    // the display file's own width stands
+    const set = computeLayout(vm, { nodes: { a: { x: 0, y: 0, w: 192 }, b: { x: 640, y: 0 } } }, {}, false);
+    expect(set.boxes.a.w).toBe(192);
+  });
+});

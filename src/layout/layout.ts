@@ -3,7 +3,7 @@
  * Layout data lives outside UHD (design D3, D6); a level can ship a hand
  * layout (from the bundle's display hints) and the user's drags override it.
  */
-import { cardHeight, cardInsets } from "./card-body";
+import { CARD_W, cardHeight, cardInsets, cardWidth } from "./card-body";
 import type { ViewLink, ViewModel, ViewNode, ViewPort } from "../model/types";
 import { route, type Pt, type Side } from "../canvas/routing";
 import { GridRouter, GRID, snap } from "./router";
@@ -74,17 +74,17 @@ export interface ComputedLayout {
 
 export const portKey = (node: string, port: string) => `${node}|${port}`;
 
-const CARD_W = 170;
 const PORT_PITCH = 22;
 
-function defaultSize(node: ViewNode, visiblePorts: number): { w: number; h: number } {
+/** A card's size before it is placed: as wide as the labels of its linked interfaces (`labels`) need. */
+function defaultSize(node: ViewNode, visiblePorts: number, labels: readonly string[] = []): { w: number; h: number } {
   if (node.sheetPort) return { w: 150, h: 30 };
   if (node.kind === "harness") return { w: 150, h: Math.max(30, 14 + (visiblePorts / 2) * 16) };
   // a net junction: as wide as its name, as tall as its busiest side needs (grown once ports have sides)
   if (node.kind === "net") return { w: Math.max(64, node.label.length * 8 + 40), h: 32 };
   if (node.shape === "circle") return /prop/i.test(node.label) ? { w: 60, h: 60 } : { w: 78, h: 78 };
   const perSide = Math.ceil(visiblePorts / 2);
-  return { w: CARD_W, h: Math.max(84, 40 + perSide * PORT_PITCH) };
+  return { w: labels.length ? cardWidth(labels) : CARD_W, h: Math.max(84, 40 + perSide * PORT_PITCH) };
 }
 
 function center(b: Box): Pt {
@@ -378,12 +378,35 @@ export function computeLayout(
 
   // sizes
   const sizes: Record<string, { w: number; h: number }> = {};
+  const up = (v: number) => Math.ceil(v / GRID) * GRID;
+  /** Cards that grew wider than the plain card for their labels, with the plain width. */
+  const grown = new Map<string, number>();
   for (const node of vm.nodes) {
-    const visible = node.ports.filter((p) => linkedPorts.has(portKey(node.id, p.id))).length;
+    const linked = node.ports.filter((p) => linkedPorts.has(portKey(node.id, p.id)));
     const hand0 = hand?.nodes[node.id];
-    const d = defaultSize(node, visible);
-    const up = (v: number) => Math.ceil(v / GRID) * GRID;
+    // a card is as wide as the labels of its linked interfaces need, up to a limit (card-body.ts)
+    const d = defaultSize(node, linked.length, linked.map((p) => p.name));
+    const plain = defaultSize(node, linked.length);
     sizes[node.id] = { w: up(hand0?.w ?? d.w), h: up(hand0?.h ?? d.h) };
+    if (!hand0?.w && sizes[node.id].w > up(plain.w)) grown.set(node.id, up(plain.w));
+  }
+  // a level the display file lays out placed its cards for the plain width: there a card grows only
+  // into the room its neighbours on the right leave (three grid steps stay clear for the lines between them)
+  if (hand) {
+    for (const [id, plain] of grown) {
+      const at = hand.nodes[id];
+      const node = vm.nodes.find((n) => n.id === id)!;
+      if (at?.x === undefined || at.y === undefined) continue;
+      let room = Infinity;
+      for (const other of vm.nodes) {
+        const o = hand.nodes[other.id];
+        if (other.id === id || other.parent !== node.parent || o?.x === undefined || o.y === undefined) continue;
+        const oh = sizes[other.id].h;
+        const apart = o.y >= at.y + sizes[id].h + GRID || o.y + oh + GRID <= at.y;
+        if (!apart && o.x >= at.x + plain) room = Math.min(room, o.x - 3 * GRID - at.x);
+      }
+      sizes[id].w = Math.max(plain, Math.min(sizes[id].w, Math.floor(room / GRID) * GRID));
+    }
   }
 
   // modules expanded in place: their children's places inside them, and the size that holds them
