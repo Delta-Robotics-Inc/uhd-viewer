@@ -36,7 +36,10 @@ export type { Selection } from "./canvas/Canvas";
 export type { Panel, Goto } from "./chrome/Chrome";
 
 // ---- views
-export { DiagramCanvas, DiagramToolbar, DiagramLegend, DiagramLegendItems, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
+export { initialInteraction, interactionReducer, interactionProps, canvasCommand, applySelectChanges, firstView, TOOL_OPTIONS, type CanvasTool, type InteractionState, type InteractionAction, type CanvasCommand, type Viewport } from "./canvas/interaction";
+export { openAction } from "./viewer/controller";
+export { cardWidth, labelIsCut, CARD_W, CARD_W_MAX } from "./layout/card-body";
+export { DiagramCanvas, DiagramToolbar, ToolToggle, ViewButtons, DiagramLegend, DiagramLegendItems, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
 // the inspector's details on their own, for a host with an inspector of its own
 export { SelectionDetails, type SelectionDetailsProps, type DetailsTarget } from "./viewer/details";

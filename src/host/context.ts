@@ -13,6 +13,8 @@ export interface HostActions {
   openArtifact?: (defId: string, artifactId: string) => void;
   /** Open a module on its own (the host's new tab); given only when the host takes it. */
   openModule?: (path: string) => void;
+  /** Show a module in the host's own inspector (a node's INSPECT); given only when the host has one. */
+  inspect?: (path: string, defId?: string) => void;
   /** Open a web address (an evidence source); not given: a link in a new tab. */
   openLink?: (url: string) => void;
 

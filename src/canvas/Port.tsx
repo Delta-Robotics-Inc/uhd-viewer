@@ -1,6 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import type { PlacedPort } from "../layout/layout";
-import { portLabelText } from "../layout/card-body";
+import { labelIsCut, portLabelText } from "../layout/card-body";
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
@@ -72,11 +72,17 @@ export function Port({ placed, x, y, color, faded, exported, label, ground, sele
         }}
       />}
       {ground && <GroundGlyph side={placed.side} x={x} y={y} color={color} />}
-      {label && (
-        <span className="port-label" style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>
-          {portLabelText(placed.port.name)}
-        </span>
-      )}
+      {label &&
+        (labelIsCut(placed.port.name, labelWidth) ? (
+          // a label that does not fit, or that leaves out the name's qualifier, says the whole name on hover
+          <span className="port-label cut" data-tooltip={placed.port.name} style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>
+            {portLabelText(placed.port.name)}
+          </span>
+        ) : (
+          <span className="port-label" style={{ ...labelStyle(placed.side, x, y, labelWidth), opacity: faded ? 0.3 : 1 }}>
+            {portLabelText(placed.port.name)}
+          </span>
+        ))}
     </>
   );
 }

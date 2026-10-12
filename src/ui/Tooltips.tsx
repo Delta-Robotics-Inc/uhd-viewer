@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 interface Tip {
   text: string;
   shortcut?: string;
+  /** Lines the text may run to (`data-tooltip-clamp`): a description, wrapped and cut. Absent: one line. */
+  clamp?: number;
   x: number;
   y: number;
   side: "top" | "bottom" | "left" | "right";
@@ -30,7 +32,8 @@ function place(target: HTMLElement, root: HTMLElement): Tip | null {
   if (side === "top" && r.top - 32 < o.top) side = "bottom";
   const x = side === "left" ? r.left - o.left - 8 : side === "right" ? r.right - o.left + 8 : r.left - o.left + r.width / 2;
   const y = side === "top" ? r.top - o.top - 8 : side === "bottom" ? r.bottom - o.top + 8 : r.top - o.top + r.height / 2;
-  return { text, shortcut: target.dataset.tooltipShortcut, x, y, side };
+  const clamp = Number(target.dataset.tooltipClamp) || undefined;
+  return { text, shortcut: target.dataset.tooltipShortcut, x, y, side, ...(clamp ? { clamp } : {}) };
 }
 
 export function Tooltips({ root }: { root: HTMLElement | null }) {
@@ -51,8 +54,10 @@ export function Tooltips({ root }: { root: HTMLElement | null }) {
       clearTimeout(timer);
       current = el;
       const open = () => current === el && el.isConnected && setTip(place(el, root));
-      if (now || Date.now() - shownAt.current < SKIP_DELAY) open();
-      else timer = setTimeout(open, OPEN_DELAY);
+      // a target may ask for a longer rest (`data-tooltip-delay`, ms): a description under a whole card
+      const wait = Number(el.dataset.tooltipDelay) || 0;
+      if (now || (!wait && Date.now() - shownAt.current < SKIP_DELAY)) open();
+      else timer = setTimeout(open, Math.max(OPEN_DELAY, wait));
     };
     const over = (e: Event) => {
       const el = (e.target as HTMLElement).closest?.<HTMLElement>("[data-tooltip]");
@@ -104,10 +109,16 @@ export function Tooltips({ root }: { root: HTMLElement | null }) {
     <div
       ref={ref}
       role="tooltip"
-      className="uhd-tooltip pointer-events-none absolute z-[1000] flex items-center gap-2 rounded-md border border-line bg-raised px-2 py-1 font-ui text-[11px] leading-4 whitespace-nowrap text-fg shadow-float"
+      className={`uhd-tooltip pointer-events-none absolute z-[1000] flex items-center gap-2 rounded-md border border-line bg-raised px-2 py-1 font-ui text-[11px] leading-4 text-fg shadow-float outline outline-1 -outline-offset-1 outline-contrast ${tip.clamp ? "w-max max-w-[min(300px,calc(100%-12px))] whitespace-normal" : "whitespace-nowrap"}`}
       style={{ left: tip.x + nudge, top: tip.y, transform }}
     >
-      {tip.text}
+      {tip.clamp ? (
+        <span className="uhd-tooltip-text overflow-hidden" style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: tip.clamp }}>
+          {tip.text}
+        </span>
+      ) : (
+        tip.text
+      )}
       {tip.shortcut && <kbd className="rounded-sm border border-line-subtle px-1 font-code text-[10px] text-fg-muted">{tip.shortcut}</kbd>}
     </div>
   );

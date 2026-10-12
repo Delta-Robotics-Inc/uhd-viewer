@@ -128,10 +128,12 @@ describe("a host's marks on modules (ViewerOptions.nodeMarks)", () => {
     const { readFileSync } = await import("node:fs");
     const css = readFileSync(new URL("../src/styles/app.css", import.meta.url), "utf8");
     expect(css).toContain(".status-dot.mark {");
-    expect(css).toMatch(/\.status-dot\.mark \{[^}]*background: var\(--uhd-mark-neutral, var\(--uhd-text-faint\)\)/);
+    // a tone is one colour (`--mark`), drawn as the dot's fill or, for a ring, as its dashed outline
+    expect(css).toMatch(/\.status-dot\.mark \{[^}]*--mark: var\(--uhd-mark-neutral, var\(--uhd-text-faint\)\);\s*background: var\(--mark\)/);
     for (const [tone, token] of [["info", "severity-info"], ["ok", "severity-ok"], ["warning", "severity-warning"], ["error", "severity-error"]]) {
-      expect(css).toContain(`.status-dot.mark[data-tone="${tone}"] {\n  background: var(--uhd-mark-${tone}, var(--uhd-${token}));`);
+      expect(css).toContain(`.status-dot.mark[data-tone="${tone}"] {\n  --mark: var(--uhd-mark-${tone}, var(--uhd-${token}));`);
     }
+    expect(css).toMatch(/\.status-dot\.mark\[data-shape="ring"\] \{[^}]*background: transparent;[^}]*border: 1\.5px dashed var\(--mark\)/);
     // the open viewer knows marks, not parts: nothing in it names a part's status
     const sources = ["../src/canvas/nodes.tsx", "../src/canvas/Canvas.tsx", "../src/api.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
     expect(sources).not.toMatch(/\b(verified|unverified|official|trust)\b/i);
