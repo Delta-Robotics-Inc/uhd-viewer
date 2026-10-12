@@ -346,7 +346,8 @@ export function Canvas(props: CanvasProps) {
     /** A key is the canvas's when it is pressed on the page or inside this viewer, outside any field. */
     const ours = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (e.defaultPrevented || typingTarget(t)) return false;
+      // (a host that made the viewer inert, behind an overlay of its own, gets no canvas keys either)
+      if (e.defaultPrevented || typingTarget(t) || element.current?.closest("[inert]")) return false;
       const root = element.current?.closest(".uhd-root") ?? element.current;
       return !t || t === document.body || t === document.documentElement || Boolean(root?.contains(t));
     };
