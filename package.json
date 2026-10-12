@@ -1,6 +1,6 @@
 {
   "name": "@deltarobotics/uhd-viewer",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Viewer for UHD systems (modules, interfaces, interface links, harnesses): a React component library and its plain standalone app.",
