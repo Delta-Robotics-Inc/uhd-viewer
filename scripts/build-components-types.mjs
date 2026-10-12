@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -30,7 +30,9 @@ try {
     const text = readFileSync(f, "utf8").replace(/(["'])@uhd\/[^"']+\1/g, '"@deltarobotics/uhd"').replace(/^import ["'][^"']+\.css["'];\n/gm, "");
     writeFileSync(f, text);
   }
-  writeFileSync(join(out, "index.d.ts"), `export * from "./${relative(out, join(own, "components.js"))}";\n`);
+  // a module specifier, not a file path: forward slashes on every system (on Windows `relative` gives
+  // backslashes, and "\u…" in the specifier is then read as an escape: "Hexadecimal digit expected")
+  writeFileSync(join(out, "index.d.ts"), `export * from "./${relative(out, join(own, "components.js")).split(sep).join("/")}";\n`);
 
   // check them as a consumer would
   writeFileSync(
