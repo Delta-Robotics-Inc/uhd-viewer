@@ -38,7 +38,7 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, mis
       <ScenarioBanner />
       <MissingNotice hint={missingHint} />
       <Canvas
-        key={`${c.scenario.id}/${c.levelKey}`}
+        key={`${c.scenario.id}/${c.levelKey}/${c.viewportsSeq}`}
         vm={c.drawn}
         inspector={covered}
         layout={c.layout}

@@ -12,7 +12,7 @@ import { tapRails } from "../layout/taps";
 import type { Pt } from "../canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "../source/source";
 import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "../api";
-import { sameLayout } from "../options";
+import { hostViewportsChange, sameLayout } from "../options";
 import type { Selection, ViewCommand } from "../canvas/Canvas";
 import { applySelectChanges, initialInteraction, interactionReducer, validViewport, type CanvasTool, type Viewport } from "../canvas/interaction";
 import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
@@ -214,6 +214,19 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [viewports, setViewports] = useState<Record<string, Viewport>>(() => viewportsOf(hostedViewports ? options.viewports : load("uhd-viewer:viewports", {})));
   const viewportHandler = useRef(options.onViewportChange);
   viewportHandler.current = options.onViewportChange;
+  // viewports a host passes later (ViewerHandle.update, a host reusing the viewer for another project) replace the
+  // viewer's, and the canvas opens again on them (PB-1037); its own viewports passed back are not a change
+  const knownViewports = useRef(hostedViewports ? options.viewports : undefined);
+  const wasHostedViewports = useRef(hostedViewports);
+  const [viewportsSeq, setViewportsSeq] = useState(0);
+  useEffect(() => {
+    const change = hostViewportsChange({ hosted: hostedViewports, wasHosted: wasHostedViewports.current, host: options.viewports, known: knownViewports.current });
+    wasHostedViewports.current = hostedViewports;
+    if (change === "keep") return;
+    knownViewports.current = hostedViewports ? options.viewports : undefined;
+    setViewports(viewportsOf(hostedViewports ? options.viewports : load("uhd-viewer:viewports", {})));
+    setViewportsSeq((n) => n + 1);
+  }, [hostedViewports, options.viewports]);
   // a narrow host (a VS Code panel beside an editor) starts with the view, not the panel over it (PB-861)
   const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? (typeof window !== "undefined" && window.innerWidth < NARROW ? null : "hierarchy"));
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
@@ -279,6 +292,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
         if (v) next[viewportKey] = { x: Math.round(v.x * 100) / 100, y: Math.round(v.y * 100) / 100, zoom: Math.round(v.zoom * 10000) / 10000 };
         else if (viewportKey in next) delete next[viewportKey];
         else return all;
+        if (viewportHandler.current) knownViewports.current = next;
         viewportHandler.current?.(next);
         return next;
       }),
@@ -565,6 +579,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     zoomIn,
     zoomOut,
     viewport: viewports[viewportKey] as Viewport | undefined,
+    /** Counts the times a host replaced the viewports: the canvas opens again on them. */
+    viewportsSeq,
     onViewport,
     openLinks,
     overrides,
