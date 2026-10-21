@@ -16,7 +16,9 @@ import {
   buildHierarchy,
   drillInto,
   filterHierarchy,
+  groupWiring,
   hierarchyIndex,
+  markLegend,
   modulePart,
   panelState,
   revealPaths,
@@ -25,6 +27,7 @@ import {
   treeKey,
   visibleRows,
   HIERARCHY_WIDTH,
+  WIRING_PATH,
 } from "../src/model/hierarchy";
 import { systemDiagnostics } from "../src/model/diagnostics";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
@@ -140,6 +143,43 @@ describe("the hierarchy's tree", () => {
     expect(modulePart("link:top", "")).toBe("");
     expect(modulePart(":sda", "board")).toBe("board");
     expect(modulePart("enclosure", "")).toBe("enclosure");
+  });
+});
+
+describe("wiring and hardware, and the legend", () => {
+  it("folds every harness and fastener stack into one group at the bottom", () => {
+    const s = small();
+    const shown = groupWiring(buildHierarchy(s.root, s.lookup));
+    expect(shown.map((n) => n.path)).toEqual(["", WIRING_PATH]);
+    const [structure, wiring] = shown;
+    expect(wiring.group).toBe(true);
+    expect(wiring.children.map((n) => n.path)).toEqual(["loom", "bolts"]);
+    expect(structure.children.map((n) => n.path)).toEqual(["frame", "power", "mystery"]);
+    // closed until opened, like any row; its rows keep their paths
+    expect(visibleRows(shown, new Set([""])).map((r) => r.node.path)).toEqual(["", "frame", "power", "mystery", WIRING_PATH]);
+    expect(visibleRows(shown, new Set(["", WIRING_PATH])).slice(-2).map((r) => r.node.path)).toEqual(["loom", "bolts"]);
+    // a system without any: the tree as it was
+    const imu = buildHierarchy(root, lookup);
+    expect(groupWiring(imu)).toEqual(imu);
+  });
+
+  it("names each tone the tree shows once, from its marks", () => {
+    const s = small();
+    const tree = buildHierarchy(s.root, s.lookup, {
+      marks: {
+        motor: { tone: "ok", label: "Verified. In a library and verified." },
+        battery: { tone: "neutral", label: "Local. Only in this project." },
+        arm: { tone: "neutral", label: "Local. Only in this project." },
+        frame: { tone: "warning", label: "Unverified. Check it." },
+        loop: { tone: "neutral", shape: "ring", label: "Blank block. Nothing chosen yet." },
+      },
+    });
+    expect(markLegend(tree)).toEqual([
+      { tone: "neutral", label: "Local" },
+      { tone: "warning", label: "Unverified" },
+      { tone: "ok", label: "Verified" },
+    ]);
+    expect(markLegend(buildHierarchy(root, lookup))).toEqual([]);
   });
 });
 

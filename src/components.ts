@@ -42,7 +42,7 @@ export { cardWidth, labelIsCut, CARD_W, CARD_W_MAX } from "./layout/card-body";
 export { DiagramCanvas, DiagramToolbar, ToolToggle, ViewButtons, DiagramLegend, DiagramLegendItems, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
 // the module tree, docked at the left of the view (PB-1042), and its model
-export { ViewerHierarchy, RAIL_WIDTH, type ViewerHierarchyProps, type HierarchyCommand } from "./viewer/hierarchy";
+export { ViewerHierarchy, HierarchyToggle, RAIL_WIDTH, HIERARCHY_LOOK, type ViewerHierarchyProps, type HierarchyCommand } from "./viewer/hierarchy";
 export {
   buildHierarchy,
   filterHierarchy,
@@ -56,6 +56,9 @@ export {
   hierarchyIndex,
   walkHierarchy,
   panelState,
+  groupWiring,
+  markLegend,
+  WIRING_PATH,
   kindOf,
   KIND_ICON,
   KIND_LABEL as HIERARCHY_KIND_LABEL,

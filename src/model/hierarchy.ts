@@ -49,6 +49,8 @@ export interface HierarchyNode {
   worst?: Severity;
   /** The module has a level of its own (a module with children; not a harness). */
   drillable: boolean;
+  /** A row of the panel's own that only holds others (`WIRING_PATH`): no module, nothing to select. */
+  group?: boolean;
   children: HierarchyNode[];
 }
 
@@ -367,7 +369,7 @@ export interface HierarchyPanelState {
   expanded: string[];
 }
 
-export const HIERARCHY_WIDTH = { min: 180, max: 520, default: 248 } as const;
+export const HIERARCHY_WIDTH = { min: 180, max: 520, default: 280 } as const;
 
 /** A kept state, checked; anything malformed falls back to the default. */
 export function panelState(v: unknown, fallbackOpen = true): HierarchyPanelState {
@@ -378,3 +380,57 @@ export function panelState(v: unknown, fallbackOpen = true): HierarchyPanelState
 }
 
 export const clampWidth = (w: number, room = Infinity) => Math.round(Math.max(HIERARCHY_WIDTH.min, Math.min(HIERARCHY_WIDTH.max, room, w)));
+
+/** The row that holds the wiring and hardware (harnesses, cables, fastener stacks): not a module of the system. */
+export const WIRING_PATH = "#wiring";
+const WIRING_KINDS: ReadonlySet<HierarchyKind> = new Set(["harness", "fasteners"]);
+
+/**
+ * The tree as the panel shows it: the system's structure first, and its
+ * wiring and hardware (every harness and fastener stack, wherever it sits)
+ * folded into one group row at the bottom, `WIRING_PATH`. Without any, the
+ * tree as it is.
+ */
+export function groupWiring(nodes: readonly HierarchyNode[]): HierarchyNode[] {
+  const wiring: HierarchyNode[] = [];
+  const strip = (n: HierarchyNode): HierarchyNode => {
+    if (!n.children.some((c) => WIRING_KINDS.has(c.kind) || c.children.length)) return n;
+    const kept: HierarchyNode[] = [];
+    for (const c of n.children) {
+      if (WIRING_KINDS.has(c.kind)) wiring.push(c);
+      else kept.push(strip(c));
+    }
+    return { ...n, children: kept, drillable: n.drillable };
+  };
+  const structure = nodes.map(strip);
+  if (!wiring.length) return structure;
+  let worst: Severity | undefined;
+  for (const w of wiring) worst = worse(worst, w.worst);
+  const group: HierarchyNode = {
+    path: WIRING_PATH,
+    label: "Wiring & hardware",
+    defId: "",
+    kind: "group",
+    icon: "cable",
+    depth: 0,
+    findings: { error: 0, warning: 0, info: 0 },
+    ...(worst ? { worst } : {}),
+    drillable: false,
+    group: true,
+    children: wiring,
+  };
+  return [...structure, group];
+}
+
+/** The marks the tree shows, once each, in the order of their tones: a legend (the first sentence of a mark's label names it). */
+export function markLegend(nodes: readonly HierarchyNode[]): { tone: NodeMark["tone"]; label: string }[] {
+  const ORDER: NodeMark["tone"][] = ["neutral", "warning", "ok", "info", "error"];
+  const seen = new Map<NodeMark["tone"], string>();
+  for (const n of walkHierarchy(nodes)) {
+    const m = n.mark;
+    if (!m || m.shape === "ring" || seen.has(m.tone)) continue;
+    const label = (m.label ?? "").split(/[.:]/)[0].trim();
+    if (label && label.length <= 24) seen.set(m.tone, label);
+  }
+  return ORDER.filter((t) => seen.has(t)).map((tone) => ({ tone, label: seen.get(tone)! }));
+}

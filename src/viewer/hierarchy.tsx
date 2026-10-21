@@ -25,6 +25,8 @@ import {
   clampWidth,
   drillInto,
   filterHierarchy,
+  groupWiring,
+  markLegend,
   hierarchyIndex,
   panelState,
   revealPaths,
@@ -33,6 +35,7 @@ import {
   treeKey,
   visibleRows,
   HIERARCHY_WIDTH,
+  WIRING_PATH,
   type HierarchyNode,
   type HierarchyPanelState,
   type HierarchyRow,
@@ -54,6 +57,8 @@ export interface ViewerHierarchyProps {
   state?: unknown;
   /** The panel's state changed (open, width, open rows): a host keeps it per tab. */
   onStateChange?: (state: HierarchyPanelState) => void;
+  /** The panel opened or folded (at once; a host's toggle button shows it). */
+  onOpenChange?: (open: boolean) => void;
   command?: HierarchyCommand;
   /** Attributes a host puts on every row (`data-*`), e.g. for its own context menu. */
   rowAttributes?: (node: HierarchyNode) => Record<`data-${string}`, string>;
@@ -70,6 +75,31 @@ export const RAIL_WIDTH = 36;
 const ROW_INDENT = 12;
 
 const SEVERITY_TEXT = { error: "text-error", warning: "text-warning", info: "text-info" } as const;
+
+/**
+ * The panel's look, in one place (PB-1042; the Pencil iterations, 2026-10-21):
+ * docked flush at the left of the canvas, below the floating header, with a
+ * border at its edge; rows highlighted in the theme's selection colour. Only
+ * the viewer's tokens, so a host's theme decides the colours (orange only
+ * under the Protoboard theme). Swap these to restyle it.
+ */
+export const HIERARCHY_LOOK = {
+  dock: "uhd-hierarchy-dock relative z-30 flex shrink-0 flex-col pt-[var(--uhd-inset-top,0px)]",
+  panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden border-t border-r border-line bg-surface font-ui text-fg",
+  rail: "flex min-h-0 flex-1 flex-col items-center gap-1 border-t border-r border-line bg-surface py-1",
+  header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
+  title: "min-w-0 flex-1 truncate font-label text-[11px] tracking-[0.08em] text-fg-muted uppercase",
+  filterBox: "mx-2 mb-1.5 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line bg-sunken px-2 focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-focus",
+  row: "uhd-tree-row group relative flex h-[26px] cursor-pointer items-center gap-1.5 pr-3 text-[12.5px] leading-none outline-none select-none",
+  rowSelected: "bg-selection text-selection-fg outline outline-1 -outline-offset-1 outline-focus",
+  rowIdle: "text-fg hover:bg-hover",
+  /** Filtering: a row that only leads to what matches. */
+  rowDim: "text-fg-faint hover:bg-hover hover:text-fg",
+  rowFocus: "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus",
+  groupRow: "mt-1 border-t border-line-subtle text-fg-muted",
+  badge: "shrink-0 rounded border border-line px-1.5 font-code text-[10px] leading-[16px] text-fg-muted",
+  legend: "flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-subtle px-3 py-1.5 text-[10.5px] text-fg-muted",
+} as const;
 
 /** Text a row says to a screen reader after its name: kind, quantity, status, findings. */
 function describe(n: HierarchyNode): string {
@@ -93,7 +123,7 @@ function useKept(given: unknown, narrow: number): [HierarchyPanelState, (patch: 
 }
 
 /** The panel, docked at the left of the view (render it first inside the shell's workspace row). */
-export function ViewerHierarchy({ state: given, onStateChange, command, rowAttributes, ownMenu = true, narrow = 640, className }: ViewerHierarchyProps) {
+export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, narrow = 640, className }: ViewerHierarchyProps) {
   const c = useViewer();
   const [kept, setKept] = useKept(given, narrow);
   const expanded = useMemo(() => new Set(kept.expanded), [kept.expanded]);
@@ -111,6 +141,9 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
     const t = setTimeout(() => handler.current?.(kept), 200);
     return () => clearTimeout(t);
   }, [kept]);
+  const openHandler = useRef(onOpenChange);
+  openHandler.current = onOpenChange;
+  useEffect(() => openHandler.current?.(kept.open), [kept.open]);
 
   const tree = useMemo(
     () =>
@@ -122,9 +155,13 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
       }),
     [c.system, c.scenario, c.options.nodeMarks, c.diagnostics, c.hostDiagnostics],
   );
-  const index = useMemo(() => hierarchyIndex(tree), [tree]);
+  // the structure first; harnesses, cables and fastener stacks folded into one group at the bottom
+  const shown = useMemo(() => groupWiring(tree), [tree]);
+  const index = useMemo(() => hierarchyIndex(shown), [shown]);
+  const wiring = useMemo(() => new Set(index.get(WIRING_PATH)?.children.map((n) => n.path) ?? []), [index]);
+  const legend = useMemo(() => markLegend(tree), [tree]);
   const [filter, setFilter] = useState("");
-  const filtered = useMemo(() => filterHierarchy(tree, filter), [tree, filter]);
+  const filtered = useMemo(() => filterHierarchy(shown, filter), [shown, filter]);
   // rows the filter opens, less those closed while it stays
   const [shut, setShut] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => setShut(new Set()), [filter]);
@@ -136,13 +173,18 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
   const [focus, setFocus] = useState<string>(selected ?? level);
   const treeRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
+  /** The rows to open so that `path` shows: its modules, and the wiring group for a harness. */
+  const reveal = (set: ReadonlySet<string>, path: string | undefined) => {
+    const next = revealPaths(set, path);
+    return path !== undefined && wiring.has(path) && !next.has(WIRING_PATH) ? new Set([...next, WIRING_PATH]) : next;
+  };
   const rowEl = (path: string) => treeRef.current?.querySelector<HTMLElement>(`[data-hierarchy-path="${CSS.escape(path)}"]`) ?? null;
 
   // the canvas's selection and level show in the tree: their rows open, highlighted and scrolled to
   const pendingScroll = useRef<string | null>(null);
   useEffect(() => {
     const target = selected ?? level;
-    const withLevel = revealPaths(revealPaths(expanded, target), level || undefined);
+    const withLevel = revealPaths(reveal(expanded, target), level || undefined);
     const next = level !== "" && index.get(level)?.drillable && !withLevel.has(level) ? new Set([...withLevel, level]) : withLevel;
     if (next !== expanded) setExpanded(next);
     setFocus(target);
@@ -171,7 +213,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
       setKept({ open: true });
       requestAnimationFrame(() => filterRef.current?.focus());
     } else if (command.type === "reveal" && command.path !== undefined) {
-      setKept({ open: true, expanded: [...revealPaths(expanded, command.path)] });
+      setKept({ open: true, expanded: [...reveal(expanded, command.path)] });
       setFilter("");
       setFocus(command.path);
       pendingScroll.current = command.path;
@@ -184,6 +226,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
   const select = useCallback(
     (path: string) => {
       setFocus(path);
+      if (path === WIRING_PATH) return toggleRef.current(path);
       c.onGoto(rowTarget(c.system, c.scenario.lookup, path, { drill: c.drill, expanded: inPlace }));
     },
     [c, inPlace],
@@ -196,6 +239,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
     },
     [c, select],
   );
+  const toggleRef = useRef<(path: string) => void>(() => undefined);
   const toggle = useCallback(
     (path: string) => {
       const next = new Set(expanded);
@@ -211,6 +255,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
     },
     [expanded, open, filtered, setExpanded],
   );
+  toggleRef.current = toggle;
 
   const onTreeKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -272,7 +317,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
   const closeMenu = useCallback(() => setMenu(null), []);
   const menuNode = menu ? index.get(menu.path) : undefined;
   const menuItems: NodeMenuItem[] = [];
-  if (menuNode) {
+  if (menuNode && !menuNode.group) {
     const node = menuNode;
     menuItems.push({ label: "SELECT", run: () => select(node.path) });
     if (node.drillable) menuItems.push({ label: "OPEN AS CANVAS", run: () => drill(node) });
@@ -291,6 +336,7 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
     if (typeof navigator !== "undefined" && navigator.clipboard) menuItems.push({ label: "COPY PATH", run: () => void navigator.clipboard.writeText(node.path || node.defId).catch(() => undefined) });
   }
   const onRowContext = (e: React.MouseEvent, node: HierarchyNode) => {
+    if (node.group) return e.preventDefault();
     // the row the menu is about is selected first, so the menu acts on what is shown
     setFocus(node.path);
     if (selected !== node.path) select(node.path);
@@ -330,18 +376,19 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
     }
   };
 
-  const count = index.size;
+  const count = hierarchyIndex(tree).size;
   const rootLabel = tree[0]?.label ?? "System";
+  const L = HIERARCHY_LOOK;
 
   if (!kept.open) {
     return (
-      <div ref={dock} className={cx("uhd-hierarchy-dock relative z-30 flex shrink-0 flex-col pt-[calc(var(--uhd-inset-top,0px)+4px)] pb-1 pl-1", className)} style={{ width: RAIL_WIDTH + 4 }} data-hierarchy="folded">
-        <div className="flex min-h-0 flex-1 flex-col items-center gap-1 rounded-panel border border-line bg-surface py-1 shadow-panel outline outline-1 -outline-offset-1 outline-contrast">
+      <div ref={dock} className={cx(L.dock, className)} style={{ width: RAIL_WIDTH }} data-hierarchy="folded">
+        <div className={L.rail}>
           <IconButton icon="panel-left-open" size="sm" label="Show the hierarchy" tooltipSide="right" aria-expanded={false} aria-controls="uhd-hierarchy" onClick={() => setKept({ open: true })} />
           <button
             type="button"
             onClick={() => setKept({ open: true })}
-            className="mt-1 cursor-pointer border-0 bg-transparent p-0 font-label text-[10px] tracking-[0.12em] text-fg-muted uppercase [writing-mode:vertical-rl] hover:text-fg focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus"
+            className="mt-1 cursor-pointer border-0 bg-transparent p-0 font-label text-[10px] tracking-[0.12em] text-fg-muted uppercase [writing-mode:vertical-rl] hover:text-fg"
             tabIndex={-1}
             aria-hidden
           >
@@ -353,56 +400,38 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
   }
 
   return (
-    <div
-      ref={dock}
-      className={cx("uhd-hierarchy-dock relative z-30 flex shrink-0 flex-col pt-[calc(var(--uhd-inset-top,0px)+4px)] pb-1 pl-1", className)}
-      style={{ width: kept.width + 4 } as CSSProperties}
-      data-hierarchy="open"
-    >
-      <section
-        id="uhd-hierarchy"
-        aria-label="Hierarchy"
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-surface font-ui text-fg shadow-panel outline outline-1 -outline-offset-1 outline-contrast"
-      >
-        <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line pr-1 pl-2.5">
-          <Icon name="list-tree" size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden />
-          <span className="min-w-0 flex-1 truncate font-label text-[11px] tracking-[0.08em] text-fg uppercase">
+    <div ref={dock} className={cx(L.dock, className)} style={{ width: kept.width } as CSSProperties} data-hierarchy="open">
+      <section id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
+        <header className={L.header}>
+          <span className={L.title}>
             Hierarchy<span className="text-fg-faint"> · {count}</span>
           </span>
+          <IconButton icon="list-filter" size="sm" label="Filter modules" pressed={Boolean(filter)} onClick={() => filterRef.current?.focus()} />
           <IconButton icon="chevrons-down-up" size="sm" label="Collapse all" onClick={() => setExpanded(new Set([""]))} />
           <IconButton icon="panel-left-close" size="sm" label="Fold the hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick={() => setKept({ open: false })} />
         </header>
-        <div className="shrink-0 border-b border-line-subtle px-1.5 py-1.5">
-          <label className="flex h-7 items-center gap-1.5 rounded-md border border-line bg-sunken px-2 focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-focus">
-            <Icon name="search" size={12} strokeWidth={1.75} className="shrink-0 text-fg-faint" aria-hidden />
-            <input
-              ref={filterRef}
-              type="text"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              onKeyDown={onFilterKey}
-              placeholder="Filter"
-              aria-label="Filter the hierarchy"
-              aria-controls="uhd-hierarchy-tree"
-              spellCheck={false}
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 font-ui text-[12px] text-fg outline-none placeholder:text-fg-faint"
-            />
-            {filter && (
-              <button type="button" aria-label="Clear the filter" data-tooltip="Clear the filter" onClick={() => (setFilter(""), filterRef.current?.focus())} className="grid size-5 cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-fg-muted hover:bg-hover hover:text-fg">
-                <Icon name="x" size={12} aria-hidden />
-              </button>
-            )}
-          </label>
-        </div>
+        <label className={L.filterBox}>
+          <Icon name="search" size={12} strokeWidth={1.75} className="shrink-0 text-fg-faint" aria-hidden />
+          <input
+            ref={filterRef}
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={onFilterKey}
+            placeholder="Filter modules"
+            aria-label="Filter the hierarchy"
+            aria-controls="uhd-hierarchy-tree"
+            spellCheck={false}
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 font-ui text-[12px] text-fg outline-none placeholder:text-fg-faint"
+          />
+          {filter && (
+            <button type="button" aria-label="Clear the filter" data-tooltip="Clear the filter" onClick={() => (setFilter(""), filterRef.current?.focus())} className="grid size-5 cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-fg-muted hover:bg-hover hover:text-fg">
+              <Icon name="x" size={12} aria-hidden />
+            </button>
+          )}
+        </label>
         <ScrollArea className="min-h-0 flex-1" axis="vertical">
-          <div
-            ref={treeRef}
-            id="uhd-hierarchy-tree"
-            role="tree"
-            aria-label={`Hierarchy of ${rootLabel}`}
-            onKeyDown={onTreeKey}
-            className="py-1"
-          >
+          <div ref={treeRef} id="uhd-hierarchy-tree" role="tree" aria-label={`Hierarchy of ${rootLabel}`} onKeyDown={onTreeKey} className="pb-1">
             {rows.map((r) => (
               <Row
                 key={r.node.path}
@@ -411,7 +440,8 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
                 selected={selected === r.node.path}
                 current={level === r.node.path}
                 match={filtered.matches.has(r.node.path)}
-                attributes={rowAttributes?.(r.node)}
+                dim={filtered.matches.size > 0 && !filtered.matches.has(r.node.path) && !r.node.group}
+                attributes={r.node.group ? undefined : rowAttributes?.(r.node)}
                 onSelect={select}
                 onDrill={drill}
                 onToggle={toggle}
@@ -425,11 +455,14 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
             )}
           </div>
         </ScrollArea>
-        {selected !== undefined && (
-          <footer className="flex h-7 shrink-0 items-center gap-1.5 border-t border-line-subtle px-2.5 font-code text-[10.5px] text-fg-faint" aria-live="polite">
-            <span className="min-w-0 truncate" title={fullId([], selected)}>
-              {selected || "(root)"}
-            </span>
+        {legend.length > 0 && (
+          <footer className={L.legend} aria-label="Part status">
+            {legend.map((l) => (
+              <span key={l.tone} className="flex items-center gap-1.5">
+                <span aria-hidden className="uhd-tree-mark" data-tone={l.tone} />
+                {l.label}
+              </span>
+            ))}
           </footer>
         )}
       </section>
@@ -445,9 +478,9 @@ export function ViewerHierarchy({ state: given, onStateChange, command, rowAttri
         onPointerDown={onResizeStart}
         onKeyDown={onResizeKey}
         onDoubleClick={() => setKept({ width: HIERARCHY_WIDTH.default })}
-        className="group absolute top-[calc(var(--uhd-inset-top,0px)+12px)] -right-1 bottom-2 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
+        className="group absolute top-[var(--uhd-inset-top,0px)] -right-1 bottom-0 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
       >
-        <span aria-hidden className="absolute inset-y-0 left-[3px] w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-focus group-focus-visible:bg-focus group-active:bg-focus" />
+        <span aria-hidden className="absolute inset-y-0 left-[3px] w-0.5 bg-transparent transition-colors group-hover:bg-focus group-focus-visible:bg-focus group-active:bg-focus" />
       </div>
       {menuNode && ownMenu && <NodeMenu x={menu!.x} y={menu!.y} items={menuItems} onClose={closeMenu} />}
     </div>
@@ -460,6 +493,8 @@ interface RowProps {
   selected: boolean;
   current: boolean;
   match: boolean;
+  /** Filtering, and this row only leads to what matches. */
+  dim?: boolean;
   attributes?: Record<string, string>;
   onSelect: (path: string) => void;
   onDrill: (node: HierarchyNode) => void;
@@ -467,11 +502,12 @@ interface RowProps {
   onContext: (e: React.MouseEvent, node: HierarchyNode) => void;
 }
 
-const Row = memo(function Row({ row, focus, selected, current, match, attributes, onSelect, onDrill, onToggle, onContext }: RowProps) {
+const Row = memo(function Row({ row, focus, selected, current, match, dim, attributes, onSelect, onDrill, onToggle, onContext }: RowProps) {
   const n = row.node;
+  const L = HIERARCHY_LOOK;
   const own = n.findings.error + n.findings.warning;
   const tone = n.worst && n.worst !== "info" ? SEVERITY_TEXT[n.worst] : undefined;
-  const desc = describe(n);
+  const desc = n.group ? `${n.children.length} harnesses, cables and fastener stacks` : describe(n);
   return (
     <div
       role="treeitem"
@@ -479,27 +515,21 @@ const Row = memo(function Row({ row, focus, selected, current, match, attributes
       aria-setsize={row.size}
       aria-posinset={row.pos}
       aria-expanded={row.branch ? row.open : undefined}
-      aria-selected={selected}
+      aria-selected={n.group ? undefined : selected}
       aria-current={current ? "location" : undefined}
       aria-label={n.label}
       aria-description={desc || undefined}
       tabIndex={focus ? 0 : -1}
       data-hierarchy-path={n.path}
-      data-kind={n.kind}
+      data-kind={n.group ? "group" : n.kind}
       {...attributes}
-      onClick={() => onSelect(n.path)}
-      onDoubleClick={() => onDrill(n)}
+      onClick={() => (n.group ? onToggle(n.path) : onSelect(n.path))}
+      onDoubleClick={() => !n.group && onDrill(n)}
       onContextMenu={(e) => onContext(e, n)}
-      className={cx(
-        "uhd-tree-row group relative mx-1 flex h-[26px] cursor-pointer items-center gap-1.5 rounded-md pr-1.5 text-[12px] leading-none outline-none select-none",
-        selected ? "bg-accent-tint text-fg outline outline-1 -outline-offset-1 outline-contrast-active" : "text-fg-muted hover:bg-hover hover:text-fg",
-        "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus",
-        match && "text-fg",
-        n.missing && "italic",
-      )}
-      style={{ paddingLeft: 4 + (row.level - 1) * ROW_INDENT }}
+      className={cx(L.row, selected ? L.rowSelected : dim ? L.rowDim : L.rowIdle, L.rowFocus, n.group && L.groupRow, n.missing && "italic")}
+      style={{ paddingLeft: 6 + (row.level - 1) * ROW_INDENT }}
     >
-      {current && <span aria-hidden className="absolute top-1 bottom-1 left-0 w-0.5 rounded-full bg-accent" />}
+      {current && !selected && <span aria-hidden className="absolute top-1 bottom-1 left-0 w-0.5 rounded-full bg-accent" />}
       <span
         aria-hidden
         onClick={(e) => {
@@ -508,16 +538,21 @@ const Row = memo(function Row({ row, focus, selected, current, match, attributes
           onToggle(n.path);
         }}
         onDoubleClick={(e) => e.stopPropagation()}
-        className={cx("grid size-4 shrink-0 place-items-center rounded text-fg-faint", row.branch && "hover:bg-hover hover:text-fg")}
+        className={cx("grid size-4 shrink-0 place-items-center rounded", selected ? "text-selection-fg" : "text-fg-faint", row.branch && "hover:bg-hover")}
       >
         {row.branch && <Icon name="chevron-right" size={12} strokeWidth={2} className={cx("transition-transform duration-100", row.open && "rotate-90")} />}
       </span>
-      <Icon name={n.icon} size={14} strokeWidth={1.75} className={cx("shrink-0", tone ?? (selected || current ? "text-accent" : undefined))} aria-hidden />
-      <span className={cx("min-w-0 flex-1 truncate", (selected || current) && "text-fg")} data-tooltip={desc ? `${n.label} · ${desc}` : n.label} data-tooltip-side="right">
+      <Icon name={n.icon} size={14} strokeWidth={1.75} className={cx("shrink-0", tone ?? (selected ? undefined : "text-fg-muted"))} aria-hidden />
+      <span className="min-w-0 flex-1 truncate" data-tooltip={desc ? `${n.label} · ${desc}` : n.label} data-tooltip-side="right">
         {n.label}
+        {n.kind === "system" && <span className={cx("ml-1.5 text-[10.5px]", selected ? "opacity-80" : "text-fg-faint")}>system</span>}
       </span>
-      {n.quantity && <span className="shrink-0 font-code text-[10.5px] text-fg-faint">×{n.quantity}</span>}
-      {own > 0 ? (
+      {n.quantity && <span className={cx("shrink-0 font-code text-[10.5px]", selected ? "opacity-80" : "text-fg-faint")}>×{n.quantity}</span>}
+      {n.group ? (
+        <span aria-hidden className={L.badge}>
+          {n.children.length}
+        </span>
+      ) : own > 0 ? (
         <span aria-hidden className={cx("shrink-0 rounded px-1 font-code text-[10px] leading-[14px]", n.findings.error ? "bg-error/15 text-error" : "bg-warning/15 text-warning")}>
           {Math.min(own, 99)}
         </span>
@@ -528,3 +563,26 @@ const Row = memo(function Row({ row, focus, selected, current, match, attributes
     </div>
   );
 });
+
+/** The toolbar's Hierarchy button (left of a shell's view tabs): it opens and folds the panel. */
+export function HierarchyToggle({ open, onClick, disabled, className }: { open: boolean; onClick: () => void; disabled?: boolean; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={open}
+      aria-controls="uhd-hierarchy"
+      disabled={disabled}
+      data-tooltip={open ? "Fold the hierarchy" : "Show the hierarchy"}
+      onClick={onClick}
+      className={cx(
+        "flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 font-ui text-[12px] tracking-[-0.01em] transition-colors disabled:cursor-default disabled:opacity-50",
+        open ? "border-line bg-accent-tint text-fg outline outline-1 -outline-offset-1 outline-contrast-active" : "border-transparent text-fg-muted hover:bg-hover hover:text-fg",
+        "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus",
+        className,
+      )}
+    >
+      <Icon name="panel-left" size={15} strokeWidth={1.75} className={open ? "text-accent" : undefined} aria-hidden />
+      <span className="max-[640px]:hidden">Hierarchy</span>
+    </button>
+  );
+}
