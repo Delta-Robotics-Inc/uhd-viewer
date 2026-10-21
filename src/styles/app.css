@@ -1356,6 +1356,26 @@
   font-size: 13px;
   color: var(--uhd-text);
 }
+/* how a model is made: one line, the rest only when asked for (PB-1040) */
+.cad-empty-how {
+  pointer-events: auto;
+}
+.cad-empty-how > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--uhd-text-muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cad-empty-how > summary::-webkit-details-marker {
+  display: none;
+}
+.cad-empty-how > summary:hover {
+  color: var(--uhd-text);
+}
+.cad-empty-how > p {
+  margin: 6px 0 0;
+}
 .cad-empty code,
 .cad-empty .cmd {
   font-family: var(--uhd-font-mono);
