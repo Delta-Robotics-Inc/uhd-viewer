@@ -30,7 +30,6 @@ import {
   hierarchyIndex,
   panelState,
   revealPaths,
-  rowTarget,
   selectedPath,
   treeKey,
   visibleRows,
@@ -169,7 +168,10 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const rows = useMemo(() => visibleRows(filtered.nodes, open), [filtered, open]);
 
   const level = c.drill.join("/");
-  const selected = selectedPath(c.drill, c.selection);
+  // the selection of the view on screen: the diagram's, or the 3D view's (a body, a part on a board)
+  const selected = c.view === "3d" ? (c.cadSelection?.kind === "node" && !c.cadSelection.id.includes("#") ? c.cadSelection.id : undefined) : selectedPath(c.drill, c.selection);
+  // modules selected together on the diagram (a box, Shift-click): every row of them is highlighted
+  const together = useMemo(() => new Set(c.view === "3d" ? [] : c.group.map((g) => fullId(c.drill, g))), [c.view, c.group, c.drill]);
   const [focus, setFocus] = useState<string>(selected ?? level);
   const treeRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
@@ -222,14 +224,13 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [command]);
 
-  const inPlace = useMemo(() => new Set(c.vm.nodes.filter((n) => n.expanded).map((n) => n.id)), [c.vm]);
   const select = useCallback(
     (path: string) => {
       setFocus(path);
       if (path === WIRING_PATH) return toggleRef.current(path);
-      c.onGoto(rowTarget(c.system, c.scenario.lookup, path, { drill: c.drill, expanded: inPlace }));
+      c.focusPath(path);
     },
-    [c, inPlace],
+    [c],
   );
   const drill = useCallback(
     (node: HierarchyNode) => {
@@ -437,7 +438,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
                 key={r.node.path}
                 row={r}
                 focus={focus === r.node.path}
-                selected={selected === r.node.path}
+                selected={selected === r.node.path || together.has(r.node.path)}
                 current={level === r.node.path}
                 match={filtered.matches.has(r.node.path)}
                 dim={filtered.matches.size > 0 && !filtered.matches.has(r.node.path) && !r.node.group}
@@ -507,7 +508,7 @@ const Row = memo(function Row({ row, focus, selected, current, match, dim, attri
   const L = HIERARCHY_LOOK;
   const own = n.findings.error + n.findings.warning;
   const tone = n.worst && n.worst !== "info" ? SEVERITY_TEXT[n.worst] : undefined;
-  const desc = n.group ? `${n.children.length} harnesses, cables and fastener stacks` : describe(n);
+  const desc = n.group ? `${n.children.length} harnesses, cables and fastener stacks` : [describe(n), n.where ? `in ${n.where}` : ""].filter(Boolean).join(", ");
   return (
     <div
       role="treeitem"
@@ -546,6 +547,7 @@ const Row = memo(function Row({ row, focus, selected, current, match, dim, attri
       <span className="min-w-0 flex-1 truncate" data-tooltip={desc ? `${n.label} · ${desc}` : n.label} data-tooltip-side="right">
         {n.label}
         {n.kind === "system" && <span className={cx("ml-1.5 text-[10.5px]", selected ? "opacity-80" : "text-fg-faint")}>system</span>}
+        {n.where && <span className={cx("ml-1.5 text-[10.5px]", selected ? "opacity-80" : "text-fg-faint")}>{n.where}</span>}
       </span>
       {n.quantity && <span className={cx("shrink-0 font-code text-[10.5px]", selected ? "opacity-80" : "text-fg-faint")}>×{n.quantity}</span>}
       {n.group ? (

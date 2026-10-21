@@ -154,6 +154,8 @@ describe("wiring and hardware, and the legend", () => {
     const [structure, wiring] = shown;
     expect(wiring.group).toBe(true);
     expect(wiring.children.map((n) => n.path)).toEqual(["loom", "bolts"]);
+    // each says where it belongs (four "Prop nut" rows read alike otherwise)
+    expect(wiring.children.map((n) => n.where)).toEqual(["DRONE", "DRONE"]);
     expect(structure.children.map((n) => n.path)).toEqual(["frame", "power", "mystery"]);
     // closed until opened, like any row; its rows keep their paths
     expect(visibleRows(shown, new Set([""])).map((r) => r.node.path)).toEqual(["", "frame", "power", "mystery", WIRING_PATH]);

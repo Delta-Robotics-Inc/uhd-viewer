@@ -54,6 +54,8 @@ export interface ArtifactCardModel {
   /** The artifact is a web address, not a file of the project. */
   remote: boolean;
   description?: string;
+  /** The same model in other formats (a STEP and the GLB exported with it): one card, each format a way to open it. */
+  also?: { artifactId: string; format?: string; href?: string }[];
 }
 
 /** An evidence source row (sources.json), as far as cards need it. */
@@ -80,7 +82,18 @@ export interface ArtifactCardOptions {
   evidence?: boolean;
   /** Artifacts to leave out (already shown another way). */
   skip?: (artifact: ArtifactDef) => boolean;
+  /**
+   * Keep a part's internal geometry: the per-interface models its mates are computed from (role `interface`),
+   * which a module's cards leave out (QA B2: 17 "interface geometry" GLBs on a flight controller). An
+   * interface's own card asks for them.
+   */
+  internal?: boolean;
+  /** One card per model, its formats together (`mergeFormats`; default true). */
+  mergeFormats?: boolean;
 }
+
+/** An artifact that is a part's internal geometry, not something to open: one interface's mating model. */
+export const isInternalArtifact = (a: Pick<ArtifactDef, "role">): boolean => a.role === "interface";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg", "avif"]);
 const MODEL_EXT = new Set(["glb", "gltf", "step", "stp", "stl", "3mf", "obj", "iges", "igs"]);
@@ -212,14 +225,40 @@ const ORDER: Record<string, number> = { "PCB top": 0, "PCB bottom": 1, Schematic
  */
 export function artifactCards(def: ModuleDef | undefined, resolve: ArtifactResolver, options: ArtifactCardOptions = {}): ArtifactCardModel[] {
   if (!def) return [];
-  const arts = (def.artifacts ?? []).filter((a) => (a.filePath || a.url) && !options.skip?.(a));
+  const arts = (def.artifacts ?? []).filter((a) => (a.filePath || a.url) && !options.skip?.(a) && (options.internal || !isInternalArtifact(a)));
   const cards = arts.map((a) => artifactCard(def, a, resolve, options));
   if (options.evidence) for (const s of options.sources ?? []) if (!arts.some((a) => a.url && sameUrl(a.url, s.url))) cards.push(sourceCard(def.id, s));
   const rank = new Map(ARTIFACT_GROUPS.map((g, i) => [g.id, i]));
-  return cards
+  const sorted = cards
     .map((c, i) => ({ c, i }))
     .sort((x, y) => rank.get(x.c.group)! - rank.get(y.c.group)! || (ORDER[x.c.kindLabel] ?? 9) - (ORDER[y.c.kindLabel] ?? 9) || x.i - y.i)
     .map((x) => x.c);
+  return options.mergeFormats === false ? sorted : mergeFormats(sorted);
+}
+
+/**
+ * One card per model (QA B2): models that are one file in several formats (`body.step` and `body.glb`, beside
+ * each other) are one card, the first's (a STEP before its GLB), with every format named and the others in
+ * `also`. Its title loses a "(STEP)" that named the format.
+ */
+export function mergeFormats(cards: ArtifactCardModel[]): ArtifactCardModel[] {
+  const stem = (c: ArtifactCardModel) => (c.group === "models" && !c.remote && c.location ? c.location.replace(/\.[^./]+$/, "") : undefined);
+  const first = new Map<string, ArtifactCardModel>();
+  const out: ArtifactCardModel[] = [];
+  for (const c of cards) {
+    const key = stem(c);
+    const into = key ? first.get(key) : undefined;
+    if (!into) {
+      if (key) first.set(key, c);
+      out.push(c);
+      continue;
+    }
+    into.also = [...(into.also ?? []), { artifactId: c.artifactId!, ...(c.format ? { format: c.format } : {}), ...(c.href ? { href: c.href } : {}) }];
+    into.format = [into.format, c.format].filter(Boolean).join(" · ");
+    if (!into.preview && c.preview) into.preview = c.preview;
+    into.title = into.title.replace(/\s*\((STEP|STP|GLB|GLTF|STL|3MF|OBJ|IGES|IGS)\)\s*$/i, "");
+  }
+  return out;
 }
 
 /** Cards by group, in the groups' order; empty groups are left out. */

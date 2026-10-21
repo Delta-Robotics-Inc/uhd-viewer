@@ -51,6 +51,8 @@ export interface HierarchyNode {
   drillable: boolean;
   /** A row of the panel's own that only holds others (`WIRING_PATH`): no module, nothing to select. */
   group?: boolean;
+  /** In the wiring group: the module it belongs to ("Front-right arm"), since four "Prop nut" rows read alike. */
+  where?: string;
   children: HierarchyNode[];
 }
 
@@ -397,7 +399,7 @@ export function groupWiring(nodes: readonly HierarchyNode[]): HierarchyNode[] {
     if (!n.children.some((c) => WIRING_KINDS.has(c.kind) || c.children.length)) return n;
     const kept: HierarchyNode[] = [];
     for (const c of n.children) {
-      if (WIRING_KINDS.has(c.kind)) wiring.push(c);
+      if (WIRING_KINDS.has(c.kind)) wiring.push({ ...c, where: n.label });
       else kept.push(strip(c));
     }
     return { ...n, children: kept, drillable: n.drillable };

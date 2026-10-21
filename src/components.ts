@@ -74,7 +74,7 @@ export {
 export { SelectionDetails, type SelectionDetailsProps, type DetailsTarget } from "./viewer/details";
 export { ArtifactCard, ArtifactCards, ArtifactGrid, type ArtifactCardProps } from "./chrome/ArtifactCards";
 export { EvidenceSection } from "./chrome/Evidence";
-export { artifactCard, artifactCards, classifyArtifact, evidenceSourceCards, groupArtifactCards, ARTIFACT_GROUPS, type ArtifactCardModel, type ArtifactCardOptions, type ArtifactGroup, type ArtifactKind, type ArtifactPreview, type ArtifactSourceRow } from "./model/artifacts";
+export { artifactCard, artifactCards, mergeFormats, isInternalArtifact, classifyArtifact, evidenceSourceCards, groupArtifactCards, ARTIFACT_GROUPS, type ArtifactCardModel, type ArtifactCardOptions, type ArtifactGroup, type ArtifactKind, type ArtifactPreview, type ArtifactSourceRow } from "./model/artifacts";
 export type { EvidenceFiles, SourceRow, Verification } from "./model/evidence";
 export { HostContext, type HostActions } from "./host/context";
 

@@ -897,7 +897,8 @@ export function CadView({
     for (const [key, rec] of bodies.current) {
       rec.obj.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (m && "emissive" in m) m.emissive.setHex(key === sel.body ? h.colors.glow : 0x000000);
+        // an assembly with no body of its own is selected as its parts
+        if (m && "emissive" in m) m.emissive.setHex(sel.body !== undefined && (key === sel.body || (sel.body !== "" && key.startsWith(`${sel.body}/`))) ? h.colors.glow : 0x000000);
       });
     }
     const addInBody = (key: string, obj: THREE.Object3D) => {
@@ -1181,10 +1182,35 @@ export function CadView({
     }
     setExploded(on);
   };
+  /** What a selection covers: its body, or the parts of an assembly that has none of its own (QA B4). */
+  const selectionRecs = (key: string | undefined): BodyRec[] => {
+    if (key === undefined) return [];
+    const own = bodies.current.get(key);
+    if (own) return [own];
+    return key ? [...bodies.current.entries()].filter(([k]) => k.startsWith(`${key}/`)).map(([, r]) => r) : [];
+  };
+  /**
+   * Bring the selection into view (QA B4): its box framed from where the camera looks now, with room around it
+   * (twice its size, and never closer than a hand's width of context), not filling the view. With an interface
+   * picked, look along its normal at it instead.
+   */
   const focus = () => {
     const h = handle.current;
-    const rec = sel.body ? bodies.current.get(sel.body) : undefined;
-    if (!h || !rec) return;
+    const recs = selectionRecs(sel.body);
+    const rec = recs.length === 1 && sel.body !== undefined ? bodies.current.get(sel.body) : undefined;
+    if (!h || !recs.length) return;
+    if (!sel.iface || !rec) {
+      const box = new THREE.Box3();
+      for (const r of recs) box.expandByObject(r.obj);
+      if (box.isEmpty()) return;
+      const size = box.getSize(new THREE.Vector3());
+      const grow = Math.max(size.length() * 0.5, 40);
+      box.expandByScalar(grow);
+      const v = h.camera.position.clone().sub(h.controls.target).normalize();
+      const local = v.clone().applyQuaternion(upQuat.clone().invert());
+      fit(box, (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
+      return;
+    }
     const f = rec.body.def.interfaces.find((i) => i.id === sel.iface)?.geometry?.frame;
     const target = f ? new THREE.Vector3(...f.origin).applyMatrix4(rec.obj.matrix) : rec.centre.clone().applyMatrix4(rec.obj.matrix);
     const n = f ? new THREE.Vector3(...f.normal).transformDirection(rec.obj.matrix) : new THREE.Vector3(0.6, -0.8, 0.6);
@@ -1274,13 +1300,15 @@ export function CadView({
     const holder = model.within.get(key);
     const parts = key.split("/");
     const above = parts.map((_, i) => parts.slice(0, parts.length - 1 - i).join("/")).find((k) => k && has(k));
-    const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : above ? { body: above } : undefined;
+    // an assembly drawn by its parts (an FC + ESC stack): selected as the group of them (QA B4)
+    const parts_ = key !== "" && model.bodies.some((b) => b.key.startsWith(`${key}/`));
+    const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : parts_ ? { body: key } : above ? { body: above } : undefined;
     if (!next) return;
     setSel(next);
     look.current = focusOn.look !== false;
   }, [focusOn, model]);
   useEffect(() => {
-    if (!look.current || !sel.body || !bodies.current.has(sel.body)) return;
+    if (!look.current || sel.body === undefined || !selectionRecs(sel.body).length) return;
     look.current = false;
     focus();
     handle.current?.renderOnce();
