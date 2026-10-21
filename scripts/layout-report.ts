@@ -20,15 +20,19 @@ for (const file of files) {
     const now = measureLevel(bundle, lv.level);
     const legacy = measureLevel(bundle, lv.level, { layout: null, legacy: true });
     const fresh = measureLevel(bundle, lv.level, { layout: null });
-    const tidy = now.saved ? proposeLevel(bundle, lv.level, { mode: "tidy" }).after.metrics : undefined;
+    const tidyP = now.saved && !lv.board ? proposeLevel(bundle, lv.level, { mode: "tidy" }) : undefined;
+    const applyP = now.saved && !lv.board ? proposeLevel(bundle, lv.level, { mode: "default" }) : undefined;
+    const tidy = tidyP?.after.metrics;
+    const apply = applyP?.after.metrics;
     const ms = Math.round(performance.now() - t0);
-    rows.push({ file, level: lv.level, board: lv.board, saved: now.saved, now: now.metrics, legacy: legacy.metrics, fresh: fresh.metrics, tidy: tidy?.metrics, ms });
+    rows.push({ file, level: lv.level, board: lv.board, saved: now.saved, now: now.metrics, legacy: legacy.metrics, fresh: fresh.metrics, tidy, apply, tidyBetter: tidyP?.better, applyBetter: applyP?.better, ms });
     if (!json) {
       console.log(`\n${file} [${lv.level || "top"}]${lv.board ? " (board)" : ""} ${ms} ms`);
       console.log(`  now (${now.saved ? "saved" : "auto"}): ${short(now.metrics)}  ${now.findings.map((f) => f.code).join(",")}`);
       console.log(`  old default:  ${short(legacy.metrics)}`);
       console.log(`  new default:  ${short(fresh.metrics)}  ${measureLevel(bundle, lv.level, { layout: null }).findings.map((f) => f.code).join(",")}`);
-      if (tidy) console.log(`  tidy:         ${short(tidy)}`);
+      if (tidy) console.log(`  tidy:         ${short(tidy)}  better ${tidyP!.better}`);
+      if (apply) console.log(`  apply:        ${short(apply)}  better ${applyP!.better}`);
     }
   }
 }

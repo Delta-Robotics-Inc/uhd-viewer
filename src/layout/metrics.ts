@@ -20,6 +20,8 @@ import type { Box, ComputedLayout } from "./layout";
 export interface LayoutMetrics {
   /** Cards on the level: modules, components and harnesses (not junctions, sheet ports or open containers). */
   cards: number;
+  /** Boundary ports drawn (the exports of the module this level shows). */
+  boundary: number;
   /** Lines drawn. */
   links: number;
   crossings: number;
@@ -175,12 +177,15 @@ export function measureLayout(vm: ViewModel, layout: ComputedLayout): LayoutMetr
   const width = all.length ? Math.max(...all.map((b) => b.x + b.w)) - minX : 0;
   const height = all.length ? Math.max(...all.map((b) => b.y + b.h)) - minY : 0;
 
-  const row = stab(cards, "row");
-  const column = stab(cards, "column");
+  // the strip counts the level's boundary ports too (a drilled-into module's exports, drawn in a column at the edge)
+  const sheets = drawn.filter((n) => n.sheetPort).map((n) => ({ id: n.id, b: layout.boxes[n.id] }));
+  const row = stab([...cards, ...sheets], "row");
+  const column = stab([...cards, ...sheets], "column");
   const [strip, stripAxis] = column.length > row.length ? [column, "column" as const] : [row, "row" as const];
 
   return {
     cards: cards.length,
+    boundary: sheets.length,
     links: routed.length,
     crossings,
     overlaps: overlaps.length,
@@ -200,9 +205,14 @@ export function measureLayout(vm: ViewModel, layout: ComputedLayout): LayoutMetr
 export function layoutFindings(m: LayoutMetrics, limits: typeof LAYOUT_LIMITS = LAYOUT_LIMITS): LayoutFinding[] {
   const out: LayoutFinding[] = [];
   if (m.overlaps) out.push({ severity: "warning", code: "overlaps", message: `${m.overlaps} pair${m.overlaps === 1 ? "" : "s"} of boxes overlap (${m.detail.overlaps.slice(0, 3).map((p) => p.join(" / ")).join(", ")}${m.overlaps > 3 ? ", …" : ""})` });
-  const strip = limits.strip(m.cards);
+  const strip = limits.strip(m.cards + (m.boundary ?? 0));
+  const ports = m.stripCards.filter((id) => id.startsWith("@")).length * 2 > m.stripCards.length;
   if (m.strip > strip)
-    out.push({ severity: "warning", code: "strip", message: `${m.strip} cards in one ${m.stripAxis} (${m.stripCards.slice(0, 4).join(", ")}${m.strip > 4 ? ", …" : ""}): more than ${strip} reads as a strip; arrange them in a block around what they connect to` });
+    out.push({
+      severity: "warning",
+      code: "strip",
+      message: `${m.strip} cards in one ${m.stripAxis} (${m.stripCards.slice(0, 4).join(", ")}${m.strip > 4 ? ", …" : ""}): more than ${strip} reads as a strip; ${ports ? "most are the level's boundary ports: export fewer, grouped interfaces from this module (composites) rather than one per signal" : "arrange them in a block around what they connect to"}`,
+    });
   const [lo, hi] = limits.aspect;
   if (m.cards > 3 && m.aspect && (m.aspect < lo || m.aspect > hi)) out.push({ severity: "warning", code: "aspect", message: `the drawing is ${m.aspect > 1 ? `${m.aspect}× as wide as it is tall` : `${Math.round(100 / m.aspect) / 100}× as tall as it is wide`}: aim for a screen's shape (about 1.6)` });
   const allowed = limits.crossings(m.links);

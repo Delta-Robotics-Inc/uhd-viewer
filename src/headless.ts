@@ -256,7 +256,7 @@ export function readsBetter(a: LayoutMetrics, b: LayoutMetrics): boolean {
   const problems = (m: LayoutMetrics) => [
     layoutFindings(m).filter((x) => x.severity === "warning").length,
     m.overlaps,
-    Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards)),
+    Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards + m.boundary)),
     m.crossings,
     m.underCards,
   ];
@@ -269,5 +269,5 @@ export function readsBetter(a: LayoutMetrics, b: LayoutMetrics): boolean {
 /** A score for comparing two layouts of one level: lower reads better. */
 export function reads(m: LayoutMetrics): number {
   const f = layoutFindings(m).filter((x) => x.severity === "warning").length;
-  return f * 1e9 + m.overlaps * 1e7 + Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards)) * 1e6 + m.crossings * 1e4 + m.underCards * 1e3 + m.length / 100;
+  return f * 1e9 + m.overlaps * 1e7 + Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards + m.boundary)) * 1e6 + m.crossings * 1e4 + m.underCards * 1e3 + m.length / 100;
 }

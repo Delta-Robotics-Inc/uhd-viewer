@@ -28,6 +28,7 @@ export interface LevelLayout {
 export type PinnedLevelLayout = LevelLayout & { pinned?: string[] };
 export interface LayoutMetrics {
   cards: number;
+  boundary: number;
   links: number;
   crossings: number;
   overlaps: number;

@@ -72,6 +72,18 @@ describe("layout metrics", () => {
     expect(layoutFindings(b)).toEqual([]);
   });
 
+  it("counts a column of boundary ports as a strip, and says to export fewer, grouped interfaces", () => {
+    const sheets = Array.from({ length: 9 }, (_, i) => node(`@p${i}`, { sheetPort: true }));
+    const vm: ViewModel = { path: [], derived: [], nodes: [node("fc"), ...sheets], links: [] };
+    const boxes = { fc: { x: 400, y: 0, w: 200, h: 300 }, ...Object.fromEntries(sheets.map((n, i) => [n.id, { x: 0, y: i * 54, w: 150, h: 30 }])) };
+    const m = measureLayout(vm, drawn(boxes, {}));
+    expect(m.cards).toBe(1);
+    expect(m.boundary).toBe(9);
+    expect(m.strip).toBe(9);
+    const strip = layoutFindings(m).find((f) => f.code === "strip");
+    expect(strip?.message).toMatch(/boundary ports: export fewer, grouped interfaces/);
+  });
+
   it("allows longer rows on bigger levels, and a few crossings", () => {
     expect(LAYOUT_LIMITS.strip(10)).toBe(6);
     expect(LAYOUT_LIMITS.strip(64)).toBe(12);
@@ -208,7 +220,7 @@ describe("headless layout (the IMU pod fixture)", () => {
 });
 
 describe("comparing two layouts", () => {
-  const m = (over: Partial<import("../src/layout/metrics").LayoutMetrics>) => ({ cards: 10, links: 10, crossings: 0, overlaps: 0, aspect: 1.5, width: 1500, height: 1000, strip: 4, stripAxis: "row" as const, stripCards: [], underCards: 0, length: 5000, detail: { overlaps: [], underCards: [] }, ...over });
+  const m = (over: Partial<import("../src/layout/metrics").LayoutMetrics>) => ({ cards: 10, boundary: 0, links: 10, crossings: 0, overlaps: 0, aspect: 1.5, width: 1500, height: 1000, strip: 4, stripAxis: "row" as const, stripCards: [], underCards: 0, length: 5000, detail: { overlaps: [], underCards: [] }, ...over });
   it("prefers fewer problems, and does not replace a clean layout for a little less line", async () => {
     const { readsBetter } = await import("../src/headless");
     expect(readsBetter(m({ crossings: 1 }), m({ crossings: 2 }))).toBe(true);
