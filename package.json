@@ -59,7 +59,7 @@
     "build:headless": "vite build --config vite.headless.config.ts && node scripts/build-headless-types.mjs"
   },
   "peerDependencies": {
-    "@deltarobotics/uhd": ">=0.2.1"
+    "@deltarobotics/uhd": ">=0.3.0"
   },
   "peerDependenciesMeta": {
     "@deltarobotics/uhd": {

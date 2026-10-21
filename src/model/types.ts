@@ -5,7 +5,7 @@
  */
 
 export type LinkState = "configured" | "partial" | "incompatible" | "unconfigured";
-export type NodeKind = "module" | "group" | "harness" | "net";
+export type NodeKind = "module" | "group" | "harness" | "board" | "net";
 export type Shape = "rect" | "circle" | "pill";
 
 /** A child interface revealed when a link is opened (a slot and the leaf bound to it). */
