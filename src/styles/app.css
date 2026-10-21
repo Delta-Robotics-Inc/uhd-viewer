@@ -1596,6 +1596,10 @@ body {
   position: absolute;
   inset: 0;
 }
+/* the hierarchy docked at the left (viewer/hierarchy.tsx) says its width here: the views start beside it, not under it */
+.workspace > :not(.uhd-hierarchy-dock):not(.inspector) {
+  left: var(--uhd-dock-left, 0px);
+}
 .card {
   background: var(--uhd-surface);
   border: 1px solid var(--uhd-border);

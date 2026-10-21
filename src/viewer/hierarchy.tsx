@@ -348,6 +348,14 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
 
   // resizing by the edge: a drag, or the arrow keys on the handle
   const dock = useRef<HTMLDivElement>(null);
+  // the views beside it start after it (the workspace's views are laid over it otherwise: app.css)
+  const docked = kept.open ? kept.width : RAIL_WIDTH;
+  useLayoutEffect(() => {
+    const parent = dock.current?.parentElement;
+    if (!parent) return;
+    parent.style.setProperty("--uhd-dock-left", `${docked}px`);
+    return () => void parent.style.removeProperty("--uhd-dock-left");
+  }, [docked]);
   const room = () => Math.max(HIERARCHY_WIDTH.min, (dock.current?.parentElement?.clientWidth ?? window.innerWidth) * 0.6);
   const onResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
