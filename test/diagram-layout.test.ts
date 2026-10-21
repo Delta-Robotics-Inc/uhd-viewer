@@ -199,3 +199,14 @@ describe("headless layout (the IMU pod fixture)", () => {
     expect(() => measureLevel(bundle, "nope")).toThrow(/no level "nope"/);
   });
 });
+
+describe("comparing two layouts", () => {
+  const m = (over: Partial<import("../src/layout/metrics").LayoutMetrics>) => ({ cards: 10, links: 10, crossings: 0, overlaps: 0, aspect: 1.5, width: 1500, height: 1000, strip: 4, stripAxis: "row" as const, stripCards: [], underCards: 0, length: 5000, detail: { overlaps: [], underCards: [] }, ...over });
+  it("prefers fewer problems, and does not replace a clean layout for a little less line", async () => {
+    const { readsBetter } = await import("../src/headless");
+    expect(readsBetter(m({ crossings: 1 }), m({ crossings: 2 }))).toBe(true);
+    expect(readsBetter(m({ crossings: 0, length: 9000 }), m({ overlaps: 1 }))).toBe(true);
+    expect(readsBetter(m({ length: 4500 }), m({}))).toBe(false);
+    expect(readsBetter(m({ length: 3000 }), m({}))).toBe(true);
+  });
+});

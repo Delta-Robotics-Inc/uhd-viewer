@@ -83,6 +83,7 @@ export interface Proposal {
 }
 export declare function proposeLevel(bundle: UhdBundle, level: string, opts?: ProposeOptions): Proposal;
 export declare function reads(m: LayoutMetrics): number;
+export declare function readsBetter(a: LayoutMetrics, b: LayoutMetrics): boolean;
 `,
 );
 

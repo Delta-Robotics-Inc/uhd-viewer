@@ -154,7 +154,7 @@ export interface Proposal {
   after: MeasuredLevel;
   /** What to write to `diagram.layouts[level]`. */
   layout: PinnedLevelLayout;
-  /** Whether the proposal reads better than what is there (fewer findings, then fewer crossings, then shorter lines). */
+  /** Whether the proposal reads clearly better than what is there (`readsBetter`). */
   better: boolean;
 }
 
@@ -193,7 +193,27 @@ export function proposeLevel(bundle: UhdBundle, level: string, opts: ProposeOpti
   if (Object.keys(links).length) layout.links = links;
   if (pinned.length) layout.pinned = pinned;
   const after = measureLevel(bundle, level, { ...opts, layout });
-  return { level, before, after, layout, better: reads(after.metrics) < reads(before.metrics) };
+  return { level, before, after, layout, better: readsBetter(after.metrics, before.metrics) };
+}
+
+/**
+ * Whether layout `a` reads clearly better than `b`: fewer problems (warnings,
+ * then overlaps, the strip's excess, crossings, lines under cards), or as
+ * few and lines a quarter shorter. A layout with nothing to fix is not
+ * replaced for a few pixels of line.
+ */
+export function readsBetter(a: LayoutMetrics, b: LayoutMetrics): boolean {
+  const problems = (m: LayoutMetrics) => [
+    layoutFindings(m).filter((x) => x.severity === "warning").length,
+    m.overlaps,
+    Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards)),
+    m.crossings,
+    m.underCards,
+  ];
+  const pa = problems(a);
+  const pb = problems(b);
+  for (let i = 0; i < pa.length; i++) if (pa[i] !== pb[i]) return pa[i] < pb[i];
+  return a.length < 0.75 * b.length;
 }
 
 /** A score for comparing two layouts of one level: lower reads better. */
