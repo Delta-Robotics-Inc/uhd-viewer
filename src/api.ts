@@ -36,6 +36,13 @@ export interface ViewerLayout {
   links: Record<string, Record<string, LinkLayout>>;
 }
 
+/** A view of the diagram: the pan offset in pixels and the zoom factor. */
+export interface ViewerViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 /** The tones a mark can take; each is a token of the theme (`--uhd-mark-<tone>`). */
 export type NodeMarkTone = "neutral" | "info" | "ok" | "warning" | "error";
 
@@ -44,6 +51,8 @@ export interface NodeMark {
   tone: NodeMarkTone;
   /** What the mark means, for the tooltip. */
   label?: string;
+  /** `"ring"`: the tone as a dashed ring instead of a filled dot, for a module that stands for something not chosen yet. Default: a dot. */
+  shape?: "dot" | "ring";
 }
 
 export interface ViewerOptions {
@@ -115,6 +124,25 @@ export interface ViewerOptions {
    * joins.
    */
   onOpenPair?: (request: { linkId: string; a: string; b: string }) => void;
+  /**
+   * The user asked to inspect a module (INSPECT in its context menu): `path`
+   * is its instance path from the root. Given: the host shows it in an
+   * inspector of its own; otherwise the viewer opens its own panel. The
+   * module is selected either way (`onSelectionChanged` says so first).
+   */
+  onInspect?: (request: { path: string; defId?: string }) => void;
+  /**
+   * Where the user left the view of each drill level (keyed like the layout;
+   * only used together with `onViewportChange`). A level with a viewport
+   * opens on it; a level with none is fitted to the diagram.
+   */
+  viewports?: Record<string, ViewerViewport>;
+  /**
+   * Called with every level's viewport after the user pans or zooms (a fit
+   * the user asks for drops that level's entry). When given, the host keeps
+   * the viewports and the viewer stops keeping them in local storage.
+   */
+  onViewportChange?: (viewports: Record<string, ViewerViewport>) => void;
   /**
    * Talk to the parent window over `postMessage` (the viewer in a frame):
    * host messages are accepted from `window.parent` only, and only from the
@@ -188,7 +216,8 @@ export type ViewerEvent =
   | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
   | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string }
   | { type: "uhd-viewer:openModule"; path: string }
-  | { type: "uhd-viewer:openPair"; linkId: string; a: string; b: string };
+  | { type: "uhd-viewer:openPair"; linkId: string; a: string; b: string }
+  | { type: "uhd-viewer:inspect"; path: string; defId?: string };
 
 export interface ViewerHandle {
   /**

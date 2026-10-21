@@ -37,7 +37,8 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
     const module = Boolean(current.onOpenModule);
     // a pair view of the host's own only when the host takes it (a frame's parent keeps the viewer's)
     const pair = Boolean(current.onOpenPair);
-    if (!host || host.source !== source || host.artifact !== artifact || host.module !== module || Boolean(host.pair) !== pair) host = { bus, emit, source, artifact, module, pair };
+    const inspect = Boolean(current.onInspect);
+    if (!host || host.source !== source || host.artifact !== artifact || host.module !== module || Boolean(host.pair) !== pair || Boolean(host.inspect) !== inspect) host = { bus, emit, source, artifact, module, pair, inspect };
     return host;
   };
   const draw = () =>

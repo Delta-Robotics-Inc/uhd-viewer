@@ -49,6 +49,34 @@ export function sideLabelWidth(cardWidth: number): number {
   return Math.max(40, cardWidth / 2 - 54);
 }
 
+/** A card's width with nothing to fit, and the widest it grows to for its labels. */
+export const CARD_W = 170;
+export const CARD_W_MAX = 272;
+
+/** The widest a label on a card's top or bottom edge runs (its share of the edge, when that is less). */
+export const TOP_LABEL_MAX = 160;
+
+/** A label's width as drawn (8 px type). */
+export const labelWidth = (name: string): number => Math.ceil(portLabelText(name).length * LABEL_CHAR);
+
+/**
+ * The width a card takes so the labels of its linked interfaces fit beside
+ * its body: as wide as the longest needs (two may face each other across the
+ * card), from the plain width up to `CARD_W_MAX`. A longer label is cut with
+ * an ellipsis and says its whole name on hover.
+ */
+export function cardWidth(labels: readonly string[]): number {
+  const widest = Math.max(0, ...labels.map(labelWidth));
+  // the inverse of sideLabelWidth, with a pixel to spare for the ellipsis rule
+  const need = 2 * (widest + 1 + 54);
+  return Math.min(CARD_W_MAX, Math.max(CARD_W, need));
+}
+
+/** A label is drawn short: it does not fit `width`, or the card leaves out the name's qualifier. */
+export function labelIsCut(name: string, width: number): boolean {
+  return portLabelText(name) !== name || labelWidth(name) > width;
+}
+
 /**
  * Room the body keeps clear of the port labels: a label row on the top and
  * bottom edges that have labelled ports, and on the left and right as wide

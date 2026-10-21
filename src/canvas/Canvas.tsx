@@ -23,6 +23,20 @@ import type { Pt } from "./routing";
 import type { Isolation } from "../model/isolate";
 import type { Live } from "../viewer/controller";
 import { revealViewport, selectionBounds } from "./reveal";
+import { canvasCommand, firstView, interactionProps, typingTarget, type InteractionAction, type InteractionState, type Viewport } from "./interaction";
+import { GRID } from "../layout/router";
+
+import { CanvasActionsContext, type CanvasActions } from "./actions";
+
+/** A view command from outside the canvas (a toolbar, a menu): fit, or a zoom step; `seq` tells repeats apart. */
+export interface ViewCommand {
+  type: "fit" | "in" | "out" | "reset";
+  seq: number;
+}
+
+/** Keys that add to the selection or take from it (a click on a module with one held). */
+const MULTI_SELECT_KEYS = ["Meta", "Control", "Shift"];
+const MODIFIED = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => e.shiftKey || e.ctrlKey || e.metaKey;
 
 const POSITION = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
@@ -63,7 +77,28 @@ export interface CanvasProps {
   marks?: Record<string, NodeMark>;
   /** Legend entries are isolated: what stays at full strength (the rest fades). */
   isolation?: Isolation | null;
+  /** Modules selected together (a selection box, clicks with Shift, Ctrl or Cmd, select all): two or more, else empty. */
+  group?: readonly string[];
+  /** React Flow selected or unselected modules (a box, a click with a key held, a press on a module): the changes, a rail's taps named as the rail. */
+  onSelectChanges?: (changes: { id: string; selected: boolean }[]) => void;
+  /** The tool chosen and whether Space is held (default: select). */
+  interaction?: InteractionState;
+  onInteraction?: (action: InteractionAction) => void;
+  /** Ctrl/Cmd+A, and Escape. */
+  onSelectAll?: () => void;
+  onEscape?: () => void;
+  /** Fit or zoom, asked for by a toolbar or a menu. */
+  command?: ViewCommand;
+  /** The viewport saved for this level: put back when the canvas opens (none: the diagram is fitted). */
+  viewport?: Viewport;
+  /** The user moved the view (its viewport), or asked for a fit (null: nothing is kept, the next opening fits). */
+  onViewport?: (viewport: Viewport | null) => void;
+  /** Right-click on the empty canvas: its menu at the pointer (the browser's own when not given). */
+  onPaneContext?: (x: number, y: number) => void;
 }
+
+const DEFAULT_INTERACTION: InteractionState = { tool: "select", space: false };
+const NO_GROUP: readonly string[] = [];
 
 /**
  * Reuse last render's object for anything whose content did not change, so
@@ -84,6 +119,9 @@ export function Canvas(props: CanvasProps) {
   const edgeCache = useRef(new Map<string, { key: unknown[]; value: Edge<LinkData> }>());
   const { vm, layout, mode, selection } = props;
   const isolation = props.isolation ?? null;
+  const group = props.group ?? NO_GROUP;
+  const interaction = props.interaction ?? DEFAULT_INTERACTION;
+  const pointer = interactionProps(interaction);
 
   // a selected link derived over nets lights up the lines it runs over
   const derivedSel = selection?.kind === "link" ? vm.derived.find((d) => d.id === selection.id) : undefined;
@@ -111,12 +149,12 @@ export function Canvas(props: CanvasProps) {
       }
       const portKey = ports.map((p) => [p.port.id, p.x, p.y, p.side, p.links.map((l) => l.id + l.state).join()]);
       const ribbonKey = ports.filter((p) => ribbonPorts.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id);
-      const selected = selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf);
+      const selected = (selection?.kind === "node" && (selection.id === node.id || selection.id === node.tapOf)) || group.includes(node.id) || (node.tapOf !== undefined && group.includes(node.tapOf));
       const mark = node.defId ? props.marks?.[node.defId] : undefined;
       // isolated legend entries: a node none of their links touch fades, and on one that stays, the other ports
       const out = isolation ? !isolation.nodes.has(node.id) : false;
       const keptPorts = isolation && !out ? ports.filter((p) => isolation.ports.has(`${node.id}|${p.port.id}`)).map((p) => p.port.id) : undefined;
-      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label, out, keptPorts ?? null];
+      const key = [node, box, parentBox, portKey, layout.groups[node.id], mode, props.showGrounds, [...selectedPorts], ribbonKey, selected, mark?.tone, mark?.label, mark?.shape, out, keptPorts ?? null];
       return stable(nodeCache.current, node.id, key, () => ({
         id: node.id,
         type: node.sheetPort ? "sheet" : node.kind === "harness" ? "harness" : node.kind === "net" ? "net" : node.expanded ? "container" : "module",
@@ -138,7 +176,7 @@ export function Canvas(props: CanvasProps) {
         zIndex: node.expanded ? 0 : 2,
       }));
     });
-  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts, isolation]);
+  }, [vm, layout, mode, props.showGrounds, selection, selectedLinks, ribbonPorts, isolation, group]);
 
   const { onSelect } = props;
   const onSelectLink = useCallback((id: string) => onSelect({ kind: "link", id }), [onSelect]);
@@ -194,6 +232,10 @@ export function Canvas(props: CanvasProps) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<NodeData>>[]) => {
+      // React Flow's own selection (a box, a click with a key held, a press on a module): the viewer's follows it
+      const canonical = (id: string) => vm.nodes.find((n) => n.id === id)?.tapOf ?? id;
+      const picks = changes.flatMap((c) => (c.type === "select" ? [{ id: canonical(c.id), selected: c.selected }] : []));
+      if (picks.length) props.onSelectChanges?.(picks);
       for (const change of changes) {
         if (change.type !== "position" || !change.position) continue;
         const node = vm.nodes.find((n) => n.id === change.id);
@@ -207,12 +249,15 @@ export function Canvas(props: CanvasProps) {
   // a host's focus: once the node is drawn (and after the initial fit), frame it
   const flow = useReactFlow();
   const drawn = useNodesInitialized();
+  /** The user (or a host's focus) moved the view since the canvas opened: no automatic fit after that. */
+  const moved = useRef(false);
   const centred = useRef(0);
   const { centre, inspector } = props;
   useEffect(() => {
     if (!centre || !drawn || centred.current === centre.seq || !nodes.some((n) => n.id === centre.id)) return;
     const t = setTimeout(() => {
       centred.current = centre.seq;
+      moved.current = true;
       void flow.fitView({ nodes: [{ id: centre.id }], padding: fitPadding(inspector ?? false), maxZoom: 1, duration: 300 });
     }, 60);
     return () => clearTimeout(t);
@@ -229,21 +274,182 @@ export function Canvas(props: CanvasProps) {
     if (!rect) return;
     const t = setTimeout(() => {
       revealed.current = reveal.seq;
+      moved.current = true;
       const next = revealViewport(rect, flow.getViewport(), { width: paneWidth, height: paneHeight }, inspector ?? false);
       if (next) void flow.setViewport(next, { duration: 300 });
     }, 60);
     return () => clearTimeout(t);
   }, [reveal, drawn, vm, layout, flow, inspector, paneWidth, paneHeight]);
 
+  // ---- the first view (item: fit on first open): a saved viewport is put back, else the diagram is fitted,
+  // and fitted again when modules come or go (a project an agent is still building) until the user moves the view
+  const saved = useRef(props.viewport);
+  const restored = useRef(false);
+  const fittedKey = useRef<string | null>(null);
+  const nodesKey = useMemo(() => vm.nodes.map((n) => n.id).sort().join("|"), [vm]);
+  const padding = fitPadding(inspector ?? false);
+  useEffect(() => {
+    const step = firstView({ saved: saved.current, restored: restored.current, moved: moved.current, nodesKey, fittedKey: fittedKey.current, sized: Boolean(drawn && paneWidth && paneHeight) });
+    if (step.kind === "restore") {
+      restored.current = true;
+      void flow.setViewport(step.viewport);
+    } else if (step.kind === "fit") {
+      const first = fittedKey.current === null;
+      fittedKey.current = nodesKey;
+      void flow.fitView({ padding, maxZoom: 1.25, duration: first ? 0 : 300 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawn, paneWidth, paneHeight, nodesKey, flow]);
+
+  // ---- fit and zoom asked for from outside (a toolbar, a menu) or by a key
+  const { onViewport } = props;
+  const keep = useCallback(
+    (ms: number) => {
+      moved.current = true;
+      setTimeout(() => onViewport?.(flow.getViewport()), ms + 30);
+    },
+    [flow, onViewport],
+  );
+  const run = useCallback(
+    (type: ViewCommand["type"]) => {
+      if (type === "fit") {
+        // a fit asked for is the diagram's own view again: nothing is kept, and modules that come later are fitted too
+        saved.current = undefined;
+        moved.current = false;
+        fittedKey.current = nodesKey;
+        onViewport?.(null);
+        void flow.fitView({ padding, maxZoom: 1.25, duration: 300 });
+      } else {
+        if (type === "in") void flow.zoomIn({ duration: 200 });
+        else if (type === "out") void flow.zoomOut({ duration: 200 });
+        else void flow.zoomTo(1, { duration: 200 });
+        keep(200);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flow, nodesKey, onViewport, keep, inspector],
+  );
+  const ran = useRef(props.command?.seq ?? 0);
+  const { command } = props;
+  useEffect(() => {
+    if (!command || ran.current === command.seq) return;
+    ran.current = command.seq;
+    run(command.type);
+  }, [command, run]);
+
+  // ---- the canvas's keys (interaction.ts): tools, select all, Escape, fit and zoom, arrow nudges; Space held pans
+  const element = useRef<HTMLDivElement>(null);
+  const keys = useRef({ props, nodes, layout, vm, run });
+  keys.current = { props, nodes, layout, vm, run };
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    /** A key is the canvas's when it is pressed on the page or inside this viewer, outside any field. */
+    const ours = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      // (a host that made the viewer inert, behind an overlay of its own, gets no canvas keys either)
+      if (e.defaultPrevented || typingTarget(t) || element.current?.closest("[inert]")) return false;
+      const root = element.current?.closest(".uhd-root") ?? element.current;
+      return !t || t === document.body || t === document.documentElement || Boolean(root?.contains(t));
+    };
+    const taken = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const down = (e: KeyboardEvent) => {
+      if (!ours(e)) return;
+      const { props: p, nodes: drawnNodes, layout: l, vm: model, run: act } = keys.current;
+      if (e.key === " " || e.code === "Space") {
+        // Space on a button presses it; anywhere else it is held to pan
+        // (a module's own element is focusable and has a role; it does not use the key)
+        if ((e.target as HTMLElement | null)?.closest?.("button, a[href], summary, [role='tab'], [role='menuitem']")) return;
+        e.preventDefault();
+        if (!e.repeat) p.onInteraction?.({ type: "space", down: true });
+        return;
+      }
+      // Enter on a module reached with Tab selects it (the canvas has the keys, not React Flow: see disableKeyboardA11y)
+      const focused = e.target as HTMLElement | null;
+      if (e.key === "Enter" && focused?.classList?.contains("react-flow__node") && focused.dataset.id) {
+        const node = model.nodes.find((n) => n.id === focused.dataset.id);
+        if (node) p.onSelect({ kind: "node", id: node.tapOf ?? node.id });
+        return taken(e);
+      }
+      const c = canvasCommand(e, GRID);
+      if (!c) return;
+      switch (c.type) {
+        case "tool":
+          if (!p.onInteraction) return;
+          p.onInteraction(c);
+          return taken(e);
+        case "selectAll":
+          if (!p.onSelectAll) return;
+          p.onSelectAll();
+          return taken(e);
+        case "escape":
+          // not taken: a menu, a tooltip and the host close on it too
+          p.onEscape?.();
+          return;
+        case "fit":
+          act("fit");
+          return taken(e);
+        case "zoom":
+          act(c.by);
+          return taken(e);
+        case "nudge": {
+          // the selected modules move a grid step (Shift: four); one inside a selected container moves with it
+          const picked = drawnNodes.filter((n) => n.selected && !n.data.node.sheetPort && !n.data.node.tapOf);
+          const ids = new Set(picked.map((n) => n.id));
+          const moving = picked.filter((n) => !(n.data.node.parent && ids.has(n.data.node.parent)));
+          if (!moving.length) return;
+          for (const n of moving) {
+            const box = l.boxes[n.id];
+            if (box && model.nodes.some((x) => x.id === n.id)) p.onMove(n.id, box.x + c.dx, box.y + c.dy);
+          }
+          return taken(e);
+        }
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === " " || e.code === "Space") keys.current.props.onInteraction?.({ type: "space", down: false });
+    };
+    const blur = () => keys.current.props.onInteraction?.({ type: "blur" });
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+
+  // a double press of the middle button fits the diagram
+  const middle = useRef({ at: 0, x: 0, y: 0 });
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 1) return;
+    const last = middle.current;
+    const again = e.timeStamp - last.at < 400 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 5;
+    middle.current = again ? { at: 0, x: 0, y: 0 } : { at: e.timeStamp, x: e.clientX, y: e.clientY };
+    if (again) run("fit");
+  };
+
+  const actions = useMemo<CanvasActions>(() => ({ onToggleExpand: props.onToggleExpand }), [props.onToggleExpand]);
+
   return (
+    <CanvasActionsContext.Provider value={actions}>
     <ReactFlow
+      ref={element}
+      className={`uhd-tool-${interaction.tool}${pointer.cursor === "grab" ? " uhd-grab" : ""}`}
+      onMouseDown={onMouseDown}
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       connectionMode={ConnectionMode.Loose}
       onNodesChange={onNodesChange}
-      onNodeClick={(_, n) => props.onSelect({ kind: "node", id: n.data.node.tapOf ?? n.id })}
+      onNodeClick={(e, n) => {
+        // with Shift, Ctrl or Cmd held the click adds to the selection or takes from it (onNodesChange)
+        if (!MODIFIED(e)) props.onSelect({ kind: "node", id: n.data.node.tapOf ?? n.id });
+      }}
       onNodeDragStart={(_, n, all) => props.onLive({ nodes: new Set([n.id, ...all.map((x) => x.id)]) })}
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
@@ -256,18 +462,43 @@ export function Canvas(props: CanvasProps) {
           props.onNodeContext?.(n.data.node.tapOf ?? n.id, e.clientX, e.clientY);
         })
       }
+      onPaneContextMenu={
+        props.onPaneContext &&
+        ((e) => {
+          e.preventDefault();
+          props.onPaneContext?.(e.clientX, e.clientY);
+        })
+      }
       onPaneClick={() => props.onSelect(null)}
+      onMoveEnd={(e, viewport) => {
+        // a pan or a zoom by the user (the view's own fits and a host's moves carry no event)
+        if (!e) return;
+        moved.current = true;
+        onViewport?.(viewport);
+      }}
       nodesConnectable={false}
+      nodesDraggable={pointer.nodesDraggable}
+      panOnDrag={pointer.panOnDrag}
+      selectionOnDrag={pointer.selectionOnDrag}
+      panActivationKeyCode={null}
+      multiSelectionKeyCode={MULTI_SELECT_KEYS}
+      deleteKeyCode={null}
+      zoomOnDoubleClick={false}
+      // the canvas has its own keys (above): React Flow's would act a second time on a focused module
+      // (its Escape selects a module that Escape here has just unselected)
+      disableKeyboardA11y
       snapToGrid
       snapGrid={[16, 16]}
       elevateEdgesOnSelect
-      fitView
-      fitViewOptions={{ padding: fitPadding(props.inspector ?? false), maxZoom: 1.25 }}
+      fitView={!props.viewport}
+      {...(props.viewport ? { defaultViewport: props.viewport } : {})}
+      fitViewOptions={{ padding, maxZoom: 1.25 }}
       minZoom={0.2}
       maxZoom={2.5}
       attributionPosition="bottom-left"
     >
       <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} color="var(--uhd-canvas-dot)" bgColor="var(--uhd-canvas)" />
     </ReactFlow>
+    </CanvasActionsContext.Provider>
   );
 }

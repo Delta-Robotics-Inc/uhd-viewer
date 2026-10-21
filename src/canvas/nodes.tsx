@@ -5,7 +5,8 @@ import type { NodeMark } from "../api";
 import { colorFor, isFaded, type Classification } from "../model/classification";
 import { Icon } from "./Icon";
 import { Port } from "./Port";
-import { cardInsets, chipText, fitChips, sideLabelWidth } from "../layout/card-body";
+import { cardInsets, chipText, fitChips, sideLabelWidth, TOP_LABEL_MAX } from "../layout/card-body";
+import { useCanvasActions } from "./actions";
 
 export interface NodeData extends Record<string, unknown> {
   node: ViewNode;
@@ -52,7 +53,7 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   const widthFor = (p: PlacedPort) =>
     p.side === "left" || p.side === "right"
       ? sideLabelWidth(box.w)
-      : Math.max(30, Math.min(84, (box.w - 32) / (perSide(p.side) + 1) - 4));
+      : Math.max(30, Math.min(TOP_LABEL_MAX, (box.w - 32) / (perSide(p.side) + 1) - 4));
   return (
     <>
       {ports.map((p) => {
@@ -78,6 +79,53 @@ function Ports({ data, labels, border = 2 }: { data: NodeData; labels: boolean; 
   );
 }
 
+/**
+ * A node's description on hover, in the viewer's own tooltip: two lines at
+ * most (the whole text is in the inspector), after a longer rest than a
+ * button's, so it does not follow the pointer across the diagram.
+ */
+const describes = (text: string | undefined) => (text ? { "data-tooltip": text, "data-tooltip-clamp": "2", "data-tooltip-delay": "600" } : {});
+
+/** The mark that a node has a description: it shows it at once. */
+function DescriptionMark({ text }: { text: string | undefined }) {
+  if (!text) return null;
+  return (
+    <span className="node-info" data-tooltip={text} data-tooltip-clamp="2" role="img" aria-label="Has a description">
+      <Icon name="info" size={10} strokeWidth={2} aria-hidden />
+    </span>
+  );
+}
+
+/**
+ * The chevron of a module that holds modules, at its top left: a click
+ * expands it in place (or folds it again). It is not part of the card for
+ * dragging, selecting or the double-click that opens the module.
+ */
+function ExpandChevron({ id, expanded }: { id: string; expanded: boolean }) {
+  const { onToggleExpand } = useCanvasActions();
+  if (!onToggleExpand) return null;
+  const label = expanded ? "Fold: hide what is inside" : "Expand in place: show what is inside";
+  return (
+    <button
+      type="button"
+      className="node-chevron nodrag nopan"
+      aria-label={label}
+      aria-expanded={expanded}
+      data-tooltip={label}
+      data-tooltip-shortcut={expanded ? undefined : "Double-click: open"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleExpand(id);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} strokeWidth={2.25} aria-hidden />
+    </button>
+  );
+}
+
 function PortGroups({ shown, rest, all, mode }: { shown: PortGroup[]; rest: number; all: PortGroup[]; mode: Classification }) {
   if (!shown.length && !rest) return null;
   const folded = all.slice(shown.length);
@@ -89,7 +137,7 @@ function PortGroups({ shown, rest, all, mode }: { shown: PortGroup[]; rest: numb
         </span>
       ))}
       {rest > 0 && (
-        <span className="port-group muted" title={folded.map(chipText).join(" · ")}>
+        <span className="port-group muted" data-tooltip={folded.map(chipText).join(" · ")}>
           +{rest}
         </span>
       )}
@@ -105,12 +153,14 @@ export function ModuleNode({ data, selected }: NodeProps<ModuleNodeType>) {
   const chips = circle ? { shown: [], rest: 0 } : fitChips(node.label, box, data.groups, insets);
   return (
     <div
-      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}${node.missing ? " missing" : ""}`}
+      className={`module-card${circle ? " circle" : ""}${selected ? " selected" : ""}${node.missing ? " missing" : ""}${node.childCount ? " holds" : ""}`}
       style={{ width: box.w, height: box.h, ["--status" as string]: STATUS[node.status] }}
-      title={node.description}
+      {...describes(node.description)}
     >
+      {node.childCount ? <ExpandChevron id={node.id} expanded={false} /> : null}
+      {!circle && <DescriptionMark text={node.description} />}
       {data.mark ? (
-        <span className="status-dot mark" data-tone={data.mark.tone} data-tooltip={data.mark.label} role={data.mark.label ? "img" : undefined} aria-label={data.mark.label} />
+        <span className="status-dot mark" data-tone={data.mark.tone} data-shape={data.mark.shape === "ring" ? "ring" : undefined} data-tooltip={data.mark.label} data-tooltip-clamp={data.mark.label && data.mark.label.length > 48 ? "4" : undefined} role={data.mark.label ? "img" : undefined} aria-label={data.mark.label} />
       ) : (
         <span className="status-dot" style={{ background: STATUS[node.status] }} />
       )}
@@ -132,6 +182,7 @@ export function ContainerNode({ data, selected }: NodeProps<ContainerNodeType>) 
     <div className={`module-container${group ? " is-group" : ""}${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h }}>
       {/* not position: relative, so its ports are placed from the node wrapper (no border offset) */}
       <div className="container-label">
+        {!group && node.childCount ? <ExpandChevron id={node.id} expanded /> : null}
         <Icon name={node.icon} size={12} strokeWidth={1.8} />
         <span>{node.label}</span>
         <span className="container-kind">{group ? "GROUP" : "MODULE"}</span>
@@ -159,7 +210,7 @@ export function HarnessNode({ data, selected }: NodeProps<HarnessNodeType>) {
   const { node, box } = data;
   const color = data.ports[0] ? portColor(data.ports[0], data.mode) : "var(--uhd-text-muted)";
   return (
-    <div className={`harness-node${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }} title={node.description}>
+    <div className={`harness-node${selected ? " selected" : ""}`} style={{ width: box.w, height: box.h, borderColor: color }} {...describes(node.description)}>
       <Icon name={node.icon} size={12} color={color} />
       <span className="harness-name">{node.label}</span>
       <span className="harness-kind">HARNESS</span>
@@ -181,7 +232,7 @@ export function NetNode({ data, selected }: NodeProps<NetNodeType>) {
     <div
       className={`net-node${selected ? " selected" : ""}${net.ground ? " ground" : ""}`}
       style={{ width: box.w, height: box.h, borderColor: color, ["--status" as string]: STATUS[node.status] }}
-      title={node.description}
+      {...describes(node.description)}
     >
       <span className="net-name" style={{ color }}>
         {node.label}

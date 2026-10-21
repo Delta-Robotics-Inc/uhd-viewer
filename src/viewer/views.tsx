@@ -5,8 +5,8 @@
  * none of them is app chrome.
  */
 import { memo, useState, type ReactNode } from "react";
-import { useReactFlow } from "@xyflow/react";
-import { Canvas, fitPadding } from "../canvas/Canvas";
+import { Canvas } from "../canvas/Canvas";
+import { TOOL_OPTIONS, type CanvasTool } from "../canvas/interaction";
 import { Icon } from "../canvas/Icon";
 import { PairView } from "../chrome/PairView";
 import { Inspector, NodeMenu } from "../chrome/Chrome";
@@ -59,8 +59,18 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, mis
         centre={c.centre}
         reveal={c.reveal}
         onNodeContext={c.onNodeContext}
+        onPaneContext={c.onPaneContext}
         marks={c.options.nodeMarks}
         isolation={c.isolation}
+        group={c.group}
+        onSelectChanges={c.onSelectChanges}
+        onSelectAll={c.onSelectAll}
+        onEscape={c.onEscape}
+        interaction={c.interaction}
+        onInteraction={c.onInteraction}
+        command={c.viewCommand}
+        viewport={c.viewport}
+        onViewport={c.onViewport}
       />
       {c.drawn.nodes.length === 0 && (
         <div className={cx("canvas-empty", covered && "covered-right")} role="status">
@@ -143,7 +153,47 @@ export const DETAIL_OPTIONS = [
   { id: "conductors", icon: "rows-3", label: "Ribbon: every conductor" },
 ] as const;
 
+/**
+ * The pointer's tool: select (a drag on the empty canvas draws a selection
+ * box) or pan (a drag moves the view). For a shell's own toolbar.
+ */
+export function ToolToggle({ tooltipSide = "top", size }: { tooltipSide?: "top" | "bottom" | "left" | "right"; size?: "sm" | "md" }) {
+  const c = useViewer();
+  return <ToolToggleView tool={c.tool} onTool={c.setTool} tooltipSide={tooltipSide} size={size} />;
+}
+
+function ToolToggleView({ tool, onTool, tooltipSide, size }: { tool: CanvasTool; onTool: (t: CanvasTool) => void; tooltipSide?: "top" | "bottom" | "left" | "right"; size?: "sm" | "md" }) {
+  return (
+    <div role="group" aria-label="Pointer" className="flex items-center gap-0.5">
+      {TOOL_OPTIONS.map((o) => (
+        <IconButton key={o.id} icon={o.icon} label={o.label} shortcut={o.shortcut} pressed={o.id === tool} tooltipSide={tooltipSide} size={size} onClick={() => onTool(o.id)} />
+      ))}
+    </div>
+  );
+}
+
+/** Fit and zoom, as the canvas does them (a fit asked for here is also what the level opens on next time). */
+export function ViewButtons({ tooltipSide = "top" }: { tooltipSide?: "top" | "bottom" | "left" | "right" }) {
+  const c = useViewer();
+  return <ViewButtonsView onFit={c.fitView} onZoomIn={c.zoomIn} onZoomOut={c.zoomOut} tooltipSide={tooltipSide} />;
+}
+
+function ViewButtonsView({ onFit, onZoomIn, onZoomOut, tooltipSide }: { onFit: () => void; onZoomIn: () => void; onZoomOut: () => void; tooltipSide?: "top" | "bottom" | "left" | "right" }) {
+  return (
+    <>
+      <IconButton icon="maximize" label="Fit view" shortcut="F" tooltipSide={tooltipSide} onClick={onFit} />
+      <IconButton icon="zoom-in" label="Zoom in" shortcut="+" tooltipSide={tooltipSide} onClick={onZoomIn} />
+      <IconButton icon="zoom-out" label="Zoom out" shortcut="-" tooltipSide={tooltipSide} onClick={onZoomOut} />
+    </>
+  );
+}
+
 interface DiagramToolbarViewProps {
+  tool: CanvasTool;
+  onTool: (t: CanvasTool) => void;
+  onFit: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   onReset: () => void;
   coveredRight: boolean;
   className?: string;
@@ -157,9 +207,10 @@ interface DiagramToolbarViewProps {
 }
 
 const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarViewProps) {
-  const flow = useReactFlow();
   return (
     <Toolbar label="Diagram tools" className={cx("toolbar", p.coveredRight && "covered-right", p.className)}>
+      <ToolToggleView tool={p.tool} onTool={p.onTool} tooltipSide="top" />
+      <ToolbarSeparator />
       {p.controls && (
         <>
           <ToggleGroup label="Classification" tooltipSide="top" options={CLASSIFICATION_OPTIONS} value={p.mode} onChange={p.onMode} />
@@ -169,9 +220,7 @@ const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarVie
           <ToolbarSeparator />
         </>
       )}
-      <IconButton icon="maximize" label="Fit view" tooltipSide="top" onClick={() => flow.fitView({ padding: fitPadding(p.coveredRight), maxZoom: 1.25, duration: 300 })} />
-      <IconButton icon="zoom-in" label="Zoom in" tooltipSide="top" onClick={() => flow.zoomIn({ duration: 200 })} />
-      <IconButton icon="zoom-out" label="Zoom out" tooltipSide="top" onClick={() => flow.zoomOut({ duration: 200 })} />
+      <ViewButtonsView onFit={p.onFit} onZoomIn={p.onZoomIn} onZoomOut={p.onZoomOut} tooltipSide="top" />
       <ToolbarSeparator />
       <IconButton icon="rotate-ccw" label="Reset layout of this level" tooltipSide="top" onClick={p.onReset} />
     </Toolbar>
@@ -183,6 +232,11 @@ export function DiagramToolbar({ coveredRight, className, controls = true }: { c
   const c = useViewer();
   return (
     <DiagramToolbarView
+      tool={c.tool}
+      onTool={c.setTool}
+      onFit={c.fitView}
+      onZoomIn={c.zoomIn}
+      onZoomOut={c.zoomOut}
       onReset={c.onReset}
       coveredRight={coveredRight ?? Boolean(c.panel)}
       className={className}
