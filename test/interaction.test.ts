@@ -28,8 +28,11 @@ describe("the pointer's tool", () => {
 
   it("pans with a left-drag while Space is held on the select tool, and selects again when it is released", () => {
     const held = interactionReducer(initialInteraction, { type: "space", down: true });
-    expect(interactionProps(held)).toEqual({ panOnDrag: [0, 1], selectionOnDrag: false, nodesDraggable: true, cursor: "grab" });
-    expect(interactionProps(interactionReducer(held, { type: "space", down: false })).selectionOnDrag).toBe(true);
+    // modules are not dragged while Space is held: a left-drag that starts on one pans (PB-1037)
+    expect(interactionProps(held)).toEqual({ panOnDrag: [0, 1], selectionOnDrag: false, nodesDraggable: false, cursor: "grab" });
+    const released = interactionProps(interactionReducer(held, { type: "space", down: false }));
+    expect(released.selectionOnDrag).toBe(true);
+    expect(released.nodesDraggable).toBe(true);
     // a key released while the window was away
     expect(interactionReducer(held, { type: "blur" })).toEqual(initialInteraction);
     // on the pan tool Space changes nothing

@@ -4,7 +4,8 @@
  * canvas's keys. No React and no DOM here, so the rules are tested as data.
  *
  * - Select (the default): a left-drag on the empty canvas draws a selection
- *   box; a middle-button drag pans; holding Space makes a left-drag pan.
+ *   box; a middle-button drag pans; holding Space makes a left-drag pan,
+ *   also one that starts on a module (modules are not dragged while it is held).
  * - Pan: a left-drag pans, also over modules (they are not dragged).
  * - The wheel and a pinch zoom with either tool.
  */
@@ -52,7 +53,8 @@ export interface InteractionProps {
 /** What React Flow is told for a state: the tool, and Space held over it. */
 export function interactionProps(state: InteractionState): InteractionProps {
   if (state.tool === "pan") return { panOnDrag: true, selectionOnDrag: false, nodesDraggable: false, cursor: "grab" };
-  if (state.space) return { panOnDrag: [LEFT, MIDDLE], selectionOnDrag: false, nodesDraggable: true, cursor: "grab" };
+  // Space held: a left-drag that starts on a module pans too, as with the pan tool (PB-1037)
+  if (state.space) return { panOnDrag: [LEFT, MIDDLE], selectionOnDrag: false, nodesDraggable: false, cursor: "grab" };
   return { panOnDrag: [MIDDLE], selectionOnDrag: true, nodesDraggable: true, cursor: "default" };
 }
 
