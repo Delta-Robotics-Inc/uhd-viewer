@@ -83,7 +83,7 @@ const SEVERITY_TEXT = { error: "text-error", warning: "text-warning", info: "tex
  * under the Protoboard theme). Swap these to restyle it.
  */
 export const HIERARCHY_LOOK = {
-  dock: "uhd-hierarchy-dock relative z-30 flex shrink-0 flex-col pt-[var(--uhd-inset-top,0px)]",
+  dock: "uhd-hierarchy-dock absolute inset-y-0 left-0 z-30 flex flex-col pt-[var(--uhd-inset-top,0px)]",
   panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden border-t border-r border-line bg-surface font-ui text-fg",
   rail: "flex min-h-0 flex-1 flex-col items-center gap-1 border-t border-r border-line bg-surface py-1",
   header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
@@ -121,7 +121,7 @@ function useKept(given: unknown, narrow: number): [HierarchyPanelState, (patch: 
   return [state, set];
 }
 
-/** The panel, docked at the left of the view (render it first inside the shell's workspace row). */
+/** The panel, docked at the left of the view: render it beside the shell's `.workspace` (its sibling, before it), which then starts after it. */
 export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, narrow = 640, className }: ViewerHierarchyProps) {
   const c = useViewer();
   const [kept, setKept] = useKept(given, narrow);
@@ -348,7 +348,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
 
   // resizing by the edge: a drag, or the arrow keys on the handle
   const dock = useRef<HTMLDivElement>(null);
-  // the views beside it start after it (the workspace's views are laid over it otherwise: app.css)
+  // the workspace beside it starts after it (`.workspace` reads the width: app.css)
   const docked = kept.open ? kept.width : RAIL_WIDTH;
   useLayoutEffect(() => {
     const parent = dock.current?.parentElement;

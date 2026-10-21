@@ -231,8 +231,8 @@ or one a row with the picture at the left below 264 px.
 
 **The hierarchy panel (PB-1042).** `ViewerHierarchy` is the module tree of
 the whole system (the root, its sub-modules, their parts and harnesses), docked
-at the left of the view: render it first in the shell's `workspace` row, before
-the canvas. Each row has the kind's icon, the host's mark (`nodeMarks`, as the
+at the left of the view: render it beside the shell's `.workspace` (its sibling,
+before it), and the workspace starts after it (`--uhd-dock-left`). Each row has the kind's icon, the host's mark (`nodeMarks`, as the
 diagram's dot) and the worst finding here or below. It follows the viewer: a
 click selects the module on the level that holds it, a double-click (or Enter
 on the selected row) drills into it, a selection on the canvas opens and
