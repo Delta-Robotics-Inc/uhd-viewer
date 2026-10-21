@@ -138,8 +138,21 @@ function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: numb
     const b = topOf(l.target.node);
     if (a && b && a !== b) edges.push([a, b]);
   }
+  // a block with no category (a concept's placeholder) gets the role its links give it: one that mostly
+  // supplies power feeds from the left, and the busiest block is the hub, so the reading order still holds
+  const lines = vm.links.filter((l) => !l.passThrough && !l.ground);
+  const busiest = top
+    .map((n) => ({ id: n.id, k: lines.filter((l) => topOf(l.source.node) === n.id || topOf(l.target.node) === n.id).length }))
+    .sort((a, b) => b.k - a.k || a.id.localeCompare(b.id))[0]?.id;
+  const hasHub = top.some((n) => /^(microcontroller|processor|compute|fpga|soc)\b/.test(n.category ?? ""));
+  const roleOf = (n: ViewNode): string | undefined => {
+    if (n.category) return n.category;
+    if (!hasHub && n.id === busiest) return "microcontroller";
+    const mine = lines.filter((l) => topOf(l.source.node) === n.id || topOf(l.target.node) === n.id);
+    return mine.length && mine.filter((l) => l.domain === "power" || /power/i.test(l.protocol)).length * 2 > mine.length ? "power" : undefined;
+  };
   const at = gridLayout(
-    top.map((n) => ({ id: n.id, ...sizes[n.id], category: n.category })),
+    top.map((n) => ({ id: n.id, ...sizes[n.id], category: roleOf(n) })),
     edges,
     { fixed: opts.fixed, seed: opts.seed },
   );

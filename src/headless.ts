@@ -192,9 +192,59 @@ export function proposeLevel(bundle: UhdBundle, level: string, opts: ProposeOpti
   }
   if (Object.keys(links).length) layout.links = links;
   if (pinned.length) layout.pinned = pinned;
-  const after = measureLevel(bundle, level, { ...opts, layout });
-  return { level, before, after, layout, better: readsBetter(after.metrics, before.metrics) };
+  const refined = before.view.nodes.some((n) => n.kind === "net") ? layout : refine(bundle, level, opts, layout, pinned);
+  const after = measureLevel(bundle, level, { ...opts, layout: refined });
+  return { level, before, after, layout: refined, better: readsBetter(after.metrics, before.metrics) };
 }
+
+/** Swaps tried at most when refining a level (the same count every run: the result does not depend on the machine). */
+export const REFINE_BUDGET = 120;
+/** Levels with more cards than this keep the grid's arrangement (each try routes the whole level). */
+export const REFINE_MAX_CARDS = 16;
+
+/**
+ * Refine a proposed layout on what the viewer actually draws: swap two
+ * cards' places (centre for centre) while that lowers the routed crossings,
+ * overlaps or line length (`reads`), up to REFINE_BUDGET tries. Pinned cards
+ * stay. Deterministic: pairs in id order, the first improvement taken.
+ */
+function refine(bundle: UhdBundle, level: string, opts: LevelOptions, start: PinnedLevelLayout, pinned: string[]): PinnedLevelLayout {
+  const ids = Object.keys(start.nodes)
+    .filter((id) => !id.includes("/") && !pinned.includes(id))
+    .sort();
+  if (ids.length < 3 || ids.length > REFINE_MAX_CARDS) return start;
+  let best = start;
+  let m = measureLevel(bundle, level, { ...opts, layout: best });
+  let score = reads(m.metrics);
+  let tries = 0;
+  let improved = true;
+  while (improved && tries < REFINE_BUDGET) {
+    improved = false;
+    for (let i = 0; i < ids.length && tries < REFINE_BUDGET; i++)
+      for (let j = i + 1; j < ids.length && tries < REFINE_BUDGET; j++) {
+        const a = m.layout.boxes[ids[i]];
+        const b = m.layout.boxes[ids[j]];
+        if (!a || !b) continue;
+        const snap = (v: number) => Math.round(v / 16) * 16;
+        const nodes = { ...best.nodes };
+        nodes[ids[i]] = { ...nodes[ids[i]], x: snap(b.x + b.w / 2 - a.w / 2), y: snap(b.y + b.h / 2 - a.h / 2) };
+        nodes[ids[j]] = { ...nodes[ids[j]], x: snap(a.x + a.w / 2 - b.w / 2), y: snap(a.y + a.h / 2 - b.h / 2) };
+        const next: PinnedLevelLayout = { ...best, nodes };
+        tries++;
+        const nm = measureLevel(bundle, level, { ...opts, layout: next });
+        const ns = reads(nm.metrics);
+        if (ns < score - 1e-6) {
+          best = next;
+          m = nm;
+          score = ns;
+          improved = true;
+        }
+      }
+  }
+  return best;
+}
+
+
 
 /**
  * Whether layout `a` reads clearly better than `b`: fewer problems (warnings,

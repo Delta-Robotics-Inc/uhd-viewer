@@ -195,6 +195,13 @@ describe("headless layout (the IMU pod fixture)", () => {
     expect(tidy.after.metrics.overlaps).toBe(0);
   });
 
+  it("gives the same proposal every time (the refinement has a fixed budget, not a clock)", () => {
+    const a = proposeLevel(bundle, "", { layout: null });
+    const b = proposeLevel(bundle, "", { layout: null });
+    expect(b.layout).toEqual(a.layout);
+    expect(reads(a.after.metrics)).toBeLessThanOrEqual(reads(measureLevel(bundle, "", { layout: null }).metrics));
+  });
+
   it("refuses a level that is not there", () => {
     expect(() => measureLevel(bundle, "nope")).toThrow(/no level "nope"/);
   });
