@@ -18,6 +18,10 @@
       "import": "./dist/components/index.js"
     },
     "./components.css": "./dist/components/components.css",
+    "./headless": {
+      "types": "./dist/headless/index.d.ts",
+      "import": "./dist/headless/index.js"
+    },
     "./tailwind-theme.css": "./src/styles/tailwind-theme.css",
     "./app/*": "./dist/app/*",
     "./serve": {
@@ -30,6 +34,7 @@
     "dist/app",
     "dist/lib",
     "dist/components",
+    "dist/headless",
     "src/styles/tailwind-theme.css",
     "bin",
     "README.md"
@@ -42,7 +47,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && npm run build:app && npm run build:lib && npm run build:components",
+    "build": "npm run type-check && npm run build:app && npm run build:lib && npm run build:components && npm run build:headless",
     "build:app": "vite build",
     "build:lib": "vite build --config vite.lib.config.ts && node scripts/build-types.mjs",
     "serve": "node bin/uhd-viewer.mjs serve",
@@ -50,7 +55,8 @@
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
     "prepack": "npm run build",
-    "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs"
+    "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs",
+    "build:headless": "vite build --config vite.headless.config.ts && node scripts/build-headless-types.mjs"
   },
   "peerDependencies": {
     "@deltarobotics/uhd": ">=0.2.1"
