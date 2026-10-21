@@ -37,7 +37,9 @@
     "dist/headless",
     "src/styles/tailwind-theme.css",
     "bin",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "publishConfig": {
     "registry": "http://127.0.0.1:4873/"
@@ -87,5 +89,10 @@
     "vite": "^8.3.1",
     "vitest": "^5.0.3"
   },
-  "license": "UNLICENSED"
+  "license": "Apache-2.0",
+  "author": "Delta Robotics, Inc.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Delta-Robotics-Inc/uhd-viewer.git"
+  }
 }
