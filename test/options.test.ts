@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UhdBundle } from "@uhd/types/bundle.js";
 import type { ViewerLayout, ViewerOptions } from "../src/api";
-import { mergeOptions, sameLayout } from "../src/options";
+import { hostViewportsChange, mergeOptions, sameLayout, sameViewports } from "../src/options";
 
 const bundle = { schema: "uhd.bundle/v0", root: "sys", definitions: [] } as unknown as UhdBundle;
 
@@ -54,5 +54,31 @@ describe("host layout", () => {
   it("sees a moved node and a pinned waypoint", () => {
     expect(sameLayout(edited, { positions: { "": { battery: { x: 490, y: 512 } } }, links: {} })).toBe(false);
     expect(sameLayout(edited, { ...edited, links: { "": { vbat: { waypoints: [[0, 0]] } } } })).toBe(false);
+  });
+});
+
+describe("host viewports (PB-1037)", () => {
+  const a = { "": { x: 10, y: 20, zoom: 1 }, board: { x: 0, y: 0, zoom: 0.5 } };
+  const b = { "": { x: -300, y: 40, zoom: 0.8 } };
+
+  it("the same viewports in another order are the same", () => {
+    expect(sameViewports(a, { board: { x: 0, y: 0, zoom: 0.5 }, "": { x: 10, y: 20, zoom: 1 } })).toBe(true);
+    expect(sameViewports(undefined, {})).toBe(true);
+    expect(sameViewports(a, b)).toBe(false);
+    expect(sameViewports(a, undefined)).toBe(false);
+  });
+
+  it("a later update({ viewports }) replaces the viewer's; what it was sent, passed back, does not", () => {
+    // another project's viewports (or none, which fits the new diagram)
+    expect(hostViewportsChange({ hosted: true, wasHosted: true, host: b, known: a })).toBe("replace");
+    expect(hostViewportsChange({ hosted: true, wasHosted: true, host: undefined, known: a })).toBe("replace");
+    // the host passing back what it was sent
+    expect(hostViewportsChange({ hosted: true, wasHosted: true, host: { ...a }, known: a })).toBe("keep");
+  });
+
+  it("taking over or giving up keeping the viewports replaces them; without a host nothing changes", () => {
+    expect(hostViewportsChange({ hosted: true, wasHosted: false, host: b, known: undefined })).toBe("replace");
+    expect(hostViewportsChange({ hosted: false, wasHosted: true, host: undefined, known: a })).toBe("replace");
+    expect(hostViewportsChange({ hosted: false, wasHosted: false, host: b, known: undefined })).toBe("keep");
   });
 });
