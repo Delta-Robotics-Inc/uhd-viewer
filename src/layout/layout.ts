@@ -10,6 +10,7 @@ import { GridRouter, GRID, snap } from "./router";
 import { at, clearOfBends, lengths } from "../canvas/geometry";
 import type { LinkLayout } from "../api";
 import { boardLayout, freeSpot, hits } from "./board-layout";
+import { gridLayout } from "./module-layout";
 
 /** Distance kept between a corner and anything placed on a link (handles, toggles). */
 export const BEND_CLEAR = 28;
@@ -102,16 +103,60 @@ function sideFacing(from: Box, to: Pt): Side {
   return dy >= 0 ? "bottom" : "top";
 }
 
+/** How an automatic layout starts (PB-1007): cards that keep their places, and an earlier arrangement to keep. */
+export interface ArrangeOptions {
+  /** Top-level cards that stay where they are (top-left). */
+  fixed?: Record<string, { x: number; y: number }>;
+  /** Each top-level card's centre in an earlier layout: the arrangement to start from. */
+  seed?: Record<string, { x: number; y: number }>;
+  /** The old default (one row), for comparing against. */
+  legacy?: boolean;
+}
+
 /**
- * Auto layout for levels without a hand layout: modules in a centred row,
- * and each sheet port (the drilled-into module's boundary) on the canvas
- * edge nearest the child it exposes, stacked beside it.
+ * Auto layout for levels without a hand layout: modules in a grid shaped like
+ * a screen, each beside what it connects to (module-layout.ts), and each sheet
+ * port (the drilled-into module's boundary) on the canvas edge nearest the
+ * child it exposes, stacked beside it. A level with nets is laid out as a
+ * board (board-layout.ts).
  */
-function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: number }>): Record<string, Box> {
+function autoPositions(vm: ViewModel, sizes: Record<string, { w: number; h: number }>, opts: ArrangeOptions = {}): Record<string, Box> {
+  const top = vm.nodes.filter((n) => !n.parent && !n.sheetPort);
+  const sheets = vm.nodes.filter((n) => n.sheetPort);
+  if (top.some((n) => n.kind === "net")) {
+    const boxes = netPositions(vm, top, sheets, sizes);
+    for (const [id, p] of Object.entries(opts.fixed ?? {})) if (boxes[id]) Object.assign(boxes[id], p);
+    return boxes;
+  }
+  if (opts.legacy) return rowPositions(vm, sizes);
+  const ids = new Set(top.map((n) => n.id));
+  const topOf = (id: string) => (ids.has(id) ? id : [...ids].find((t) => id.startsWith(`${t}/`)));
+  const edges: [string, string][] = [];
+  for (const l of vm.links) {
+    if (l.passThrough || l.ground) continue;
+    const a = topOf(l.source.node);
+    const b = topOf(l.target.node);
+    if (a && b && a !== b) edges.push([a, b]);
+  }
+  const at = gridLayout(
+    top.map((n) => ({ id: n.id, ...sizes[n.id], category: n.category })),
+    edges,
+    { fixed: opts.fixed, seed: opts.seed },
+  );
+  const x0 = sheets.length ? 400 : 60;
+  const y0 = 100;
+  const boxes: Record<string, Box> = {};
+  const fixed = opts.fixed ?? {};
+  for (const n of top) boxes[n.id] = fixed[n.id] ? { ...fixed[n.id], ...sizes[n.id] } : { x: at[n.id].x + (Object.keys(fixed).length ? 0 : x0), y: at[n.id].y + (Object.keys(fixed).length ? 0 : y0), ...sizes[n.id] };
+  placeSheets(boxes, sheets, sizes, y0);
+  return boxes;
+}
+
+/** The layout before PB-1007: modules in one centred row (kept to measure against). */
+function rowPositions(vm: ViewModel, sizes: Record<string, { w: number; h: number }>): Record<string, Box> {
   const boxes: Record<string, Box> = {};
   const top = vm.nodes.filter((n) => !n.parent && !n.sheetPort);
   const sheets = vm.nodes.filter((n) => n.sheetPort);
-  if (top.some((n) => n.kind === "net")) return netPositions(vm, top, sheets, sizes);
   const gapX = 300;
   const rowY = 140;
   let x = sheets.length ? 460 : 60;
@@ -262,7 +307,7 @@ const CONTAINER_PAD = { left: 48, top: 64, right: 48, bottom: 48 };
  * the containers' sizes. A container the display file sizes, or whose
  * children it places, is left as it says.
  */
-function containerLayouts(vm: ViewModel, hand: LevelLayout | undefined, sizes: Record<string, { w: number; h: number }>): Record<string, { x: number; y: number }> {
+function containerLayouts(vm: ViewModel, hand: LevelLayout | undefined, sizes: Record<string, { w: number; h: number }>, arrange: ArrangeOptions = {}): Record<string, { x: number; y: number }> {
   const rel: Record<string, { x: number; y: number }> = {};
   const depth = (id: string) => {
     let d = 0;
@@ -280,7 +325,7 @@ function containerLayouts(vm: ViewModel, hand: LevelLayout | undefined, sizes: R
     if (missing.length === kids.length) {
       // none placed: the level's own automatic layout, moved into the container
       const sub: ViewModel = { ...vm, nodes: kids.map((k) => ({ ...k, parent: undefined })), links: vm.links.filter((l) => ids.has(l.source.node) && ids.has(l.target.node)) };
-      const at = autoPositions(sub, sizes);
+      const at = autoPositions(sub, sizes, { legacy: arrange.legacy });
       const minX = Math.min(...kids.map((k) => at[k.id].x));
       const minY = Math.min(...kids.map((k) => at[k.id].y));
       for (const k of kids) rel[k.id] = { x: snap(at[k.id].x - minX + CONTAINER_PAD.left), y: snap(at[k.id].y - minY + CONTAINER_PAD.top) };
@@ -360,14 +405,7 @@ export interface LiveLayout {
   links?: Set<string>;
 }
 
-export function computeLayout(
-  vm: ViewModel,
-  hand: LevelLayout | undefined,
-  overrides: Record<string, { x: number; y: number }>,
-  showGrounds: boolean,
-  linkOverrides?: Record<string, LinkLayout>,
-  live?: LiveLayout,
-): ComputedLayout {
+function linkedPortsOf(vm: ViewModel): Map<string, ViewLink[]> {
   const linkedPorts = new Map<string, ViewLink[]>();
   for (const link of vm.links) {
     for (const end of [link.source, link.target]) {
@@ -375,8 +413,11 @@ export function computeLayout(
       linkedPorts.set(key, [...(linkedPorts.get(key) ?? []), link]);
     }
   }
+  return linkedPorts;
+}
 
-  // sizes
+/** Each card's size before it is placed (a hand size wins), and the cards that grew wider than plain for their labels. */
+function baseSizes(vm: ViewModel, hand: LevelLayout | undefined, linkedPorts = linkedPortsOf(vm)) {
   const sizes: Record<string, { w: number; h: number }> = {};
   const up = (v: number) => Math.ceil(v / GRID) * GRID;
   /** Cards that grew wider than the plain card for their labels, with the plain width. */
@@ -390,6 +431,44 @@ export function computeLayout(
     sizes[node.id] = { w: up(hand0?.w ?? d.w), h: up(hand0?.h ?? d.h) };
     if (!hand0?.w && sizes[node.id].w > up(plain.w)) grown.set(node.id, up(plain.w));
   }
+  return { sizes, grown };
+}
+
+/**
+ * The automatic layout of a level as a hand layout (PB-1007, for a host that
+ * writes it to the display file): top-level nodes absolute, nodes inside an
+ * expanded module relative to it. `fixed` cards keep their places; a `seed`
+ * keeps an earlier arrangement where it can.
+ */
+export function arrangeLevel(vm: ViewModel, opts: ArrangeOptions = {}, keepSizes?: LevelLayout): LevelLayout {
+  // sizes set by hand (`keepSizes`) are kept; the places are all new
+  const sized: LevelLayout | undefined = keepSizes && {
+    nodes: Object.fromEntries(Object.entries(keepSizes.nodes).flatMap(([id, n]) => (n.w !== undefined || n.h !== undefined ? [[id, { ...(n.w !== undefined ? { w: n.w } : {}), ...(n.h !== undefined ? { h: n.h } : {}) }]] : []))),
+  };
+  const { sizes } = baseSizes(vm, sized);
+  const inner = containerLayouts(vm, sized, sizes, opts);
+  const boxes = autoPositions(vm, sizes, opts);
+  const nodes: LevelLayout["nodes"] = {};
+  for (const n of vm.nodes) {
+    if (n.tapOf) continue;
+    const p = n.parent ? inner[n.id] : boxes[n.id];
+    if (p) nodes[n.id] = { x: snap(p.x), y: snap(p.y) };
+  }
+  return { nodes };
+}
+
+export function computeLayout(
+  vm: ViewModel,
+  hand: LevelLayout | undefined,
+  overrides: Record<string, { x: number; y: number }>,
+  showGrounds: boolean,
+  linkOverrides?: Record<string, LinkLayout>,
+  live?: LiveLayout,
+  arrange?: ArrangeOptions,
+): ComputedLayout {
+  const linkedPorts = linkedPortsOf(vm);
+  const up = (v: number) => Math.ceil(v / GRID) * GRID;
+  const { sizes, grown } = baseSizes(vm, hand, linkedPorts);
   // a level the display file lays out placed its cards for the plain width: there a card grows only
   // into the room its neighbours on the right leave (three grid steps stay clear for the lines between them)
   if (hand) {
@@ -412,10 +491,10 @@ export function computeLayout(
   // modules expanded in place: their children's places inside them, and the size that holds them
   const collapsed: Record<string, { w: number; h: number }> = {};
   for (const n of vm.nodes) if (n.expanded) collapsed[n.id] = { ...sizes[n.id] };
-  const inner = containerLayouts(vm, hand, sizes);
+  const inner = containerLayouts(vm, hand, sizes, arrange);
 
   // positions (absolute)
-  const auto = hand ? fillMissing(vm, hand, sizes) : autoPositions(vm, sizes);
+  const auto = hand ? fillMissing(vm, hand, sizes) : autoPositions(vm, sizes, arrange);
   // a hand layout places the cards for their collapsed sizes: one that grew when expanded in place
   // makes room, moving the cards beside and below it by what it grew (not the ones the user dragged)
   const shift: Record<string, { x: number; y: number }> = {};
@@ -470,8 +549,8 @@ export function computeLayout(
   for (const node of vm.nodes) place(node);
   const kidsOf = (id: string) => vm.nodes.filter((n) => n.parent === id);
   const wrapContainers = () => {
+    // a size the display file gives is the least it draws at: it still holds its children (PB-1007)
     for (const node of vm.nodes.filter((n) => n.expanded)) {
-      if (hand?.nodes[node.id]?.w) continue;
       const kids = vm.nodes.filter((n) => n.parent === node.id).map((n) => boxes[n.id]);
       if (!kids.length) continue;
       const b = boxes[node.id];
