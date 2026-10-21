@@ -663,3 +663,21 @@ selects there and is reported. It writes two PNGs (with page rasterization on th
 CPU: in software GL a frame on another origin otherwise keeps stale tiles of
 earlier levels in its screenshots, nodes that are not in the DOM) and
 `messages-summary.json`, and exits 1 on any failure.
+
+## Licence
+
+uhd-viewer is part of Protoboard Stack and open source under the
+[Apache License 2.0](LICENSE), like [UHD](https://github.com/Delta-Robotics-Inc/OpenUHD).
+[NOTICE](NOTICE) holds the copyright notice; the npm package carries both
+files. Contributions are welcome under the same licence, with a Developer
+Certificate of Origin sign-off (`git commit -s`) and no CLA: see
+[CONTRIBUTING.md](CONTRIBUTING.md). "Protoboard", its logo and the "0" mark
+are trademarks of Delta Robotics, Inc.: see [TRADEMARKS.md](TRADEMARKS.md)
+(a draft under legal review).
+
+### Open source and the Protoboard cloud
+
+The viewer is Apache-2.0 and knows only UHD: it draws any bundle it is given
+and needs no account or service. The hosted Protoboard cloud (the parts
+library and its content, accounts and the cloud services) is a separate
+service run by Delta Robotics with its own terms, not covered by this licence.
