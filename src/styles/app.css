@@ -1610,6 +1610,8 @@ body {
 .workspace {
   position: absolute;
   inset: 0;
+  /* the hierarchy docked at its left (viewer/hierarchy.tsx) says its width: the workspace starts beside it */
+  left: var(--uhd-dock-left, 0px);
 }
 .workspace > .canvas,
 .workspace > .cad-view {

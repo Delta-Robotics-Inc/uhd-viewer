@@ -415,6 +415,12 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
       setMenu(null);
       switch (m.type) {
         case "uhd-viewer:focus": {
+          // on the 3D tab: selected and framed in the view as it is scoped (QA B4), as a click in the hierarchy
+          if (shownView === "3d") {
+            setPanel((p) => p ?? "hierarchy");
+            focusRef.current(m.path);
+            return;
+          }
           const t = focusTarget(sys, lookup, m.path, { drill: d, expanded: ex });
           setDrill(sameDrill(t.drill));
           setSelection(t.selection);
@@ -458,7 +464,11 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     host.emit({ type: "uhd-viewer:ready" });
   }, [host]);
   // every selection change, in the view on screen, once
-  const diagramSelection = useMemo(() => hostSelection(vm, drill, selection, levelDef.id), [vm, drill, selection, levelDef]);
+  // (modules selected together are said too, every one: the host's inspector lists them, QA B10)
+  const diagramSelection = useMemo(
+    () => (group.length > 1 ? { kind: "node" as const, id: fullId(drill, group[0]), ids: group.map((g) => fullId(drill, g)) } : hostSelection(vm, drill, selection, levelDef.id)),
+    [vm, drill, selection, group, levelDef],
+  );
   const shown = view === "3d" ? cadSelection : diagramSelection;
   const sentSelection = useRef("");
   useEffect(() => {
@@ -467,6 +477,30 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     sentSelection.current = key;
     host.emit({ type: "uhd-viewer:selectionChanged", selection: shown });
   }, [host, shown]);
+  /**
+   * Show a module by its path from the root, as the hierarchy panel asks (PB-1042, QA B4). On the diagram: the
+   * level that holds it, with it selected and brought into view. On the 3D tab: selected and framed in the 3D
+   * view as it is scoped now (the drill level is the 3D view's scope: changing it would show another module); a
+   * module outside that scope takes the view back to the whole assembly first. The root: nothing selected.
+   */
+  const focusPath = useCallback((path: string) => {
+    const { system: sys, lookup, drill: d, expanded: ex, view: shownView } = latest.current;
+    const n = ++seq.current;
+    setPairLink(null);
+    if (shownView === "3d") {
+      const scope = d.join("/");
+      const inside = !scope || path === scope || path.startsWith(`${scope}/`);
+      if (!inside) setDrill((cur) => (cur.length ? [] : cur));
+      setCadFocus(path === "" || path === scope ? { path, seq: n, kind: "none" } : { path, seq: n });
+      return;
+    }
+    const t = focusTarget(sys, lookup, path, { drill: d, expanded: ex });
+    setDrill((cur) => (cur.join("/") === t.drill.join("/") ? cur : t.drill));
+    setSelection(t.selection);
+    if (t.selection) setCentre({ id: t.selection.id, seq: n });
+  }, [setSelection]);
+  const focusRef = useRef(focusPath);
+  focusRef.current = focusPath;
   const onCadSelect = useCallback(
     (s: CadSelection) => setCadSelection(cadHostSelection(s, (path) => defAt(system, scenario.lookup, path))),
     [system, scenario],
@@ -604,6 +638,9 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     reveal,
     cadFocus,
     onCadSelect,
+    // the 3D view's selection, as the host hears it (paths from the root)
+    cadSelection,
+    focusPath,
     hostActions,
     onOpenNode,
     onNodeContext,

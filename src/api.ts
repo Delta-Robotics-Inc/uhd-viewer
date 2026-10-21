@@ -193,6 +193,11 @@ export interface ViewerSelection {
   id: string;
   /** The selected module's definition id (a link's: the module that declares it). */
   defId?: string;
+  /**
+   * Modules selected together (a selection box, Shift- or Ctrl-click, select all), two or more: every one, by
+   * path from the root. `id` is the first of them.
+   */
+  ids?: string[];
 }
 
 /** Host → viewer messages (`window.postMessage`, or the handle's methods). */

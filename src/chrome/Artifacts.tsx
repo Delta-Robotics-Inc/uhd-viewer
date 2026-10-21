@@ -12,7 +12,7 @@ import { glbFor } from "../cad/model";
 import { cadWrapper, createScene, loadGlb, materialFor } from "../cad/scene";
 import type { Appearance } from "../source/source";
 import { circuitOutputs, isBoardDrawing } from "../model/outputs";
-import { artifactCards } from "../model/artifacts";
+import { artifactCards, isInternalArtifact } from "../model/artifacts";
 import { ArtifactCards } from "./ArtifactCards";
 import { useHost } from "../host/context";
 
@@ -143,7 +143,7 @@ export function ArtifactsSection({ def, resolve, appearance, titled = true }: { 
   if (!thumb && !glb && !cards.length) return null;
   return (
     <>
-      {titled && <div className="section-title">ARTIFACTS · {(def.artifacts ?? []).filter((a) => (a.filePath || a.url) && !board.has(a)).length}</div>}
+      {titled && <div className="section-title">ARTIFACTS · {(def.artifacts ?? []).filter((a) => (a.filePath || a.url) && !board.has(a) && !isInternalArtifact(a)).length}</div>}
       {thumb && <Thumbnail defId={def.id} artifactId={thumb.id} url={urlOf(def, thumb, resolve)} name={thumb.name} remote={!thumb.filePath} />}
       {glb && <CadPreview def={def} url={urlOf(def, glb, resolve)} appearance={appearance} />}
       <ArtifactCards cards={cards} />

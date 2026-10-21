@@ -140,6 +140,13 @@ describe("the view a level opens on", () => {
     expect(firstView({ ...base, sized: false, saved: { x: 0, y: 0, zoom: 1 } })).toEqual({ kind: "keep" });
   });
 
+  it("fits again when the canvas changes size (the hierarchy docked beside it, or folded), until the user moves the view", () => {
+    const fitted = { ...base, fittedKey: "a|b", fittedSize: "1400x860" };
+    expect(firstView({ ...fitted, size: "1400x860" })).toEqual({ kind: "keep" });
+    expect(firstView({ ...fitted, size: "1120x860" })).toEqual({ kind: "fit" });
+    expect(firstView({ ...fitted, size: "1120x860", moved: true })).toEqual({ kind: "keep" });
+  });
+
   it("fits again when modules come or go, until the user moves the view", () => {
     expect(firstView({ ...base, fittedKey: "a|b" })).toEqual({ kind: "keep" });
     // an empty project gets its first modules; then one more

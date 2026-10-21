@@ -286,16 +286,19 @@ export function Canvas(props: CanvasProps) {
   const saved = useRef(props.viewport);
   const restored = useRef(false);
   const fittedKey = useRef<string | null>(null);
+  const fittedSize = useRef<string | null>(null);
   const nodesKey = useMemo(() => vm.nodes.map((n) => n.id).sort().join("|"), [vm]);
   const padding = fitPadding(inspector ?? false);
   useEffect(() => {
-    const step = firstView({ saved: saved.current, restored: restored.current, moved: moved.current, nodesKey, fittedKey: fittedKey.current, sized: Boolean(drawn && paneWidth && paneHeight) });
+    const size = `${Math.round(paneWidth)}x${Math.round(paneHeight)}`;
+    const step = firstView({ saved: saved.current, restored: restored.current, moved: moved.current, nodesKey, fittedKey: fittedKey.current, sized: Boolean(drawn && paneWidth && paneHeight), size, fittedSize: fittedSize.current });
     if (step.kind === "restore") {
       restored.current = true;
       void flow.setViewport(step.viewport);
     } else if (step.kind === "fit") {
       const first = fittedKey.current === null;
       fittedKey.current = nodesKey;
+      fittedSize.current = size;
       void flow.fitView({ padding, maxZoom: 1.25, duration: first ? 0 : 300 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -317,6 +320,7 @@ export function Canvas(props: CanvasProps) {
         saved.current = undefined;
         moved.current = false;
         fittedKey.current = nodesKey;
+        fittedSize.current = null;
         onViewport?.(null);
         void flow.fitView({ padding, maxZoom: 1.25, duration: 300 });
       } else {

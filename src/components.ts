@@ -41,11 +41,40 @@ export { openAction } from "./viewer/controller";
 export { cardWidth, labelIsCut, CARD_W, CARD_W_MAX } from "./layout/card-body";
 export { DiagramCanvas, DiagramToolbar, ToolToggle, ViewButtons, DiagramLegend, DiagramLegendItems, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
+// the module tree, docked at the left of the view (PB-1042), and its model
+export { ViewerHierarchy, HierarchyToggle, RAIL_WIDTH, HIERARCHY_LOOK, type ViewerHierarchyProps, type HierarchyCommand } from "./viewer/hierarchy";
+export {
+  buildHierarchy,
+  filterHierarchy,
+  visibleRows,
+  treeKey,
+  selectedPath,
+  rowTarget,
+  drillInto,
+  revealPaths,
+  ancestorsOf,
+  hierarchyIndex,
+  walkHierarchy,
+  panelState,
+  groupWiring,
+  markLegend,
+  WIRING_PATH,
+  kindOf,
+  KIND_ICON,
+  KIND_LABEL as HIERARCHY_KIND_LABEL,
+  HIERARCHY_WIDTH,
+  type HierarchyNode,
+  type HierarchyKind,
+  type HierarchyRow,
+  type HierarchyPanelState,
+  type HierarchyOptions,
+  type TreeKeyResult,
+} from "./model/hierarchy";
 // the inspector's details on their own, for a host with an inspector of its own
 export { SelectionDetails, type SelectionDetailsProps, type DetailsTarget } from "./viewer/details";
 export { ArtifactCard, ArtifactCards, ArtifactGrid, type ArtifactCardProps } from "./chrome/ArtifactCards";
 export { EvidenceSection } from "./chrome/Evidence";
-export { artifactCard, artifactCards, classifyArtifact, evidenceSourceCards, groupArtifactCards, ARTIFACT_GROUPS, type ArtifactCardModel, type ArtifactCardOptions, type ArtifactGroup, type ArtifactKind, type ArtifactPreview, type ArtifactSourceRow } from "./model/artifacts";
+export { artifactCard, artifactCards, mergeFormats, isInternalArtifact, classifyArtifact, evidenceSourceCards, groupArtifactCards, ARTIFACT_GROUPS, type ArtifactCardModel, type ArtifactCardOptions, type ArtifactGroup, type ArtifactKind, type ArtifactPreview, type ArtifactSourceRow } from "./model/artifacts";
 export type { EvidenceFiles, SourceRow, Verification } from "./model/evidence";
 export { HostContext, type HostActions } from "./host/context";
 

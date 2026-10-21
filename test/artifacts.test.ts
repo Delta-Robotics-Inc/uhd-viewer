@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ArtifactDef, ModuleDef } from "@uhd/types/index.js";
 import type { UhdBundle } from "@uhd/types/bundle.js";
-import { artifactCards, classifyArtifact, evidenceSourceCards, groupArtifactCards, hostOf } from "../src/model/artifacts";
+import { artifactCards, classifyArtifact, evidenceSourceCards, groupArtifactCards, hostOf, isInternalArtifact } from "../src/model/artifacts";
 import { SelectionDetails } from "../src/viewer/details";
 import fixture from "../fixtures/imu-pod/uhd-bundle.json";
 
@@ -37,8 +37,8 @@ describe("artifact cards", () => {
     art({ id: "nothing", name: "No file" }),
   ]);
 
-  it("makes one card of every artifact that has a file or an address, none left out", () => {
-    const cards = artifactCards(def, files);
+  it("makes one card of every artifact that has a file or an address, none left out (with internal geometry asked for, and one card a format)", () => {
+    const cards = artifactCards(def, files, { internal: true, mergeFormats: false });
     expect(cards).toHaveLength(14);
     expect(new Set(cards.map((c) => c.artifactId)).size).toBe(14);
     expect(groupArtifactCards(cards).map((g) => [g.id, g.cards.map((c) => c.artifactId)])).toEqual([
@@ -52,8 +52,19 @@ describe("artifact cards", () => {
     ]);
   });
 
+  it("leaves a part's internal geometry out, and makes one card of one model in several formats (QA B2)", () => {
+    const cards = artifactCards(def, files);
+    expect(cards.map((c) => c.artifactId)).not.toContain("if_usb");
+    const models = groupArtifactCards(cards).find((g) => g.id === "models")!.cards;
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({ artifactId: "step", title: "Part", format: "STEP · GLB", also: [{ artifactId: "glb", format: "GLB", href: "file:///part/cad/part.glb" }] });
+    expect(cards).toHaveLength(12);
+    expect(isInternalArtifact({ role: "interface" })).toBe(true);
+    expect(isInternalArtifact({ role: "body" })).toBe(false);
+  });
+
   it("says what each is and where it comes from", () => {
-    const by = Object.fromEntries(artifactCards(def, files).map((c) => [c.artifactId, c]));
+    const by = Object.fromEntries(artifactCards(def, files, { internal: true, mergeFormats: false }).map((c) => [c.artifactId, c]));
     expect(by.ds).toMatchObject({ kind: "datasheet", kindLabel: "Datasheet", format: "PDF", source: "analog.com", remote: true, href: "https://www.analog.com/media/DS18B20.pdf" });
     expect(by.page).toMatchObject({ kind: "document", kindLabel: "Web page", source: "adafruit.com" });
     expect(by.step).toMatchObject({ kind: "model", kindLabel: "STEP model", source: "part.step", sourceNote: "build123d 0.13.0", remote: false, href: "file:///part/cad/part.step" });
@@ -70,7 +81,7 @@ describe("artifact cards", () => {
   });
 
   it("shows an image as itself, and a model only by the picture the host gives", () => {
-    const by = (o?: Parameters<typeof artifactCards>[2]) => Object.fromEntries(artifactCards(def, files, o).map((c) => [c.artifactId, c.preview]));
+    const by = (o?: Parameters<typeof artifactCards>[2]) => Object.fromEntries(artifactCards(def, files, { mergeFormats: false, ...o }).map((c) => [c.artifactId, c.preview]));
     const plain = by();
     expect(plain.thumb).toEqual({ kind: "image", src: "file:///part/img/part.png" });
     expect(plain.sch).toEqual({ kind: "image", src: "file:///part/out/schematic.svg" });

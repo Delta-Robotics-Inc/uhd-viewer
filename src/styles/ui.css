@@ -74,3 +74,39 @@
     border-left-style: solid;
   }
 }
+
+/* The hierarchy panel's part mark (viewer/hierarchy.tsx): the same tones as the diagram's corner dot
+ * (ViewerOptions.nodeMarks; --uhd-mark-<tone>, else the severity colour). */
+.uhd-tree-mark {
+  --mark: var(--uhd-mark-neutral, var(--uhd-text-faint));
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mark);
+  outline: 1px solid var(--uhd-contrast-border, transparent);
+  outline-offset: 1px;
+}
+.uhd-tree-mark[data-tone="info"] {
+  --mark: var(--uhd-mark-info, var(--uhd-severity-info));
+}
+.uhd-tree-mark[data-tone="ok"] {
+  --mark: var(--uhd-mark-ok, var(--uhd-severity-ok));
+}
+.uhd-tree-mark[data-tone="warning"] {
+  --mark: var(--uhd-mark-warning, var(--uhd-severity-warning));
+}
+.uhd-tree-mark[data-tone="error"] {
+  --mark: var(--uhd-mark-error, var(--uhd-severity-error));
+}
+.uhd-tree-mark[data-shape="ring"] {
+  width: 9px;
+  height: 9px;
+  background: transparent;
+  border: 1.5px dashed var(--mark);
+  outline: none;
+}
+/* the panel's input starts bare in a host without Preflight */
+.uhd-hierarchy-dock input {
+  font: inherit;
+  appearance: none;
+}

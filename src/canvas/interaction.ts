@@ -162,17 +162,23 @@ export interface FirstViewState {
   fittedKey: string | null;
   /** The canvas has a size (a tab opened in the background has none yet). */
   sized: boolean;
+  /** The canvas's size now and at the last automatic fit (`w×h`): a panel docked beside it or folded changes it. */
+  size?: string;
+  fittedSize?: string | null;
 }
 
 /**
  * What the canvas does with its view when it opens or its modules change:
  * a saved viewport is put back, once; with none, the diagram is fitted, and
- * fitted again when modules come or go, until the user moves the view.
+ * fitted again when modules come or go or the canvas changes size (a panel
+ * docked beside it opens or folds), until the user moves the view.
  */
 export function firstView(s: FirstViewState): { kind: "restore"; viewport: Viewport } | { kind: "fit" } | { kind: "keep" } {
   if (!s.sized) return { kind: "keep" };
   if (s.saved) return s.restored ? { kind: "keep" } : { kind: "restore", viewport: s.saved };
-  if (s.moved || !s.nodesKey || s.nodesKey === s.fittedKey) return { kind: "keep" };
+  if (s.moved || !s.nodesKey) return { kind: "keep" };
+  // the same modules in a canvas of the same size: the fit stands
+  if (s.nodesKey === s.fittedKey && (s.size === undefined || s.size === s.fittedSize)) return { kind: "keep" };
   return { kind: "fit" };
 }
 

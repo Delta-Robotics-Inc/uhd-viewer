@@ -172,4 +172,4 @@ export function linkOwner(vm: ViewModel, linkId: string, levelDefId?: string): s
 const withDef = (defId?: string) => (defId ? { defId } : {});
 
 /** Selections compare by content (the host hears each change once). */
-export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}` : "");
+export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}|${s.ids?.join(",") ?? ""}` : "");
