@@ -229,11 +229,14 @@ export function filterHierarchy(nodes: readonly HierarchyNode[], text: string): 
   if (!ws.length) return { nodes: [...nodes], expanded, matches };
   const hay = (n: HierarchyNode) => [n.label, n.defName, n.path, n.defId, KIND_LABEL[n.kind]].join(" ").toLowerCase();
   const visit = (n: HierarchyNode): HierarchyNode | undefined => {
+    // the children are looked at even below a module that matches: a match inside it opens it, and is not
+    // left folded and dimmed under its parent (an arm that matches "motor" by its definition hid its motor)
+    const kept = n.children.map(visit).filter((c): c is HierarchyNode => !!c);
     if (ws.every((w) => hay(n).includes(w))) {
       matches.add(n.path);
+      if (kept.length) expanded.add(n.path);
       return n;
     }
-    const kept = n.children.map(visit).filter((c): c is HierarchyNode => !!c);
     if (!kept.length) return undefined;
     expanded.add(n.path);
     return { ...n, children: kept };

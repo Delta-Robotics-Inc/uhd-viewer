@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 /**
  * The hierarchy panel's model (PB-1042): the tree of every level, kinds and
  * icons, marks and findings, the filter, the rows on screen, the keyboard, and
@@ -207,6 +208,11 @@ describe("filter and rows", () => {
     // a matching module keeps its children
     const b = filterHierarchy(tree, "board").nodes[0].children[0];
     expect(b.children).toHaveLength(8);
+    // and what matches inside it shows: the module opens, and its matching children are matches, not dimmed rows
+    const inside = filterHierarchy(tree, "board");
+    expect(inside.matches.has("board")).toBe(true);
+    expect(inside.matches.has("board/u1")).toBe(true);
+    expect(inside.expanded.has("board")).toBe(true);
     expect(filterHierarchy(tree, "  ").nodes).toEqual(tree);
   });
 });
@@ -304,5 +310,19 @@ describe("what a tab keeps", () => {
     expect(panelState({ open: "yes", width: "wide", expanded: [1, "a"] })).toEqual({ open: true, width: HIERARCHY_WIDTH.default, expanded: ["a"] });
     expect(panelState({ width: 10_000 }).width).toBe(HIERARCHY_WIDTH.max);
     expect(panelState({ width: 3 }).width).toBe(HIERARCHY_WIDTH.min);
+  });
+});
+
+describe("the panel beside a narrow view (UI QA phase 3)", () => {
+  // no DOM in these tests: the panel's source says it
+  const panel = readFileSync(new URL("../src/viewer/hierarchy.tsx", import.meta.url), "utf8");
+  it("never takes more than the share a drag allows, whatever width it kept", () => {
+    expect(panel).toMatch(/const shownWidth = clampWidth\(kept\.width, Math\.max\(HIERARCHY_WIDTH\.min, viewWidth \* 0\.6\)\)/);
+    expect(panel).toMatch(/style=\{\{ width: shownWidth \}/);
+    expect(panel).toMatch(/window\.addEventListener\("resize", measure\)/);
+  });
+  it("folds when the view becomes narrow, and opens again when it is wide, if it folded itself", () => {
+    expect(panel).toMatch(/if \(wasWide\.current && !wide && kept\.open\) \{\s+autoFolded\.current = true;\s+setKept\(\{ open: false \}\)/);
+    expect(panel).toMatch(/else if \(!wasWide\.current && wide && autoFolded\.current && !kept\.open\)/);
   });
 });

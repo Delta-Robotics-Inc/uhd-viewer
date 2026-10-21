@@ -123,9 +123,15 @@ export function canvasCommand(e: KeyLike, grid = 16): CanvasCommand | undefined 
   }
 }
 
-/** Keys typed into a field, or pressed on a control that uses them, are not the canvas's. */
+/**
+ * Keys typed into a field, or pressed on a control that uses them, are not the
+ * canvas's: a menu, and a tree or list that walks its rows with the arrows and
+ * filters as you type (the hierarchy panel). The canvas listens on the window
+ * before them, so without this an arrow on a hierarchy row nudged the selected
+ * module and a letter switched the tool (UI QA phase 3).
+ */
 export function typingTarget(target: { closest?: (selector: string) => unknown } | null | undefined): boolean {
-  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu']"));
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='tree'], [role='listbox'], [role='grid']"));
 }
 
 /**

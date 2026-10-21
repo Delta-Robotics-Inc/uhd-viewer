@@ -348,8 +348,39 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
 
   // resizing by the edge: a drag, or the arrow keys on the handle
   const dock = useRef<HTMLDivElement>(null);
+  // The view's width, followed: the panel never takes more than the share a drag allows (a tab split in two, a
+  // narrower window), and a view that becomes narrow folds it as one opened narrow starts folded, opening it
+  // again when the view is wide again, unless the user changed it meanwhile (UI QA phase 3: a split tab kept a
+  // 280 px panel beside a 110 px canvas)
+  const [viewWidth, setViewWidth] = useState(() => (typeof window === "undefined" ? Infinity : window.innerWidth));
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const measure = () => setViewWidth(dock.current?.parentElement?.clientWidth || window.innerWidth);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  const autoFolded = useRef(false);
+  const wasWide = useRef(viewWidth >= narrow);
+  useEffect(() => {
+    const wide = viewWidth >= narrow;
+    if (wasWide.current && !wide && kept.open) {
+      autoFolded.current = true;
+      setKept({ open: false });
+    } else if (!wasWide.current && wide && autoFolded.current && !kept.open) {
+      autoFolded.current = false;
+      setKept({ open: true });
+    }
+    wasWide.current = wide;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewWidth, narrow]);
+  // a fold or an open by the user is theirs: the view no longer reopens it by itself
+  useEffect(() => {
+    if (wasWide.current || kept.open) autoFolded.current = autoFolded.current && !kept.open;
+  }, [kept.open]);
+  const shownWidth = clampWidth(kept.width, Math.max(HIERARCHY_WIDTH.min, viewWidth * 0.6));
   // the workspace beside it starts after it (`.workspace` reads the width: app.css)
-  const docked = kept.open ? kept.width : RAIL_WIDTH;
+  const docked = kept.open ? shownWidth : RAIL_WIDTH;
   useLayoutEffect(() => {
     const parent = dock.current?.parentElement;
     if (!parent) return;
@@ -361,7 +392,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
     if (e.button !== 0) return;
     e.preventDefault();
     const x0 = e.clientX;
-    const w0 = kept.width;
+    const w0 = shownWidth;
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => setKept({ width: clampWidth(w0 + ev.clientX - x0, room()) });
@@ -378,7 +409,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
     const step = e.shiftKey ? 48 : 16;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      setKept({ width: clampWidth(kept.width + (e.key === "ArrowRight" ? step : -step), room()) });
+      setKept({ width: clampWidth(shownWidth + (e.key === "ArrowRight" ? step : -step), room()) });
     } else if (e.key === "Home") {
       e.preventDefault();
       setKept({ width: HIERARCHY_WIDTH.default });
@@ -409,7 +440,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   }
 
   return (
-    <div ref={dock} className={cx(L.dock, className)} style={{ width: kept.width } as CSSProperties} data-hierarchy="open">
+    <div ref={dock} className={cx(L.dock, className)} style={{ width: shownWidth } as CSSProperties} data-hierarchy="open">
       <section id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
         <header className={L.header}>
           <span className={L.title}>
@@ -481,7 +512,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
         aria-label="Resize the hierarchy"
         aria-valuemin={HIERARCHY_WIDTH.min}
         aria-valuemax={HIERARCHY_WIDTH.max}
-        aria-valuenow={kept.width}
+        aria-valuenow={shownWidth}
         aria-controls="uhd-hierarchy"
         tabIndex={0}
         onPointerDown={onResizeStart}
