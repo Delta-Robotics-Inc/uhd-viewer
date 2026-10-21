@@ -144,7 +144,7 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/canvas/routing.ts` | Pure geometry: orthogonal routes, fillets, and parallel offsets. |
 | `src/canvas/*.tsx` | Nodes, ports, the link edge, and the canvas. |
 | `src/chrome/Chrome.tsx` | The inspector (selection, hierarchy, system checks) and a module's context menu. |
-| `src/viewer/` | The viewer's state (`controller.tsx`: `UhdViewer`, `useViewer`), its views (`views.tsx`: `DiagramCanvas`, `Scene3D`, `ViewerInspector`, toolbar, legend) and `renderViewer` (`mount.tsx`, the host channel). |
+| `src/viewer/` | The viewer's state (`controller.tsx`: `UhdViewer`, `useViewer`), its views (`views.tsx`: `DiagramCanvas`, `Scene3D`, `ViewerInspector`, toolbar, legend; `hierarchy.tsx`: `ViewerHierarchy`) and `renderViewer` (`mount.tsx`, the host channel). |
 | `src/ui/` | Primitives: `Toolbar`, `IconButton`, `ToggleGroup`, `Legend`, `InspectorPanel` and friends, `ScrollArea` (Radix), the tooltip layer. |
 | `src/theme/` | The theme-token contract (`tokens.ts`), the default themes, the adapters (default, VS Code), `ThemeProvider`. |
 | `src/app/` | The plain standalone app: its chrome (header, activity rail), `App.tsx` and `main.tsx`. |
@@ -228,6 +228,23 @@ preview) stay above the cards. `artifactCards(def, resolve, options)`
 `ArtifactGrid` and `ArtifactCards` draw it. The cards' layout follows the
 room there is (a container query in `src/styles/ui.css`): two or more a row,
 or one a row with the picture at the left below 264 px.
+
+**The hierarchy panel (PB-1042).** `ViewerHierarchy` is the module tree of
+the whole system (the root, its sub-modules, their parts and harnesses), docked
+at the left of the view: render it first in the shell's `workspace` row, before
+the canvas. Each row has the kind's icon, the host's mark (`nodeMarks`, as the
+diagram's dot) and the worst finding here or below. It follows the viewer: a
+click selects the module on the level that holds it, a double-click (or Enter
+on the selected row) drills into it, a selection on the canvas opens and
+highlights its row, and the level shown is marked. It folds to a thin rail,
+resizes by its edge (a drag, or the arrow keys on the edge), filters as you
+type, and is an ARIA tree (arrows, Home, End, `*`, Enter, Space). What a tab
+keeps (open, width, open rows) comes in as `state` and goes out through
+`onStateChange`; `command` reveals a row, focuses the filter, or opens and
+folds the panel; `rowAttributes` puts a host's `data-*` attributes on each row
+and `ownMenu={false}` leaves the right-click menu to the host. The model
+without React is `src/model/hierarchy.ts` (`buildHierarchy`, `filterHierarchy`,
+`visibleRows`, `treeKey`, `rowTarget`).
 
 **The inspector's details on their own.** `SelectionDetails` is what
 `ViewerInspector` shows for a selected module, link or net, without a viewer
