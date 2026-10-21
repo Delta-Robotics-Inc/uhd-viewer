@@ -207,6 +207,11 @@ describe("filter and rows", () => {
     // a matching module keeps its children
     const b = filterHierarchy(tree, "board").nodes[0].children[0];
     expect(b.children).toHaveLength(8);
+    // and what matches inside it shows: the module opens, and its matching children are matches, not dimmed rows
+    const inside = filterHierarchy(tree, "board");
+    expect(inside.matches.has("board")).toBe(true);
+    expect(inside.matches.has("board/u1")).toBe(true);
+    expect(inside.expanded.has("board")).toBe(true);
     expect(filterHierarchy(tree, "  ").nodes).toEqual(tree);
   });
 });
@@ -306,3 +311,4 @@ describe("what a tab keeps", () => {
     expect(panelState({ width: 3 }).width).toBe(HIERARCHY_WIDTH.min);
   });
 });
+
