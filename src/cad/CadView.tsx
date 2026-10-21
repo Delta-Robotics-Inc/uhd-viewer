@@ -17,7 +17,6 @@ import { isNet } from "@uhd/protocols/net.js";
 import { findingAnchors, type FindingAnchor } from "./findings";
 import {
   DIRECTIONS,
-  buildCadModel,
   defAt,
   explodeParts,
   interfaceRows,
@@ -37,7 +36,8 @@ import { Icon } from "../canvas/Icon";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
 import { ScrollArea } from "../ui/ScrollArea";
 import { ArtifactLink } from "../chrome/Artifacts";
-import { intoScope, outOfScope, scopeRef, scopedPlacements, scopedRoot, shownSummary } from "./scope";
+import { layOutRow } from "./row";
+import { intoScope, outOfScope, scopeRef, scopedModel, scopedPlacements, shownSummary } from "./scope";
 
 /** View parameters from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -278,10 +278,11 @@ export function CadView({
     loadManifests(allDefs, resolve).then(setManifests);
   }, [allDefs]);
 
+  // the module's own assembly; else its parts where the nearest assembly above places them; else side by side (PB-1040)
   const model: CadModel | null = useMemo(
-    () => (manifests ? buildCadModel(shown, lookup, manifests, hints, scopedRoot(display.root, at)) : null),
+    () => (manifests ? scopedModel(system, lookup, manifests, display, at) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shown, lookup, manifests, hints],
+    [system, lookup, manifests, hints, at],
   );
   /** What the view shows of the module, and what nothing places (the caption, and the empty state). */
   const summary = useMemo(() => (model ? shownSummary(model, shown, lookup) : null), [model, shown, lookup]);
@@ -336,6 +337,9 @@ export function CadView({
     // highlights already drawn pick up the new colours on the next selection pass
     setThemed((n) => n + 1);
   }, [theme]);
+
+  /** The name of the module whose assembly places the shown one's parts (PB-1040). */
+  const placedByName = (from: string) => (from ? (defAt(system, lookup, from.split("/"))?.name ?? from) : system.name);
 
   // ---- bodies and hardware ---------------------------------------------------
   useEffect(() => {
@@ -484,8 +488,12 @@ export function CadView({
         obj.add(cadWrapper(s));
       }));
     }
-    // every model has loaded (or failed): the camera fits the whole assembly once
-    void Promise.allSettled(loads).then(() => !cancelled && setSettled(true));
+    // every model has loaded (or failed): what nothing places is laid out beside the rest, then the camera fits the whole once
+    void Promise.allSettled(loads).then(() => {
+      if (cancelled) return;
+      layOutRow([...bodies.current.values()]);
+      setSettled(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -1421,20 +1429,26 @@ export function CadView({
         {model && summary && !present && (nothing || (settled && !bodies.current.size) || (settled && loaded === 0)) ? (
           <div className="cad-empty" role="status">
             <Icon name="box" size={26} strokeWidth={1.25} />
-            <div className="cad-empty-title">{shown.name} has no 3D model yet</div>
-            <p>
-              {summary.loose
-                ? `Its ${summary.parts} parts have nothing that says where they sit: no body of the module's own (a GLB artifact that shows them in place), and no mechanical links between them.`
-                : "Nothing here has a body to draw (a GLB artifact)."}
-            </p>
-            {emptyHint && <p>{emptyHint}</p>}
+            <div className="cad-empty-title">No 3D model for {shown.name} yet.</div>
+            {emptyHint && (
+              <details className="cad-empty-how">
+                <summary>How is one made?</summary>
+                <p>{emptyHint}</p>
+              </details>
+            )}
           </div>
         ) : (
           model && summary && !present && (
             <div className="cad-scope" data-tooltip={summary.unplaced.length ? `Not placed (nothing says where they sit): ${summary.unplaced.slice(0, 12).map((u) => u.name).join(", ")}${summary.unplaced.length > 12 ? ` and ${summary.unplaced.length - 12} more` : ""}` : undefined} data-tooltip-side="bottom">
               <span className="cad-scope-name">{shown.name}</span>
               <span className="cad-scope-what">
-                {summary.ownBody
+                {summary.inRow.length
+                  ? summary.inRow.length === summary.parts
+                    ? `${summary.parts === 1 ? "its part" : `its ${summary.parts} parts`}, unplaced: side by side`
+                    : `${summary.placed.length - summary.inRow.length} of ${summary.parts} parts placed, ${summary.inRow.length} unplaced beside them`
+                  : model.placedBy?.kind === "ancestor"
+                    ? `its ${summary.parts} parts, placed as in ${placedByName(model.placedBy.from)}`
+                    : summary.ownBody
                   ? summary.parts
                     ? `with its ${summary.parts} parts`
                     : "on its own"
