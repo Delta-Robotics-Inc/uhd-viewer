@@ -53,7 +53,7 @@
     "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs"
   },
   "peerDependencies": {
-    "@deltarobotics/uhd": ">=0.2.1"
+    "@deltarobotics/uhd": ">=0.3.0"
   },
   "peerDependenciesMeta": {
     "@deltarobotics/uhd": {
