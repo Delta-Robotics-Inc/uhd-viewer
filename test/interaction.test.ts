@@ -77,6 +77,9 @@ describe("the canvas's keys", () => {
     const inside = (selector: string) => ({ closest: (s: string) => (s.includes(selector) ? {} : null) });
     expect(typingTarget(inside("input"))).toBe(true);
     expect(typingTarget(inside("[role='menu']"))).toBe(true);
+    // the hierarchy panel walks its rows with the arrows and filters as you type: none of it nudges or switches tools
+    expect(typingTarget(inside("[role='tree']"))).toBe(true);
+    expect(typingTarget(inside("[role='listbox']"))).toBe(true);
     expect(typingTarget({ closest: () => null })).toBe(false);
     expect(typingTarget(null)).toBe(false);
   });
