@@ -47,6 +47,11 @@ export interface CadBody {
   via?: string;
   /** Placed by a hint, not by a link. */
   hint?: string;
+  /**
+   * Nothing places it: it is drawn beside the others in a row, laid out
+   * once its model is loaded (PB-1040), and the view says it is unplaced.
+   */
+  row?: boolean;
 }
 
 export type BindingStatus = "bound" | "stale" | "missing" | "unchecked" | "none";
@@ -77,6 +82,13 @@ export interface CadModel {
    * key → the body key that holds them.
    */
   within: Map<string, string>;
+  /**
+   * Where the placements come from when not from the module's own assembly
+   * (PB-1040): an ancestor's assembly cut down to the module (`from` is the
+   * ancestor's path from the root, `""` the root), or nothing at all, the
+   * models side by side (`row`).
+   */
+  placedBy?: { kind: "ancestor"; from: string } | { kind: "row" };
 }
 
 /** The definition at an instance path below `system` ([] is the system itself). */
@@ -150,6 +162,38 @@ export function buildCadModel(
     if (holder) within.set(bodyKey(inst.path), holder.key);
   }
   return { assembly, bodies, defs, manifests, within };
+}
+
+const IDENTITY: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] as unknown as Mat4;
+
+/**
+ * The model with every part that nothing places, but that has a model of
+ * its own, added as a body in a row beside the rest (PB-1040): a module's
+ * 3D view never leaves out a part that has a model. The row is laid out by
+ * the view once the models are loaded (their sizes are known then). Undefined
+ * when there is no such part.
+ */
+export function withUnplacedInRow(model: CadModel, shown: ModuleDef, lookup: ModuleLookup): CadModel | undefined {
+  /** Drawn already: placed itself, or inside a placed body that draws it. */
+  const drawn = (path: string[]) => model.within.has(bodyKey(path)) || model.bodies.some((b) => b.path.length <= path.length && b.path.every((x, i) => path[i] === x) && (!!b.glb || b.path.length === path.length));
+  const extra: CadBody[] = [];
+  const walk = (def: ModuleDef, prefix: string[]) => {
+    for (const c of def.children ?? []) {
+      const child = lookup(c.moduleDefId);
+      if (!child || child.kind === "harness") continue;
+      const path = [...prefix, c.id];
+      const glb = glbFor(child);
+      // a module with a body of its own (a board) is one model; one without is the models of its parts
+      if (glb) {
+        if (!drawn(path)) extra.push({ key: bodyKey(path), path, def: child, glb, bodyArtifact: sourceOf(child, glb) ?? glb.id, matrix: IDENTITY, row: true, hint: "not placed: nothing says where it sits, so it is shown beside the others" });
+      } else if (child.children?.length) walk(child, path);
+    }
+  };
+  walk(shown, []);
+  if (!extra.length) return undefined;
+  const defs = new Map(model.defs);
+  for (const b of extra) defs.set(b.key, b.def);
+  return { ...model, bodies: [...model.bodies, ...extra], defs, placedBy: model.placedBy ?? { kind: "row" } };
 }
 
 /**
