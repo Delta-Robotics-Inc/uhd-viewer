@@ -75,7 +75,7 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, mis
       {c.drawn.nodes.length === 0 && (
         <div className={cx("canvas-empty", covered && "covered-right")} role="status">
           <div className="canvas-empty-title">{c.levelDef.name} has no modules yet</div>
-          <p>Modules appear here as children are added to its definition, and links as they are joined.</p>
+          <p>Add child modules to its definition to see them here.</p>
         </div>
       )}
       {toolbar && <DiagramToolbar coveredRight={covered} />}
