@@ -118,7 +118,7 @@ function CardDetail({ slot, actions }: { slot: InterfaceSlot; actions: Interface
                 <span className="shrink-0 text-fg" aria-label={p.dir === "←" ? "from" : p.dir === "→" ? "to" : p.dir === "—" ? "shared with" : "with"}>
                   {p.dir}
                 </span>
-                {p.other ? <span className="shrink-0 text-fg">{p.other}</span> : <span className="text-fg-faint">{p.otherModule ? "" : "not linked"}</span>}
+                {p.other ? <span className="max-w-[60%] min-w-0 shrink-0 truncate text-fg" data-tooltip={p.other.length > 12 ? p.other : undefined}>{p.other}</span> : <span className="text-fg-faint">{p.otherModule ? "" : "not linked"}</span>}
                 {p.otherModule && <span className="min-w-0 truncate text-fg-faint">{p.otherModule}</span>}
               </span>
             </div>
@@ -299,6 +299,11 @@ export function InterfaceCard({ slot, open, onToggle, actions }: { slot: Interfa
           {slot.state && slot.state !== "configured" && slot.state !== "compatible" && (
               <span aria-label={STATE_TEXT[slot.state]} className="ml-auto size-[7px] shrink-0 rounded-full" style={{ background: STATE_COLOR[slot.state] }} />
             )}
+          </div>
+        ) : slot.exportedAs ? (
+          <div className={CARD_LOOK.linked}>
+            <Icon name="arrow-up-right" size={12} strokeWidth={1.75} aria-hidden className="shrink-0 text-fg-faint" />
+            <span className="min-w-0 truncate text-fg-faint">exported as {slot.exportedAs}</span>
           </div>
         ) : slot.usedBy ? (
           <div className={CARD_LOOK.linked}>

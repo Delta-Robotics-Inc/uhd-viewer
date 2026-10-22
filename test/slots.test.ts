@@ -128,6 +128,20 @@ describe("interface slots", () => {
   });
 });
 
+describe("inside a module", () => {
+  it("an interface the module exports is reached from outside: not an open slot", () => {
+    const pack = { id: "pack", name: "FC stack", kind: "module", interfaces: [], children: [{ id: "fc", moduleDefId: "fc", name: "Flight controller" }], exports: [{ id: "bec_5v", name: "5V BEC", from: { child: "fc", interfaceId: "bec_5v" } }] } as unknown as ModuleDef;
+    const top = { id: "top", name: "Top", interfaces: [], children: [{ id: "stack", moduleDefId: "pack" }] } as unknown as ModuleDef;
+    const all = new Map([top, pack, fc].map((d) => [d.id, d]));
+    const find = (id: string) => all.get(id);
+    const inside = buildView(top, find, ["stack"], { expanded: new Set() });
+
+    const fcSlots = interfaceSlots(inside.nodes.find((n) => n.id === "fc")!, inside, { lookup: find, drill: ["stack"] });
+    expect(fcSlots.find((x) => x.id === "bec_5v")).toMatchObject({ open: false, exportedAs: "5V BEC" });
+    expect(fcSlots.find((x) => x.id === "usb")).toMatchObject({ open: true });
+  });
+});
+
 describe("alike interfaces", () => {
   it("three or more that differ only by a number are one card: Motor pads ×4, every member's pins and links", () => {
     const motor = (i: number): InterfaceSlot => ({ ...slot("rx_fc_pads"), id: `motor_${i}_pads`, name: `Motor ${i} pads`, kind: "power", protocol: "3-phase", pins: [`M${i}`], linked: [{ module: `${["Front-right", "Rear-right", "Rear-left", "Front-left"][i - 1]} arm`, via: `Motor ${i} leads` }], links: [{ label: `m${i}_pads`, select: `m${i}_leads`, state: "configured", diagnostics: [] }], refs: [`m${i}_leads`] });

@@ -87,6 +87,8 @@ export interface InterfaceSlot {
   open: boolean;
   /** Linked through another interface of the module that binds it (an exported pad inside a linked pad group). */
   usedBy?: string;
+  /** Exported to the boundary of the module it is in, by that name: linked from outside, not open. */
+  exportedAs?: string;
   /** The worst state of its links. */
   state?: SlotState;
   pinMap: SlotPin[];
@@ -305,6 +307,10 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
     return mine.filter((l, i) => mine.findIndex((m) => m.linkId === l.linkId) === i);
   };
   const linkedIds = new Set(node.ports.filter((p) => linksOf(p.id).length).map((p) => p.id));
+  // an interface the module it is in exports (a pass-through to the drilled module's edge): reached from outside
+  const exportedAs = new Map<string, string>();
+  for (const l of vm.links)
+    if (l.passThrough && l.target.node === node.id && !exportedAs.has(l.target.port)) exportedAs.set(l.target.port, l.name);
   // an exported pad that a linked pad group binds is in use through that group
   const usedBy = new Map<string, string>();
   for (const p of node.ports) if (linkedIds.has(p.id)) for (const c of p.children) if (c.leafId && !usedBy.has(c.leafId)) usedBy.set(c.leafId, p.name === p.id ? humanize(p.id) : p.name);
@@ -435,8 +441,9 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
       ...(role ? { role } : {}),
       pins,
       linked: linked.filter((x, i) => linked.findIndex((y) => y.module === x.module && y.via === x.via) === i),
-      open: !links.length && !usedBy.has(port.id) && !vm.derived.some((d) => (d.a.node === node.id && d.a.iface === port.id) || (d.b.node === node.id && d.b.iface === port.id)),
+      open: !links.length && !usedBy.has(port.id) && !exportedAs.has(port.id) && !vm.derived.some((d) => (d.a.node === node.id && d.a.iface === port.id) || (d.b.node === node.id && d.b.iface === port.id)),
       ...(!links.length && usedBy.has(port.id) ? { usedBy: usedBy.get(port.id)! } : {}),
+      ...(!links.length && !usedBy.has(port.id) && exportedAs.has(port.id) ? { exportedAs: exportedAs.get(port.id)! } : {}),
       ...(state ? { state } : {}),
       pinMap,
       params,
@@ -477,7 +484,7 @@ const shape = (name: string) => name.replace(/\d+/g, "#");
  */
 export function groupSlots(slots: InterfaceSlot[]): InterfaceSlot[] {
   const out: InterfaceSlot[] = [];
-  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : "used"}`;
+  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : s.exportedAs ? "exported" : "used"}`;
   for (const s of slots) {
     if (!/\d/.test(s.name)) {
       out.push(s);
