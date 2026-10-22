@@ -58,7 +58,7 @@ lanes) it also opens or closes it, as its +/− box does.
 
 ## What the MVP covers
 
-- **Canvas:** React Flow v12, using the alpha app's dark visual language: cards, status dots, a dot grid, ProtoMono and Kode Mono, and Lucide icons.
+- **Canvas:** React Flow v12, using the alpha app's dark visual language: cards, status dots, a dot grid, Kode Mono (bold for headers), and Lucide icons.
 - **Links (D1, D3):** stored UHD `InterfaceLink`s route orthogonally with filleted corners and stubs at the ports.
   - The layout nudges parallel segments apart and places labels to avoid collisions.
   - Hand waypoints can override the automatic route.

@@ -394,9 +394,10 @@ These are defined as Pencil variables in the design file:
 - **DRC palette:** carried over from alpha (`#22c55e`, `#eed202`, `#ef4444`,
   `#6e7681`).
 - **Signal-type palette:** a separate set of variables (`sig-*`).
-- **Type:** Kode Mono throughout. ProtoMono (the alpha app's header font) isn't
-  available in Pencil; it is substituted there and should be used in the
-  implementation.
+- **Type:** Kode Mono throughout, bold (700) for headers and display labels.
+  (ProtoMono, the alpha app's header font, is commercial and was replaced by
+  bold Kode Mono on 2026-10-21; the open code ships only Kode Mono, under the
+  SIL Open Font License.)
 - **Icons:** Lucide.
 
 ## Open questions

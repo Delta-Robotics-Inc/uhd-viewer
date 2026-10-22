@@ -14,3 +14,9 @@ see TRADEMARKS.md.
 The built application and headless bundles (dist/app, dist/headless)
 include third-party packages (React, three.js, React Flow, Radix UI,
 Lucide), each under its own licence, which applies to that code.
+
+The stylesheets (src/styles, and the built dist/components and dist/app)
+carry the Kode Mono font, Copyright 2023 The Kode Mono Project Authors
+(https://github.com/isaozler/kode-mono), under the SIL Open Font License
+1.1: src/styles/fonts/OFL.txt. The .woff2 files are the released fonts
+converted to WOFF2, glyphs unchanged.

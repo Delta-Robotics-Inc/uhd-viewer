@@ -36,6 +36,7 @@
     "dist/components",
     "dist/headless",
     "src/styles/tailwind-theme.css",
+    "src/styles/fonts/OFL.txt",
     "bin",
     "README.md",
     "LICENSE",
