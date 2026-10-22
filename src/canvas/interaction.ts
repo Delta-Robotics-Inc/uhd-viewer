@@ -7,6 +7,8 @@
  *   box; a middle-button drag pans; holding Space makes a left-drag pan,
  *   also one that starts on a module (modules are not dragged while it is held).
  * - Pan: a left-drag pans, also over modules (they are not dragged).
+ * - With either tool, a right-drag pans, over the empty canvas, modules and
+ *   links; a right-click that does not move (`rightPress`) opens the menu.
  * - The wheel and a pinch zoom with either tool.
  */
 
@@ -57,6 +59,33 @@ export function interactionProps(state: InteractionState): InteractionProps {
   if (state.space) return { panOnDrag: [LEFT, MIDDLE], selectionOnDrag: false, nodesDraggable: false, cursor: "grab" };
   return { panOnDrag: [MIDDLE], selectionOnDrag: true, nodesDraggable: true, cursor: "default" };
 }
+
+/** The right button: a drag with it pans, a click opens the menu. */
+export const RIGHT = 2;
+/** How far (px) the pointer may move with the right button down and still be a click. */
+export const CLICK_SLOP = 4;
+
+/** The right button held on the canvas: where it went down, and whether it has become a pan. */
+export interface RightPress {
+  x: number;
+  y: number;
+  panning: boolean;
+}
+
+export const rightPress = (x: number, y: number): RightPress => ({ x, y, panning: false });
+
+/**
+ * The press after the pointer moved to (x, y): a pan once it has gone further
+ * than the slop from where it went down, and a pan from then on, also if it
+ * comes back (a drag that returns to its start is still not a click).
+ */
+export function rightMove(press: RightPress, x: number, y: number, slop = CLICK_SLOP): RightPress {
+  if (press.panning || Math.hypot(x - press.x, y - press.y) <= slop) return press;
+  return { ...press, panning: true };
+}
+
+/** What letting go of the right button does: open the menu (a click) or nothing more (a pan, which already moved the view). */
+export const rightRelease = (press: RightPress): "menu" | "pan" => (press.panning ? "pan" : "menu");
 
 /** The tool toggle's two choices (Lucide icons), each with its key. */
 export const TOOL_OPTIONS = [
@@ -125,13 +154,13 @@ export function canvasCommand(e: KeyLike, grid = 16): CanvasCommand | undefined 
 
 /**
  * Keys typed into a field, or pressed on a control that uses them, are not the
- * canvas's: a menu, and a tree or list that walks its rows with the arrows and
+ * canvas's: a menu, a dialog (the legend's popover), and a tree or list that walks its rows with the arrows and
  * filters as you type (the hierarchy panel). The canvas listens on the window
  * before them, so without this an arrow on a hierarchy row nudged the selected
  * module and a letter switched the tool (UI QA phase 3).
  */
 export function typingTarget(target: { closest?: (selector: string) => unknown } | null | undefined): boolean {
-  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='tree'], [role='listbox'], [role='grid']"));
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog'], [role='tree'], [role='listbox'], [role='grid']"));
 }
 
 /**

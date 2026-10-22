@@ -17,6 +17,7 @@ import type { Selection, ViewCommand } from "../canvas/Canvas";
 import { applySelectChanges, initialInteraction, interactionReducer, validViewport, type CanvasTool, type Viewport } from "../canvas/interaction";
 import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
 import type { CadSelection } from "../cad/CadView";
+import type { LegendStage } from "../ui/legendFit";
 import { defAt } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
@@ -400,6 +401,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
+  // how much of the diagram's legend fits beside the toolbar (ui/legendFit.ts): the legend measures, the toolbar shows its button
+  const [legendStage, setLegendStage] = useState<LegendStage>("full");
   // a module's menu (`id`), or the empty canvas's
   const [menu, setMenu] = useState<{ id?: string; x: number; y: number } | null>(null);
   escapeState.current = { isolated, menu: Boolean(menu) };
@@ -595,6 +598,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     present,
     onIsolate,
     clearIsolated,
+    legendStage,
+    setLegendStage,
     panel,
     setPanel,
     selection,
