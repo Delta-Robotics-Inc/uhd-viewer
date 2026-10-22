@@ -2560,6 +2560,11 @@ body {
 .react-flow.uhd-tool-pan .react-flow__pane.dragging {
   cursor: grabbing;
 }
+/* a right-drag pans with either tool: grabbing, over whatever the pointer crosses */
+.react-flow.uhd-right-panning,
+.react-flow.uhd-right-panning * {
+  cursor: grabbing !important;
+}
 .react-flow {
   user-select: none;
   -webkit-user-select: none;
