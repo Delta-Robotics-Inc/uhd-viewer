@@ -97,6 +97,10 @@ export interface InterfaceSlot {
   sources: SlotSource[];
   /** Canonical refs of the interface and its links, for findings and Locate (`stack:rx_fc_pads`, `rx_pads`). */
   refs: string[];
+  /** A card for several alike interfaces (Motor pads ×4): their ids. */
+  members?: string[];
+  /** What such a card is linked to, said once ("4 arms" via "Motor phase leads"). */
+  together?: { module: string; via?: string };
 }
 
 /** A finding the host knows about, with the canonical ids it is about (links as the viewer selects them, interfaces as `path:id`). */
@@ -147,6 +151,9 @@ export function sentence(label: string): string {
   const lower = label.toLowerCase();
   return lower[0]?.toUpperCase() + lower.slice(1);
 }
+
+/** A pin as a reader names it: its pad label, unless that is a bare sign ("+"), then its name ("BAT+"). */
+const pinLabel = (c: { pin?: string; name: string }) => (c.pin && /[A-Za-z0-9]/.test(c.pin) ? c.pin : c.name || c.pin || "");
 
 const number = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000));
 
@@ -322,7 +329,7 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
     const rows = port.children.length ? port.children : [{ slotId: port.id, name: port.name, leafId: undefined, pin: undefined as string | undefined }];
     rows.forEach((c, i) => {
       const leaf = port.children.length ? leaves[i] : iface;
-      const pin = c.pin ?? c.name;
+      const pin = pinLabel(c);
       const first = ends[0];
       let other: string | undefined;
       let otherModule: string | undefined;
@@ -332,7 +339,7 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
         const mineIsSource = first.link.source.node === node.id && first.link.source.port === port.id;
         const child = first.link.children.find((ch) => (mineIsSource ? ch.a : ch.b) === c.slotId);
         const counterpart = op?.children.find((x) => x.slotId === c.slotId);
-        if (counterpart) other = counterpart.pin ?? counterpart.name;
+        if (counterpart) other = pinLabel(counterpart);
         else if (child && (mineIsSource ? child.bPin ?? child.b : child.aPin ?? child.a)) other = mineIsSource ? child.bPin ?? child.b : child.aPin ?? child.a;
         else if (!port.children.length && op) other = op.name;
       }
@@ -360,7 +367,7 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
     for (const p of iface?.parameters ?? []) add(humanize(p.name ?? p.id), paramValue(p));
     // a pad group's are its pins': named by the pin ("5V voltage")
     for (const [i, l] of leaves.entries()) {
-      for (const p of l?.parameters ?? []) add(`${rows[i].pin ?? rows[i].name} ${humanize(p.name ?? p.id).toLowerCase()}`, paramValue(p));
+      for (const p of l?.parameters ?? []) add(`${pinLabel(rows[i])} ${humanize(p.name ?? p.id).toLowerCase()}`, paramValue(p));
     }
 
     // its links, and below each the links derived over it
@@ -417,7 +424,7 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
     const linked = ends.flatMap(({ link, end }) => (end ? [{ module: nameOf(end.node), ...(link.run ? { via: opts.names?.get(link.run.id) ?? sentence(link.run.name) } : link.harness ? { via: nameOf(link.harness) } : {}) }] : []));
     const states = slotLinks.map((s) => s.state);
     const state = states.length ? states.reduce((w, x) => (RANK[x] > RANK[w] ? x : w), "configured" as SlotState) : undefined;
-    const pins = [...new Set(port.children.length ? port.children.map((c) => c.pin ?? c.name) : iface?.pin !== undefined ? [String(iface.pin)] : [])];
+    const pins = [...new Set(port.children.length ? port.children.map(pinLabel) : iface?.pin !== undefined ? [pinLabel({ pin: String(iface.pin), name: port.name })] : [])];
     const protocol = protocolLabel(port, iface, leaves, laneProtocols);
     const role = roleLabel(port, iface, leaves);
     return {
@@ -442,17 +449,79 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
   });
   // linked power and signal first, then open slots, then mechanical ones, then those in use through another interface;
   // the module's order within each
-  const order = (s: InterfaceSlot) => (s.linked.length || s.links.length ? (s.kind === "mechanical" ? 2 : 0) : s.open ? 1 : 3);
-  return slots.map((s, i) => ({ s, i })).sort((a, b) => order(a.s) - order(b.s) || a.i - b.i).map((x) => x.s);
+  // power before signal among the linked ones, as a reader traces a build: supply first
+  const order = (s: InterfaceSlot) => (s.linked.length || s.links.length ? (s.kind === "mechanical" ? 3 : s.kind === "power" ? 0 : 1) : s.open ? 2 : 4);
+  const sorted = slots.map((s, i) => ({ s, i })).sort((a, b) => order(a.s) - order(b.s) || a.i - b.i).map((x) => x.s);
+  return groupSlots(sorted);
 }
 
-/** The Interfaces section's header: "6 linked · 1 open". */
-export function slotSummary(slots: InterfaceSlot[]): { linked: number; open: number; used: number; text: string } {
-  const linked = slots.filter((s) => s.linked.length || s.links.length).length;
-  const open = slots.filter((s) => s.open).length;
-  const used = slots.length - linked - open;
+/**
+ * What a group is linked to, said once: "4 arms via Motor phase leads" when the modules share their last word and
+ * the harnesses differ only by a number.
+ */
+function together(same: InterfaceSlot[]): { together?: { module: string; via?: string } } {
+  const ends = same.flatMap((x) => x.linked);
+  if (ends.length < 2) return {};
+  const last = (n: string) => n.trim().split(/\s+/).pop()!.toLowerCase();
+  const word = ends.every((e) => last(e.module) === last(ends[0].module)) ? last(ends[0].module) : undefined;
+  const vias = [...new Set(ends.map((e) => (e.via ? shape(e.via).replace(/\s*#\s*/g, " ").replace(/\s+/g, " ").trim() : "")))];
+  return { together: { module: word ? `${ends.length} ${word}s` : `${ends.length} modules`, ...(vias.length === 1 && vias[0] ? { via: vias[0] } : {}) } };
+}
+
+/** "Motor 2 pads" → "Motor # pads": what interfaces that differ only by a number have in common. */
+const shape = (name: string) => name.replace(/\d+/g, "#");
+
+/**
+ * Interfaces that differ only by a number (Motor 1 pads … Motor 4 pads), alike in kind, protocol and state of
+ * linking, as one card: "Motor pads ×4", its pins and its links those of every member. Three or more.
+ */
+export function groupSlots(slots: InterfaceSlot[]): InterfaceSlot[] {
+  const out: InterfaceSlot[] = [];
+  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : "used"}`;
+  for (const s of slots) {
+    if (!/\d/.test(s.name)) {
+      out.push(s);
+      continue;
+    }
+    const same = slots.filter((x) => key(x) === key(s)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (same.length < 3) {
+      out.push(s);
+      continue;
+    }
+    if (!same.includes(s) || out.some((x) => x.members?.includes(s.id))) continue;
+    const name = `${shape(s.name).replace(/\s*#\s*/g, " ").replace(/\s+/g, " ").trim()} ×${same.length}`;
+    const uniq = <T,>(xs: T[], k: (x: T) => string) => xs.filter((x, i) => xs.findIndex((y) => k(y) === k(x)) === i);
+    const states = same.map((x) => x.state).filter((x): x is SlotState => !!x);
+    out.push({
+      ...s,
+      id: `group:${shape(s.id)}`,
+      name,
+      pins: uniq(same.flatMap((x) => x.pins), (x) => x),
+      linked: uniq(same.flatMap((x) => x.linked), (x) => `${x.module}|${x.via}`),
+      ...together(same),
+      ...(states.length ? { state: states.reduce((w, x) => (RANK[x] > RANK[w] ? x : w)) } : {}),
+      pinMap: same.flatMap((x) => x.pinMap),
+      links: same.flatMap((x) => x.links),
+      findings: uniq(same.flatMap((x) => x.findings), (f) => `${f.code}|${f.message}`),
+      notes: uniq(same.flatMap((x) => x.notes), (n) => n.text),
+      sources: uniq(same.flatMap((x) => x.sources), (x) => x.url),
+      refs: [...new Set(same.flatMap((x) => x.refs))],
+      members: same.map((x) => x.id),
+    });
+  }
+  return out;
+}
+
+/** The Interfaces section's header: "6 linked · 1 open", counting each interface of a grouped card. */
+export function slotSummary(slots: InterfaceSlot[]): { total: number; linked: number; open: number; used: number; text: string } {
+  const n = (s: InterfaceSlot) => s.members?.length ?? 1;
+  const sum = (xs: InterfaceSlot[]) => xs.reduce((t, s) => t + n(s), 0);
+  const total = sum(slots);
+  const linked = sum(slots.filter((s) => s.linked.length || s.links.length));
+  const open = sum(slots.filter((s) => s.open));
+  const used = total - linked - open;
   const text = [linked ? `${linked} linked` : "", open ? `${open} open` : ""].filter(Boolean).join(" · ") || (used ? `${used} in use` : "none linked");
-  return { linked, open, used, text };
+  return { total, linked, open, used, text };
 }
 
 /**

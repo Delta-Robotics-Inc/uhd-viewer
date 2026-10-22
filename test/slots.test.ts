@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModuleDef } from "@uhd/types/index.js";
 import { buildView } from "../src/model/from-uhd";
-import { checkFindings, direction, humanize, interfaceSlots, levelNames, paramValue, slotSummary, type InterfaceSlot } from "../src/model/slots";
+import { checkFindings, direction, groupSlots, humanize, interfaceSlots, levelNames, paramValue, slotSummary, type InterfaceSlot } from "../src/model/slots";
 import { DetailsSection, SelectionKey, Sections, keptInspectorState, navTarget } from "../src/chrome/Sections";
 import { InterfaceCards } from "../src/chrome/InterfaceCards";
 
@@ -125,6 +125,23 @@ describe("interface slots", () => {
     expect(direction(undefined, "SDA")).toBe("↔");
     expect(humanize("rx_fc_pads")).toBe("RX FC pads");
     expect(humanize("max_current")).toBe("Max current");
+  });
+});
+
+describe("alike interfaces", () => {
+  it("three or more that differ only by a number are one card: Motor pads ×4, every member's pins and links", () => {
+    const motor = (i: number): InterfaceSlot => ({ ...slot("rx_fc_pads"), id: `motor_${i}_pads`, name: `Motor ${i} pads`, kind: "power", protocol: "3-phase", pins: [`M${i}`], linked: [{ module: `${["Front-right", "Rear-right", "Rear-left", "Front-left"][i - 1]} arm`, via: `Motor ${i} leads` }], links: [{ label: `m${i}_pads`, select: `m${i}_leads`, state: "configured", diagnostics: [] }], refs: [`m${i}_leads`] });
+    const grouped = groupSlots([slot("usb"), motor(2), motor(1), motor(3), motor(4), slot("mount")]);
+    expect(grouped.map((s) => s.name)).toEqual(["USB-C", "Motor pads ×4", "Stack mount"]);
+    const g = grouped[1];
+    expect(g).toMatchObject({ id: "group:motor_#_pads", pins: ["M1", "M2", "M3", "M4"], members: ["motor_1_pads", "motor_2_pads", "motor_3_pads", "motor_4_pads"] });
+    expect(g.links.map((l) => l.label)).toEqual(["m1_pads", "m2_pads", "m3_pads", "m4_pads"]);
+    expect(g.linked).toHaveLength(4);
+    expect(g.together).toEqual({ module: "4 arms", via: "Motor leads" });
+    // the header counts interfaces, not cards
+    expect(slotSummary(grouped)).toMatchObject({ total: 6, linked: 4, open: 2 });
+    // two are not a group
+    expect(groupSlots([motor(1), motor(2)]).map((s) => s.name)).toEqual(["Motor 1 pads", "Motor 2 pads"]);
   });
 });
 

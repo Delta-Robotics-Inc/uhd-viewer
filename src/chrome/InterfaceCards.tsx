@@ -292,9 +292,11 @@ export function InterfaceCard({ slot, open, onToggle, actions }: { slot: Interfa
         ) : linked ? (
           <div className={CARD_LOOK.linked}>
             <Icon name="arrow-right" size={12} strokeWidth={1.75} aria-hidden className="shrink-0 text-link" />
-            <span className="shrink-0 text-link">{slot.linked.length > 1 ? `${slot.linked.length} modules` : linked.module}</span>
-            {linked.via && <span className="min-w-0 truncate text-fg-faint">via {linked.via}</span>}
-            {slot.state && slot.state !== "configured" && slot.state !== "compatible" && (
+            <span className="shrink-0 text-link" data-tooltip={slot.linked.length > 1 ? slot.linked.map((l) => l.module).join(", ") : undefined}>
+              {slot.together?.module ?? (slot.linked.length > 1 ? `${slot.linked.length} modules` : linked.module)}
+            </span>
+            {(slot.together ? slot.together.via : linked.via) && <span className="min-w-0 truncate text-fg-faint">via {slot.together ? slot.together.via : linked.via}</span>}
+          {slot.state && slot.state !== "configured" && slot.state !== "compatible" && (
               <span aria-label={STATE_TEXT[slot.state]} className="ml-auto size-[7px] shrink-0 rounded-full" style={{ background: STATE_COLOR[slot.state] }} />
             )}
           </div>

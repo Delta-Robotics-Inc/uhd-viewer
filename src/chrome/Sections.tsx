@@ -22,7 +22,7 @@ export const SECTION_LOOK = {
   toggle:
     "group/sec -my-px flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[3px] text-left outline-none focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus",
   chevron: "shrink-0 text-fg-muted transition-transform duration-100",
-  title: "truncate text-[11px] leading-none font-bold text-fg",
+  title: "shrink-0 text-[11px] leading-none font-bold text-fg",
   count: "shrink-0 text-[11px] leading-none text-fg-faint tabular-nums",
   summary: "ml-auto min-w-0 shrink truncate text-right text-[11px] leading-none text-fg-muted",
   body: "px-3 pt-0.5 pb-2.5",

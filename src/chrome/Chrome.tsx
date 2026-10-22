@@ -176,7 +176,7 @@ function ModuleDetails({ node, vm, def, onDrill, onToggleExpand, onSelect, artif
           </DetailsSection>
         )}
         {node.kind !== "harness" && slots.length > 0 && (
-          <DetailsSection id="interfaces" title="Interfaces" count={slots.length} summary={summary.text}>
+          <DetailsSection id="interfaces" title="Interfaces" count={summary.total} summary={summary.text}>
             <InterfaceCards slots={slots} first={firstCards} actions={cardActions ?? { selectLink: (id) => onSelect({ kind: "link", id }) }} />
           </DetailsSection>
         )}
