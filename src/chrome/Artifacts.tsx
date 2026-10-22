@@ -71,15 +71,18 @@ export function AssemblyArtifacts({
   lookup,
   resolve,
   appearance,
+  titled = true,
 }: {
   def?: ModuleDef;
   lookup: (id?: string) => ModuleDef | undefined;
   resolve: ArtifactResolver;
   appearance?: Record<string, Appearance>;
+  /** Its own "Artifacts" title (off where a section header says it). */
+  titled?: boolean;
 }) {
   const [pick, setPick] = useState(0);
   if (!def) return null;
-  if (hasArtifacts(def)) return <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} />;
+  if (hasArtifacts(def)) return <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} titled={titled} />;
   // parts with artifacts, depth first, once per definition
   const parts: { name: string; def: ModuleDef }[] = [];
   const seen = new Set<string>();
@@ -97,7 +100,7 @@ export function AssemblyArtifacts({
   return (
     <>
       {/* the module's own artifacts (documents, sources) come first; its parts' follow */}
-      <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} />
+      <ArtifactsSection def={def} resolve={resolve} appearance={appearance?.[def.id]} titled={titled} />
       {cur && (
         <>
           <div className="section-title">ARTIFACTS · PARTS</div>

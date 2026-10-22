@@ -2624,3 +2624,33 @@ body {
 .port-label.cut {
   pointer-events: auto;
 }
+
+/* ---- the inspector in sections (PB-1042, design A): the viewer's own blocks inside a section keep their small
+   group titles, quieter, and lose the side padding the section's body gives them */
+.details.uhd-details-a {
+  padding: 0;
+}
+.uhd-sections .section-title {
+  padding: 8px 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--uhd-text-faint);
+}
+.uhd-sections .kv,
+.uhd-sections .facts .kv {
+  padding-left: 0;
+  padding-right: 0;
+}
+.uhd-sections .description,
+.uhd-sections .actions {
+  padding-left: 0;
+  padding-right: 0;
+}
+.uhd-sections .tree-item {
+  padding-left: 0;
+  padding-right: 0;
+}
+.uhd-sections .child-table {
+  width: 100%;
+  margin: 0;
+}
