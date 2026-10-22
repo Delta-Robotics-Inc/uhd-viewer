@@ -1,14 +1,20 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { ScopedDiagnostic } from "../model/diagnostics";
 import { circuitOutputs } from "../model/outputs";
 import { BoardViews, DerivedDetails, DerivedList, NetDetails, PackageSection, PinTable } from "./BoardInspector";
+import { partPackage } from "@uhd/protocols/package.js";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
 import { colorFor, type Classification } from "../model/classification";
-import { EvidenceSection } from "./Evidence";
+import { EvidenceSection, hasEvidence } from "./Evidence";
+import { evidenceFor } from "../model/evidence";
+import { artifactCards, groupArtifactCards } from "../model/artifacts";
+import { checkFindings, interfaceSlots, levelNames, sentence, slotSummary, type HostFinding } from "../model/slots";
+import { DetailsSection, KeyValues, SelectionKey, Sections, useShowAll } from "./Sections";
+import { InterfaceCards, type InterfaceCardActions } from "./InterfaceCards";
 import { Icon } from "../canvas/Icon";
 import type { Selection } from "../canvas/Canvas";
 import { fullId, linkOwner, selectableLink } from "../host/targets";
@@ -23,36 +29,55 @@ export type Panel = "hierarchy" | "checks";
 // Inspector
 // ---------------------------------------------------------------------------
 
-const STATE_LABEL: Record<string, string> = {
-  configured: "CONFIGURED",
-  partial: "PARTIAL",
-  incompatible: "INCOMPATIBLE",
-  unconfigured: "NOT CONFIGURED",
-};
+/** A module's (or a link's) facts as key and value rows; empty values are left out. */
+function factRows(rows: [string, string | undefined][]): { key: string; value: string }[] {
+  return rows.filter((r): r is [string, string] => Boolean(r[1])).map(([key, value]) => ({ key, value }));
+}
 
-function Row({ k, v }: { k: string; v?: string }) {
-  if (!v) return null;
+/** "24 models · 2 docs · 1 evidence": what a definition's artifacts, and its parts', are, by group. */
+export function artifactSummary(def: ModuleDef | undefined, lookup: (id?: string) => ModuleDef | undefined): { count: number; text: string } {
+  if (!def) return { count: 0, text: "" };
+  const defs: ModuleDef[] = [def];
+  const seen = new Set([def.id]);
+  const walk = (d: ModuleDef, depth: number) => {
+    for (const ref of d.children ?? []) {
+      const c = lookup(ref.moduleDefId);
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      defs.push(c);
+      if (depth < 3) walk(c, depth + 1);
+    }
+  };
+  walk(def, 0);
+  const cards = defs.flatMap((d) => artifactCards(d, () => undefined));
+  const WORD: Record<string, [string, string]> = {
+    images: ["image", "images"],
+    models: ["model", "models"],
+    board: ["drawing", "drawings"],
+    datasheets: ["datasheet", "datasheets"],
+    documents: ["doc", "docs"],
+    evidence: ["evidence", "evidence"],
+    design: ["design file", "design files"],
+    data: ["data file", "data files"],
+  };
+  const groups = groupArtifactCards(cards);
+  return { count: cards.length, text: groups.map((g) => `${g.cards.length} ${WORD[g.id][g.cards.length === 1 ? 0 : 1]}`).join(" · ") };
+}
+
+const STATE_WORD: Record<string, string> = { configured: "Configured", partial: "Warning", incompatible: "Incompatible", unconfigured: "Not configured" };
+const STATE_VAR: Record<string, string> = { configured: "var(--uhd-severity-ok)", partial: "var(--uhd-severity-warning)", incompatible: "var(--uhd-severity-error)", unconfigured: "var(--uhd-text-faint)" };
+
+/** A link's state as a dot and its word. */
+function StateValue({ state }: { state: string }) {
   return (
-    <div className="kv">
-      <span className="k">{k}</span>
-      <span className="v">{v}</span>
-    </div>
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden className="size-[7px] shrink-0 rounded-full" style={{ background: STATE_VAR[state] }} />
+      <span style={{ color: STATE_VAR[state] }}>{STATE_WORD[state] ?? state}</span>
+    </span>
   );
 }
 
-export function NodeDetails({
-  node,
-  vm,
-  mode,
-  def,
-  onDrill,
-  onToggleExpand,
-  onSelect,
-  artifacts,
-  board,
-  onOpenSource,
-  bare,
-}: {
+export interface NodeDetailsProps {
   node: ViewNode;
   vm: ViewModel;
   mode: Classification;
@@ -68,23 +93,67 @@ export function NodeDetails({
   onOpenSource?: () => void;
   /** No title and no action buttons: the host draws its own header and actions. */
   bare?: boolean;
-}) {
-  if (node.net) return <NetDetails node={node} vm={vm} onSelect={onSelect} bare={bare} />;
-  const links = vm.links.filter((l) => !l.passThrough && (l.source.node === node.id || l.target.node === node.id));
+  /** Definitions by id (the interface cards read the module's children and the other ends). */
+  lookup?: (id?: string) => ModuleDef | undefined;
+  /** The level shown, from the root: canonical ids for findings and Locate. */
+  drill?: string[];
+  /** Names as written, by node id on the level; link names by link id. */
+  names?: Map<string, string>;
+  linkNames?: Map<string, string>;
+  /** Findings to show on the interface cards (the host's, with keys; else the viewer's own checks). */
+  findings?: HostFinding[];
+  /** What the interface cards' actions do. */
+  cardActions?: InterfaceCardActions;
+}
+
+export function NodeDetails(props: NodeDetailsProps) {
+  if (props.node.net) return <NetDetails node={props.node} vm={props.vm} onSelect={props.onSelect} bare={props.bare} />;
+  return <ModuleDetails {...props} />;
+}
+
+/**
+ * A module in sections (PB-1042, design A): its parameters, its board, its
+ * interfaces as slot cards, its artifacts, then what is secondary, closed,
+ * with what it holds in the header: the package, the pins, the functional
+ * links and the evidence.
+ */
+function ModuleDetails({ node, vm, def, onDrill, onToggleExpand, onSelect, artifacts, board, onOpenSource, bare, lookup, drill, names, linkNames, findings, cardActions }: NodeDetailsProps) {
+  const host = useHost();
+  const find = lookup ?? ((id?: string) => (id && id === def?.id ? def : undefined));
+  const ev = evidenceFor(def, def ? host.evidence?.(def.id) : undefined);
+  const performance = (ev?.performance ?? []).flatMap((p) => p.facts.map(([k, v]) => ({ key: k[0].toUpperCase() + k.slice(1), value: v })));
+  const params = [
+    ...factRows([
+      ["Kind", node.kind[0].toUpperCase() + node.kind.slice(1)],
+      ["Definition", node.defId],
+      ["Manufacturer", node.manufacturer],
+      ["Part number", node.partNumber],
+      ["Path", node.id || undefined],
+    ]),
+    ...performance,
+  ];
+  const showAll = useShowAll(params.length, 5);
+  const slots = useMemo(
+    () => (node.kind === "harness" ? [] : interfaceSlots(node, vm, { lookup: (id) => find(id), drill, names, linkNames, findings })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [node, vm, def, drill?.join("/"), names, linkNames, findings],
+  );
+  const summary = slotSummary(slots);
+  // the linked power and signal interfaces and the open slots are shown; mechanical ones and those in use through
+  // another wait behind "N more" (at most twelve cards before it)
+  const firstCards = Math.min(12, Math.max(4, slots.filter((s) => (s.links.length && s.kind !== "mechanical") || s.open).length));
+  const arts = artifactSummary(def, find);
+  const derived = vm.derived.filter((d) => d.a.node === node.id || d.b.node === node.id);
+  const pins = (def?.interfaces ?? []).filter((i) => i.pin !== undefined).length;
+  const pkg = def ? partPackage(def) : undefined;
   return (
-    <div className="details">
+    <div className="details uhd-details-a">
       {!bare && (
         <div className="details-title">
           <Icon name={node.icon} size={16} />
           <span>{node.label}</span>
         </div>
       )}
-      <Row k="KIND" v={node.kind.toUpperCase()} />
-      <Row k="DEFINITION" v={node.defId} />
-      <Row k="MANUFACTURER" v={node.manufacturer} />
-      <Row k="PART NUMBER" v={node.partNumber} />
-      <Row k="PATH" v={node.id} />
-      {node.description && <p className="description">{node.description}</p>}
       {!bare && (node.childCount > 0 || onOpenSource) && (
         <div className="actions">
           {node.childCount > 0 && <button onClick={() => onToggleExpand(node.id)}>{node.expanded ? "COLLAPSE" : "EXPAND IN PLACE"}</button>}
@@ -96,38 +165,52 @@ export function NodeDetails({
           )}
         </div>
       )}
-      {board}
-      {artifacts}
-      <PackageSection def={def} />
-      <DerivedList items={vm.derived.filter((d) => d.a.node === node.id || d.b.node === node.id)} title="FUNCTIONAL LINKS" onSelect={onSelect} />
-      <EvidenceSection def={def} />
-      {node.kind !== "harness" && (
-        <>
-          <div className="section-title">INTERFACES · {node.ports.length}</div>
-          <div className="port-list">
-            {node.ports.map((p) => {
-              const link = links.find((l) => (l.source.node === node.id && l.source.port === p.id) || (l.target.node === node.id && l.target.port === p.id));
-              return (
-                <div key={p.id} className="port-row">
-                  <span className="swatch" style={{ background: colorFor({ domain: p.domain, protocol: p.protocol, state: link?.state }, mode) }} />
-                  <span className="port-name">{p.name}</span>
-                  <span className="port-proto">{p.protocol}</span>
-                  {link ? (
-                    <span className="port-linked">
-                      ↔ {(() => {
-                        const other = link.source.node === node.id ? link.target.node : link.source.node;
-                        // a net reads by its name, not its path
-                        return vm.nodes.find((n) => n.id === other && n.net)?.label ?? other;
-                      })()}
-                    </span>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-          <PinTable def={def} node={node} vm={vm} />
-        </>
-      )}
+      <Sections label={`${node.label} details`}>
+        <DetailsSection id="parameters" title="Parameters" aside={showAll.aside}>
+          {node.description && <p className="m-0 pb-1.5 text-[11px] leading-[1.5] text-fg-muted">{node.description}</p>}
+          <KeyValues rows={params} limit={showAll.limit} />
+        </DetailsSection>
+        {board && (
+          <DetailsSection id="board" title="Board">
+            {board}
+          </DetailsSection>
+        )}
+        {node.kind !== "harness" && slots.length > 0 && (
+          <DetailsSection id="interfaces" title="Interfaces" count={slots.length} summary={summary.text}>
+            <InterfaceCards slots={slots} first={firstCards} actions={cardActions ?? { selectLink: (id) => onSelect({ kind: "link", id }) }} />
+          </DetailsSection>
+        )}
+        {artifacts && arts.count > 0 && (
+          <DetailsSection id="artifacts" title="Artifacts" count={arts.count} summary={arts.text}>
+            {artifacts}
+          </DetailsSection>
+        )}
+        {pkg && (
+          <DetailsSection id="package" title="Package" summary={pkg.name ?? pkg.code} defaultOpen={false}>
+            <PackageSection def={def} titled={false} />
+          </DetailsSection>
+        )}
+        {pins > 0 && node.kind !== "harness" && (
+          <DetailsSection id="pins" title="Pins" count={pins} defaultOpen={false}>
+            <PinTable def={def} node={node} vm={vm} titled={false} />
+          </DetailsSection>
+        )}
+        {derived.length > 0 && (
+          <DetailsSection id="functional-links" title="Functional links" count={derived.length} summary={derived.slice(0, 3).map((d) => d.name).join(", ")} defaultOpen={false}>
+            <DerivedList items={derived} title="FUNCTIONAL LINKS" onSelect={onSelect} titled={false} />
+          </DetailsSection>
+        )}
+        {hasEvidence(ev, false) && (
+          <DetailsSection
+            id="evidence"
+            title="Evidence"
+            summary={[ev!.sources.length ? `${ev!.sources.length} source${ev!.sources.length === 1 ? "" : "s"}` : "", ev!.assumptions.length ? `${ev!.assumptions.length} assumed` : ""].filter(Boolean).join(" · ")}
+            defaultOpen={false}
+          >
+            <EvidenceSection def={def} titled={false} performance={false} />
+          </DetailsSection>
+        )}
+      </Sections>
     </div>
   );
 }
@@ -178,20 +261,25 @@ export function LinkDetails({
     targets[index] = b;
     onOverride?.(link.children.map((c, i) => ({ a: c.a, b: targets[i], locked: true })));
   };
+  const facts = [
+    ...factRows([
+      ["Protocol", link.protocol],
+      ["Domain", link.domain],
+    ]),
+    { key: "State", value: <StateValue state={link.state} /> },
+    ...factRows([
+      ["Harness", link.run ? sentence(link.run.name) : link.harness],
+      ["Net", link.net?.name],
+    ]),
+  ];
   return (
-    <div className="details">
+    <div className="details uhd-details-a">
       {!bare && (
         <div className="details-title">
           <Icon name="cable" size={16} color={color} />
           <span>{link.name.toUpperCase()}</span>
         </div>
       )}
-      <Row k="PROTOCOL" v={link.protocol} />
-      <Row k="DOMAIN" v={link.domain} />
-      <Row k="STATE" v={STATE_LABEL[link.state]} />
-      <Row k="HARNESS" v={link.run?.name ?? link.harness} />
-      <Row k="NET" v={link.net?.name} />
-      {preview}
       {!bare && (
         <div className="actions">
           {!link.net && !preview && <button onClick={onPair}>PAIR VIEW</button>}
@@ -203,69 +291,77 @@ export function LinkDetails({
           )}
         </div>
       )}
-      {harness}
-      {link.children.length > 0 && (
-        <>
-          <div className="section-title">
-            <span>
-              {link.net ? "PINS ON THE NET" : "CHILD LINKS"} · {link.children.length}
-              {link.manual && (
-                <span className="manual-tag">
-                  <Icon name="lock" size={9} /> STORED
-                </span>
-              )}
-            </span>
-            {canRemap && (
-              <span className="section-actions">
-                <button className="mini" onClick={() => setEditing((e) => !e)}>
-                  {editing ? "DONE" : "REMAP"}
-                </button>
-                {override && (
-                  <button className="mini" onClick={() => onOverride?.(null)}>
-                    RESET
+      <Sections label={`${link.name} details`}>
+        <DetailsSection id="link-parameters" title="Parameters">
+          <KeyValues rows={facts} />
+          {preview && <div className="pt-1.5">{preview}</div>}
+        </DetailsSection>
+        {link.children.length > 0 && (
+          <DetailsSection
+            id="link-children"
+            title={link.net ? "Pins on the net" : "Conductors"}
+            count={link.children.length}
+            summary={link.manual ? "stored" : undefined}
+            aside={
+              canRemap ? (
+                <span className="ml-auto flex shrink-0 gap-1">
+                  <button className="mini" onClick={() => setEditing((e) => !e)}>
+                    {editing ? "Done" : "Remap"}
                   </button>
-                )}
-              </span>
-            )}
-          </div>
-          <table className="child-table">
-            <tbody>
+                  {override && (
+                    <button className="mini" onClick={() => onOverride?.(null)}>
+                      Reset
+                    </button>
+                  )}
+                </span>
+              ) : undefined
+            }
+          >
+            <div className="flex flex-col gap-[3px]">
               {link.children.map((c, i) => (
-                <tr key={c.id}>
-                  <td>{(link.net ? c.label : c.a).toUpperCase()}</td>
-                  <td className="muted">{c.aPin ?? ""}</td>
-                  <td>→</td>
-                  <td>
-                    {editing ? (
-                      <select value={c.b} onChange={(e) => remap(i, e.target.value)}>
-                        {bSlots.map((s) => (
-                          <option key={s} value={s}>
-                            {s.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      c.b.toUpperCase()
-                    )}
-                  </td>
-                  <td className="muted">{c.bPin ?? ""}</td>
-                </tr>
+                <div key={c.id} className="flex min-h-5 min-w-0 items-center gap-2 text-[11px] leading-none" data-conductor={c.id}>
+                  <span className="inline-flex h-4 shrink-0 items-center rounded-[4px] border border-line px-1 text-[10px] text-fg-muted">{link.net ? c.label : c.a}</span>
+                  {c.aPin && <span className="shrink-0 text-fg-faint">{c.aPin}</span>}
+                  <span className="shrink-0 text-fg">→</span>
+                  {editing ? (
+                    <select value={c.b} onChange={(e) => remap(i, e.target.value)} className="min-w-0">
+                      {bSlots.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="shrink-0 text-fg">{c.b}</span>
+                  )}
+                  {c.bPin && <span className="min-w-0 truncate text-fg-faint">{c.bPin}</span>}
+                  <span aria-label={STATE_WORD[c.state]} className="ml-auto size-[7px] shrink-0 rounded-full" style={{ background: STATE_VAR[c.state] }} />
+                </div>
               ))}
-            </tbody>
-          </table>
-        </>
-      )}
-      {derived}
-      {link.diagnostics.length > 0 && (
-        <>
-          <div className="section-title">DIAGNOSTICS</div>
-          {link.diagnostics.map((d) => (
-            <p key={d} className={`diagnostic ${link.state}`}>
-              {d}
-            </p>
-          ))}
-        </>
-      )}
+            </div>
+          </DetailsSection>
+        )}
+        {harness && (
+          <DetailsSection id="link-harness" title="Harness" summary={link.run ? sentence(link.run.name) : link.harness} defaultOpen={false}>
+            {harness}
+          </DetailsSection>
+        )}
+        {derived && (
+          <DetailsSection id="link-derived" title="Functional links" defaultOpen={false}>
+            {derived}
+          </DetailsSection>
+        )}
+        {link.diagnostics.length > 0 && (
+          <DetailsSection id="link-checks" title="Checks" count={link.diagnostics.length}>
+            {link.diagnostics.map((d) => (
+              <div key={d} className="flex items-start gap-2 py-1 text-[11px] leading-[1.4]">
+                <Icon name={link.state === "incompatible" ? "circle-x" : "triangle-alert"} size={13} strokeWidth={1.75} aria-hidden className="mt-px shrink-0" style={{ color: STATE_VAR[link.state] }} />
+                <span className="min-w-0 text-fg">{d}</span>
+              </div>
+            ))}
+          </DetailsSection>
+        )}
+      </Sections>
     </div>
   );
 }
@@ -521,6 +617,8 @@ function InspectorView(props: {
     );
   };
 
+  const findings = useMemo(() => checkFindings(props.diagnostics, props.hostDiagnostics), [props.diagnostics, props.hostDiagnostics]);
+  const named = useMemo(() => levelNames(vm, props.levelDef, (id) => props.defFor(id)), [vm, props.levelDef, props.defFor]);
   const errors = props.diagnostics.filter((d) => d.severity === "error").length + props.hostDiagnostics.filter((d) => d.severity === "error").length;
   return (
     <aside className={`inspector${props.className ? ` ${props.className}` : ""}`}>
@@ -533,18 +631,39 @@ function InspectorView(props: {
       </div>
       <ScrollArea className="inspector-scroll" contentClassName="inspector-body">
         {node ? (
-          <NodeDetails
-            node={node}
-            vm={vm}
-            mode={props.mode}
-            def={props.defFor(node.defId)}
-            onDrill={props.onDrill}
-            onToggleExpand={props.onToggleExpand}
-            onSelect={props.onSelect}
-            board={boardFor(node)}
-            onOpenSource={host.openSource && node.defId ? () => host.openSource!(node.defId!, fullId(props.drill, node.id)) : undefined}
-            artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} />}
-          />
+          <SelectionKey.Provider value={`node:${fullId(props.drill, node.id)}`}>
+            <NodeDetails
+              node={node}
+              vm={vm}
+              mode={props.mode}
+              def={props.defFor(node.defId)}
+              onDrill={props.onDrill}
+              onToggleExpand={props.onToggleExpand}
+              onSelect={props.onSelect}
+              board={boardFor(node)}
+              onOpenSource={host.openSource && node.defId ? () => host.openSource!(node.defId!, fullId(props.drill, node.id)) : undefined}
+              artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} titled={false} />}
+              lookup={props.defFor}
+              drill={props.drill}
+              names={named.names}
+              linkNames={named.linkNames}
+              findings={findings}
+              cardActions={{
+                selectLink: (id) => props.onSelect({ kind: "link", id }),
+                locate: (slot) => {
+                  const first = slot.links.find((l) => !l.derived) ?? slot.links[0];
+                  props.onSelect(first ? { kind: "link", id: first.select } : { kind: "node", id: node.id });
+                },
+                ...(host.openSource
+                  ? {
+                      // a linked interface is written where its link is (the level's module); an open one in its module
+                      openSource: (slot) => (slot.links.some((l) => !l.derived) ? host.openSource!(levelDefId, props.drill.join("/") || undefined) : node.defId && host.openSource!(node.defId, fullId(props.drill, node.id))),
+                    }
+                  : {}),
+                ...(host.openLink ? { openLink: host.openLink } : {}),
+              }}
+            />
+          </SelectionKey.Provider>
         ) : link ? (
           <LinkDetails
             link={link}
@@ -564,10 +683,10 @@ function InspectorView(props: {
             onOverride={props.topLevel ? (c) => props.onOverride(link.linkId, c) : undefined}
             harness={
               link.run && (
-                <ArtifactsSection def={props.defFor(link.run.defId)} resolve={props.resolveArtifact} appearance={props.appearance?.[link.run.defId]} />
+                <ArtifactsSection def={props.defFor(link.run.defId)} resolve={props.resolveArtifact} appearance={props.appearance?.[link.run.defId]} titled={false} />
               )
             }
-            derived={link.net && <DerivedList items={vm.derived.filter((d) => d.via.includes(link.id))} title="FUNCTIONAL LINKS OVER THESE PINS" onSelect={props.onSelect} />}
+            derived={link.net && <DerivedList items={vm.derived.filter((d) => d.via.includes(link.id))} title="FUNCTIONAL LINKS OVER THESE PINS" onSelect={props.onSelect} titled={false} />}
           />
         ) : derived ? (
           <DerivedDetails d={derived} vm={vm} onSelect={props.onSelect} />

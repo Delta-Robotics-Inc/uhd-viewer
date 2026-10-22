@@ -122,14 +122,17 @@ describe("the inspector's details on their own", () => {
   it("shows a module as the viewer's inspector does, every artifact a card and no model loaded", () => {
     const html = render({ target: { kind: "module", path: "enclosure" } });
     expect(html).toContain("sample-imu-enclosure");
-    expect(html).toContain("ARTIFACTS · 4");
+    // design A (PB-1042): an Artifacts section whose header counts them and says what they are
+    expect(html).toMatch(/data-section="artifacts".*>Artifacts<\/span><span[^>]*>4<\/span>/s);
+    expect(html).toContain("1 model · 2 design files · 1 data file");
     expect(count(html, /class="uhd-artifact-card /g)).toBe(4);
     // no plain file rows, no 3D preview, no title or action buttons of the viewer's own panel
     expect(html).not.toContain("artifact-file");
     expect(html).not.toContain("artifact-cad");
     expect(html).not.toContain("details-title");
     expect(html).not.toContain("OPEN SOURCE");
-    expect(html).toContain("INTERFACES");
+    expect(html).toContain('data-section="interfaces"');
+    expect(html).toContain('data-slot="board_mount"');
   });
 
   it("shows a board's drawings and outputs as cards, without fetching a drawing", () => {
@@ -163,11 +166,11 @@ describe("the inspector's details on their own", () => {
   it("shows a component inside a board, a link of the system, a definition on its own, and the root", () => {
     expect(render({ target: { kind: "module", path: "board/u2" } })).toContain("fixture-imu-lga12");
     const link = render({ target: { kind: "link", owner: "", ids: ["board_mount"] } });
-    expect(link).toContain("PROTOCOL");
+    expect(link).toContain(">Protocol<");
     expect(link).toContain("pair-preview");
     const alone = render({ target: { kind: "definition", id: "fixture-mcu-qfn32" } });
     expect(alone).toContain("fixture-mcu-qfn32");
-    expect(alone).toContain("PINS");
+    expect(alone).toContain('data-section="pins"');
     // a definition outside the bundle (a library part)
     const extra = { id: "lib-part", name: "Library part", kind: "module", interfaces: [], artifacts: [art({ id: "ds", type: "datasheet", url: "https://example.com/ds.pdf" })] } as unknown as ModuleDef;
     const lib = renderToStaticMarkup(createElement(SelectionDetails, { definitions: [extra], target: { kind: "definition", id: "lib-part" } }));

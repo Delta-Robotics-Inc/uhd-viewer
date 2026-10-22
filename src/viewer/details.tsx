@@ -31,6 +31,20 @@ import { buildView, levelModule } from "../model/from-uhd";
 import { circuitOutputs } from "../model/outputs";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
 import { sourceFromBundle } from "../source/source";
+import { checkFindings, levelNames, type HostFinding, type InterfaceSlot } from "../model/slots";
+import { SelectionKey } from "../chrome/Sections";
+import type { InterfaceCardActions } from "../chrome/InterfaceCards";
+
+/** An interface card's request to its host: the module's path, the interface, and the links that end on it as their module declares them. */
+export interface InterfaceRequest {
+  /** The module's instance path from the root. */
+  path: string;
+  interfaceId: string;
+  /** The module that declares the links (the level's), from the root. */
+  owner: string;
+  /** Its stored links by their local ids ("rx_fc_pads"). */
+  links: string[];
+}
 
 /** What to show: a module instance by its path from the root (`""`: the root), a link on the level of its owner, or a definition on its own. */
 export type DetailsTarget =
@@ -58,6 +72,14 @@ export interface SelectionDetailsProps {
   onPair?: (request: { linkId: string; a: string; b: string }) => void;
   /** Shown when the target is not in the bundle. */
   missing?: ReactNode;
+  /** The host's findings for the interface cards (with the keys its Locate takes); not given, the viewer's own checks. */
+  findings?: HostFinding[];
+  /** A finding's Locate on an interface card. */
+  onFinding?: (key: string) => void;
+  /** An interface card's Open in source: the line of its link, else of the interface. */
+  onInterfaceSource?: (request: InterfaceRequest) => void;
+  /** An open slot's Connect…. */
+  onConnect?: (request: InterfaceRequest) => void;
   className?: string;
 }
 
@@ -82,7 +104,7 @@ function alone(def: ModuleDef, lookup: ModuleLookup, path = ""): Resolved {
   return { vm: { ...vm, links: [], derived: [] }, drill: [], ...(node ? { node: { ...node, id: path } } : {}) };
 }
 
-export function SelectionDetails({ bundle, definitions, target, resolveArtifact = NO_FILES, host, mode = "domain", boardDrawings = false, onSelect, onPair, missing = null, className }: SelectionDetailsProps) {
+export function SelectionDetails({ bundle, definitions, target, resolveArtifact = NO_FILES, host, mode = "domain", boardDrawings = false, onSelect, onPair, missing = null, className, findings, onFinding, onInterfaceSource, onConnect }: SelectionDetailsProps) {
   const source = useMemo(() => {
     if (!bundle) return undefined;
     try {
@@ -144,6 +166,9 @@ export function SelectionDetails({ bundle, definitions, target, resolveArtifact 
   }, [key, scenario, lookup, diagnostics]);
 
   const actions = useMemo<HostActions>(() => ({ artifactModels: "cards", ...host }), [host]);
+  // the interface cards' findings: the host's, else the level's checks and the producer's
+  const cardFindings = useMemo(() => findings ?? checkFindings(diagnostics, bundle?.diagnostics ?? []), [findings, diagnostics, bundle]);
+  const named = useMemo(() => (found ? levelNames(found.vm, found.levelDef, lookup) : undefined), [found, lookup]);
   if (!found || (!found.node && !found.link && !found.derived)) return <>{missing}</>;
   const { vm, drill, node, link, derived } = found;
   const defFor = (id?: string) => (id ? lookup(id) : undefined);
@@ -158,51 +183,78 @@ export function SelectionDetails({ bundle, definitions, target, resolveArtifact 
     return <BoardViews def={found.levelDef} lookup={lookup} resolve={resolveArtifact} highlight={n.id} onPick={(instance) => select({ kind: "node", id: instance })} />;
   };
 
+  const request = (n: ViewNode, slot: InterfaceSlot): InterfaceRequest => ({
+    path: fullId(drill, n.id),
+    interfaceId: slot.id,
+    owner: drill.join("/"),
+    links: slot.links.filter((l) => !l.derived).map((l) => l.label),
+  });
+  const cardActions = (n: ViewNode): InterfaceCardActions => ({
+    selectLink: (id) => onSelect?.({ kind: "link", id: fullId(drill, id) }),
+    // Locate: the interface's first link on the canvas, else the module
+    locate: (slot) => {
+      const first = slot.links.find((l) => !l.derived) ?? slot.links[0];
+      onSelect?.(first ? { kind: "link", id: fullId(drill, first.select) } : { kind: "node", id: fullId(drill, n.id) });
+    },
+    ...(onInterfaceSource ? { openSource: (slot: InterfaceSlot) => onInterfaceSource(request(n, slot)) } : {}),
+    ...(onConnect ? { connect: (slot: InterfaceSlot) => onConnect(request(n, slot)) } : {}),
+    ...(onFinding ? { finding: onFinding } : {}),
+    ...(host?.openLink ? { openLink: host.openLink } : {}),
+  });
+
   return (
     <HostContext.Provider value={actions}>
-      <div className={`uhd-selection-details${className ? ` ${className}` : ""}`}>
-        {node ? (
-          <NodeDetails
-            bare
-            node={node}
-            vm={vm}
-            mode={mode}
-            def={defFor(node.defId)}
-            onDrill={() => undefined}
-            onToggleExpand={() => undefined}
-            onSelect={select}
-            board={boardFor(node)}
-            artifacts={<AssemblyArtifacts key={node.defId} def={defFor(node.defId)} lookup={defFor} resolve={resolveArtifact} appearance={appearance} />}
-          />
-        ) : link ? (
-          <LinkDetails
-            bare
-            link={link}
-            mode={mode}
-            open={false}
-            onToggle={() => undefined}
-            onPair={() => undefined}
-            preview={
-              !link.net && (
-                <PairPreview
-                  vm={vm}
-                  link={link}
-                  mode={mode}
-                  onOpen={() => {
-                    const ends = pairEnds(vm, link);
-                    onPair?.({ linkId: fullId(drill, link.linkId), a: fullId(drill, ends.a.node), b: fullId(drill, ends.b.node) });
-                  }}
-                />
-              )
-            }
-            bSlots={[]}
-            harness={link.run && <ArtifactsSection def={defFor(link.run.defId)} resolve={resolveArtifact} appearance={appearance?.[link.run.defId]} />}
-            derived={link.net && <DerivedList items={vm.derived.filter((d) => d.via.includes(link.id))} title="FUNCTIONAL LINKS OVER THESE PINS" onSelect={select} />}
-          />
-        ) : (
-          <DerivedDetails bare d={derived!} vm={vm} onSelect={select} />
-        )}
-      </div>
+      <SelectionKey.Provider value={key}>
+        <div className={`uhd-selection-details${className ? ` ${className}` : ""}`}>
+          {node ? (
+            <NodeDetails
+              bare
+              node={node}
+              vm={vm}
+              mode={mode}
+              def={defFor(node.defId)}
+              onDrill={() => undefined}
+              onToggleExpand={() => undefined}
+              onSelect={select}
+              board={boardFor(node)}
+              artifacts={<AssemblyArtifacts key={node.defId} def={defFor(node.defId)} lookup={defFor} resolve={resolveArtifact} appearance={appearance} titled={false} />}
+              lookup={defFor}
+              drill={drill}
+              names={named?.names}
+              linkNames={named?.linkNames}
+              findings={cardFindings}
+              cardActions={cardActions(node)}
+            />
+          ) : link ? (
+            <LinkDetails
+              bare
+              link={link}
+              mode={mode}
+              open={false}
+              onToggle={() => undefined}
+              onPair={() => undefined}
+              preview={
+                !link.net && (
+                  <PairPreview
+                    vm={vm}
+                    link={link}
+                    mode={mode}
+                    onOpen={() => {
+                      const ends = pairEnds(vm, link);
+                      onPair?.({ linkId: fullId(drill, link.linkId), a: fullId(drill, ends.a.node), b: fullId(drill, ends.b.node) });
+                    }}
+                  />
+                )
+              }
+              bSlots={[]}
+              harness={link.run && <ArtifactsSection def={defFor(link.run.defId)} resolve={resolveArtifact} appearance={appearance?.[link.run.defId]} titled={false} />}
+              derived={link.net && <DerivedList items={vm.derived.filter((d) => d.via.includes(link.id))} title="FUNCTIONAL LINKS OVER THESE PINS" onSelect={select} titled={false} />}
+            />
+          ) : (
+            <DerivedDetails bare d={derived!} vm={vm} onSelect={select} />
+          )}
+        </div>
+      </SelectionKey.Provider>
     </HostContext.Provider>
   );
 }
