@@ -4,7 +4,8 @@
  * scene, the inspector panels and a module's context menu. Shells place them;
  * none of them is app chrome.
  */
-import { memo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Canvas } from "../canvas/Canvas";
 import { TOOL_OPTIONS, type CanvasTool } from "../canvas/interaction";
 import { Icon } from "../canvas/Icon";
@@ -13,7 +14,8 @@ import { Inspector, NodeMenu } from "../chrome/Chrome";
 import { CadView } from "../cad/CadView";
 import { CLASSIFICATIONS, legendFor, type Classification } from "../model/classification";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
-import { Legend, LegendItem } from "../ui/Legend";
+import { Legend, LegendItem, LegendSwatches } from "../ui/Legend";
+import { legendStage, type LegendStage } from "../ui/legendFit";
 import { cx } from "../ui/cx";
 import { useViewer } from "./controller";
 
@@ -204,11 +206,14 @@ interface DiagramToolbarViewProps {
   onConductors: (c: boolean) => void;
   showGrounds: boolean;
   onGrounds: (g: boolean) => void;
+  /** The legend's button, when the legend has no room beside the toolbar. */
+  legend?: ReactNode;
 }
 
 const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarViewProps) {
   return (
     <Toolbar label="Diagram tools" className={cx("toolbar", p.coveredRight && "covered-right", p.className)}>
+      {p.legend}
       <ToolToggleView tool={p.tool} onTool={p.onTool} tooltipSide="top" />
       <ToolbarSeparator />
       {p.controls && (
@@ -227,11 +232,18 @@ const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarVie
   );
 });
 
-/** The diagram's controls (classification, detail, grounds; `controls={false}` leaves them out), then fit, zoom and reset. */
-export function DiagramToolbar({ coveredRight, className, controls = true }: { coveredRight?: boolean; className?: string; controls?: boolean }) {
+/**
+ * The diagram's controls (classification, detail, grounds; `controls={false}` leaves them out), then fit, zoom and reset.
+ * When the legend has no room beside it, it starts with the legend's button (`legend`: what that opens; default the
+ * viewer's legend).
+ */
+export function DiagramToolbar({ coveredRight, className, controls = true, legend }: { coveredRight?: boolean; className?: string; controls?: boolean; legend?: ReactNode }) {
   const c = useViewer();
+  // (kept: the toolbar is memoised, and a canvas drag re-renders the viewer every frame)
+  const legendButton = useMemo(() => <LegendToolbarButton>{legend ?? <DiagramLegendBody form="full" />}</LegendToolbarButton>, [legend]);
   return (
     <DiagramToolbarView
+      legend={legendButton}
       tool={c.tool}
       onTool={c.setTool}
       onFit={c.fitView}
@@ -256,9 +268,10 @@ interface LegendItemsProps {
   present: ReadonlySet<string>;
   isolated: ReadonlySet<string>;
   onIsolate: (key: string, add?: boolean) => void;
+  compact?: boolean;
 }
 
-const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated, onIsolate }: LegendItemsProps) {
+const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated, onIsolate, compact }: LegendItemsProps) {
   const what = mode === "signal" ? "signal type" : mode === "domain" ? "domain" : "state";
   return (
     <>
@@ -276,6 +289,7 @@ const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated,
             absent={absent}
             hint={absent ? `Nothing on this level is of this ${what}` : pressed ? (isolated.size > 1 ? "Stop isolating this one" : "Show everything again") : `Isolate: fade everything that is not of this ${what}`}
             hintShortcut={absent ? undefined : pressed && isolated.size === 1 ? "Esc" : "Shift+click: hold several"}
+            compact={compact}
           />
         );
       })}
@@ -290,9 +304,15 @@ const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated,
  * click on another switches, and Shift, Ctrl or Cmd holds several. For a
  * shell that draws its own legend card.
  */
-export function DiagramLegendItems() {
+export function DiagramLegendItems({ compact, columns = 3 }: { compact?: boolean; columns?: number } = {}) {
   const c = useViewer();
-  return <LegendItemsView mode={c.mode} present={c.present} isolated={c.isolated} onIsolate={c.onIsolate} />;
+  const items = <LegendItemsView mode={c.mode} present={c.present} isolated={c.isolated} onIsolate={c.onIsolate} compact={compact} />;
+  if (!compact) return items;
+  return (
+    <LegendSwatches columns={columns} label={CLASSIFICATIONS.find((x) => x.id === c.mode)?.label}>
+      {items}
+    </LegendSwatches>
+  );
 }
 
 /** The way back from an isolated legend entry to everything (shown only while something is isolated). */
@@ -302,17 +322,187 @@ export function IsolationClear({ className }: { className?: string }) {
   return <IconButton icon="x" size="sm" tooltipSide="top" label="Show everything again" shortcut="Esc" onClick={c.clearIsolated} className={cx("size-6", className)} />;
 }
 
-/** What the link colours mean in the current classification; a click on an entry isolates it. */
-export function DiagramLegend({ className }: { className?: string }) {
+/**
+ * What the legend shows in a form: `full` the title and the entries with their
+ * labels; `compact` the classification's icon and the swatches alone (each
+ * named by its label).
+ */
+export function DiagramLegendBody({ form }: { form: "full" | "compact" }) {
   const c = useViewer();
+  const title = CLASSIFICATIONS.find((x) => x.id === c.mode)?.label;
+  if (form === "compact") {
+    const icon = CLASSIFICATION_OPTIONS.find((o) => o.id === c.mode)?.icon ?? "layers";
+    return (
+      <>
+        <div className="flex min-h-6 items-center justify-between gap-1">
+          <Icon name={icon} size={13} strokeWidth={1.75} className="text-fg-muted" aria-label={title} role="img" />
+          <IsolationClear className="-my-1 -mr-1.5" />
+        </div>
+        <DiagramLegendItems compact columns={3} />
+      </>
+    );
+  }
   return (
-    <Legend className={cx("legend", className)}>
+    <>
       <div className="mb-0.5 flex min-h-6 items-center justify-between gap-2">
-        <span className="font-label text-[10px] tracking-[0.8px] text-fg-muted uppercase">{CLASSIFICATIONS.find((x) => x.id === c.mode)?.label}</span>
+        <span className="font-label text-[10px] tracking-[0.8px] text-fg-muted uppercase">{title}</span>
         <IsolationClear className="-my-1 -mr-1.5" />
       </div>
       <DiagramLegendItems />
-    </Legend>
+    </>
+  );
+}
+
+/** What the link colours mean in the current classification; a click on an entry isolates it. It gives way to the toolbar as the canvas narrows (`FittedLegend`). */
+export function DiagramLegend({ className }: { className?: string }) {
+  return <FittedLegend label="Legend" className={className} render={(form) => <DiagramLegendBody form={form} />} />;
+}
+
+/**
+ * A legend card at the canvas's bottom left that stays there and gives way
+ * to the bottom toolbar (ui/legendFit.ts): the full form while it fits beside
+ * the toolbar, then the compact one, and at its smallest none, the toolbar
+ * then offering it behind a button (`LegendToolbarButton`). It measures the
+ * room it has (a `ResizeObserver` on the canvas, the toolbar and both forms)
+ * from hidden copies of the two forms, so it never overlaps the toolbar.
+ * `render` draws a form; the card is a sibling of the toolbar (`.toolbar`).
+ */
+export function FittedLegend({ label, render, className }: { label: string; render: (form: "full" | "compact") => ReactNode; className?: string }) {
+  const { legendStage: stage, setLegendStage, panel } = useViewer();
+  const full = useRef<HTMLDivElement>(null);
+  const compact = useRef<HTMLDivElement>(null);
+  const current = useRef<LegendStage>(stage);
+  current.current = stage;
+  const measure = useCallback(() => {
+    const f = full.current;
+    const k = compact.current;
+    const host = f?.parentElement;
+    if (!f || !k || !host) return;
+    const toolbar = host.querySelector<HTMLElement>(":scope > .toolbar");
+    // a toolbar not drawn (display: none) is not in the way
+    const box = toolbar && toolbar.getClientRects().length ? toolbar.getBoundingClientRect() : null;
+    const slotEl = toolbar?.querySelector<HTMLElement>("[data-legend-slot]");
+    const slot = slotEl ? slotEl.getBoundingClientRect().width + (parseFloat(getComputedStyle(toolbar!).columnGap) || 0) : 0;
+    const fr = f.getBoundingClientRect();
+    const next = legendStage({ left: fr.left, full: fr, compact: k.getBoundingClientRect(), toolbar: box, slot }, current.current);
+    if (next !== current.current) {
+      current.current = next;
+      setLegendStage(next);
+    }
+  }, [setLegendStage]);
+  // when a size changes (the canvas, the toolbar, either form: what the legend lists, a fold), and when the
+  // inspector opens or closes (it moves the toolbar without resizing it); not on every render, as a drag re-renders
+  useLayoutEffect(measure, [measure, panel, stage]);
+  useEffect(() => {
+    const host = full.current?.parentElement;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    if (full.current) ro.observe(full.current);
+    if (compact.current) ro.observe(compact.current);
+    const toolbar = host.querySelector(":scope > .toolbar");
+    if (toolbar) ro.observe(toolbar);
+    return () => ro.disconnect();
+  }, [measure]);
+  // a legend no longer drawn leaves the toolbar as it was
+  useEffect(() => () => setLegendStage("full"), [setLegendStage]);
+  return (
+    <>
+      {stage !== "button" && (
+        <Legend role="group" aria-label={label} compact={stage === "compact"} className={cx("legend", className)} data-legend-stage={stage}>
+          {render(stage)}
+        </Legend>
+      )}
+      {/* the measuring copies: never seen, never focused, after the card (a query for the legend finds the card) */}
+      <Legend ref={full} aria-hidden inert className={cx("legend-measure", className)}>
+        {render("full")}
+      </Legend>
+      <Legend ref={compact} aria-hidden inert compact className={cx("legend-measure", className)}>
+        {render("compact")}
+      </Legend>
+    </>
+  );
+}
+
+/**
+ * The legend's button in the toolbar, shown only when the legend has no room
+ * beside it (`FittedLegend`): it opens the legend (`children`) as a popover
+ * above the toolbar. Escape, a click elsewhere or the button closes it, and
+ * the keyboard goes back to the button.
+ */
+export function LegendToolbarButton({ children, label = "Legend" }: { children: ReactNode; label?: string }) {
+  const c = useViewer();
+  const shown = c.legendStage === "button";
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ host: HTMLElement; left: number; bottom: number } | null>(null);
+  useEffect(() => {
+    if (!shown) setOpen(false);
+  }, [shown]);
+  // placed in the canvas (the toolbar scrolls sideways when narrow, and would clip it), above the toolbar, from the button's left
+  useLayoutEffect(() => {
+    if (!open) return setAt(null);
+    const b = button.current;
+    const toolbar = b?.closest<HTMLElement>(".toolbar");
+    const host = toolbar?.parentElement;
+    if (!b || !toolbar || !host) return;
+    const place = () => {
+      const h = host.getBoundingClientRect();
+      const t = toolbar.getBoundingClientRect();
+      const r = b.getBoundingClientRect();
+      setAt({ host, left: Math.max(8, r.left - h.left), bottom: h.bottom - t.top + 8 });
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [open]);
+  // the keyboard goes into the legend; a click elsewhere closes it
+  useEffect(() => {
+    if (!open || !at) return;
+    pop.current?.querySelector<HTMLElement>("button:not([aria-disabled='true']), [href], [tabindex]:not([tabindex='-1'])")?.focus();
+    const away = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!pop.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", away, true);
+    return () => window.removeEventListener("pointerdown", away, true);
+  }, [open, at]);
+  if (!shown) return null;
+  const close = () => {
+    setOpen(false);
+    button.current?.focus();
+  };
+  return (
+    <span data-legend-slot className="flex shrink-0 items-center gap-1">
+      <IconButton ref={button} icon="swatch-book" label={label} tooltipSide="top" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} className={cx(open && "bg-active text-fg")} />
+      <ToolbarSeparator />
+      {open &&
+        at &&
+        createPortal(
+          <Legend
+            ref={pop}
+            role="dialog"
+            aria-label={label}
+            className="legend-popover"
+            style={{ left: at.left, bottom: at.bottom }}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.stopPropagation();
+              close();
+            }}
+            onBlur={(e) => {
+              // the keyboard left the legend (Tab past its last entry): it closes
+              const to = e.relatedTarget as Node | null;
+              if (to && !pop.current?.contains(to) && !button.current?.contains(to)) setOpen(false);
+            }}
+          >
+            {children}
+          </Legend>,
+          at.host,
+        )}
+    </span>
   );
 }
 

@@ -396,7 +396,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 150px;
 }
 .legend-title {
   font-family: var(--uhd-font-label);
@@ -1847,6 +1846,25 @@ body {
   border-radius: var(--uhd-radius);
   box-shadow: var(--uhd-shadow-md);
 }
+/* the legend as it gives way to the toolbar (FittedLegend, ui/legendFit.ts): the copies it measures its two
+   forms on, where the card sits, at their natural width, never seen (the compact form drops the card's 150 px minimum) */
+.legend-measure {
+  position: absolute;
+  left: calc(var(--uhd-inset-left, 0px) + 8px);
+  bottom: 8px;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+/* at its smallest, the legend opens from its button in the toolbar, above it */
+.legend-popover {
+  position: absolute;
+  /* over the toolbar (30) and a floating inspector (40), under the header (50) */
+  z-index: 45;
+  width: max-content;
+  max-width: calc(100% - 16px);
+}
 .scenario-banner {
   top: calc(var(--uhd-inset-top, 0px) + 8px);
 }
@@ -2513,16 +2531,13 @@ body {
 /*
  * Narrow views (a VS Code panel, a small window): the inspector narrows, the
  * bottom toolbar centres on what the inspector leaves visible and scrolls
- * sideways (no bar) rather than slide under it, and the legend sits above
- * the toolbar row.
+ * sideways (no bar) rather than slide under it. The legend stays where it is
+ * and gives way to the toolbar (FittedLegend): compact, then a button in it.
  */
 @media (max-width: 900px) {
   .inspector,
   .cad-inspector {
     width: min(300px, calc(100% - 96px));
-  }
-  .legend {
-    bottom: 60px;
   }
   .toolbar {
     left: calc(var(--uhd-inset-left, 0px) + 8px);
