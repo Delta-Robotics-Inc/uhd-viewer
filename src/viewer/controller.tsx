@@ -22,7 +22,7 @@ import { defAt } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
 import { pairEnds } from "../chrome/PairView";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "../host/targets";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, saySelection, selectTarget, selectionKey } from "../host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -466,20 +466,21 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     readySent.current = true;
     host.emit({ type: "uhd-viewer:ready" });
   }, [host]);
-  // every selection change, in the view on screen, once
+  // every selection change, in the view on screen, once; and a module picked again while it is selected
   // (modules selected together are said too, every one: the host's inspector lists them, QA B10)
   const diagramSelection = useMemo(
     () => (group.length > 1 ? { kind: "node" as const, id: fullId(drill, group[0]), ids: group.map((g) => fullId(drill, g)) } : hostSelection(vm, drill, selection, levelDef.id)),
     [vm, drill, selection, group, levelDef],
   );
   const shown = view === "3d" ? cadSelection : diagramSelection;
-  const sentSelection = useRef("");
+  // a pick: the diagram's selection state (made anew by every pick, D6), the 3D view's selection
+  const pick = view === "3d" ? cadSelection : picked;
+  const sentSelection = useRef<{ key: string; pick: unknown }>({ key: "", pick: undefined });
   useEffect(() => {
-    const key = selectionKey(shown);
-    if (!host || key === sentSelection.current) return;
-    sentSelection.current = key;
+    if (!host || !saySelection(sentSelection.current, { selection: shown, pick })) return;
+    sentSelection.current = { key: selectionKey(shown), pick };
     host.emit({ type: "uhd-viewer:selectionChanged", selection: shown });
-  }, [host, shown]);
+  }, [host, shown, pick]);
   /**
    * Show a module by its path from the root, as the hierarchy panel asks (PB-1042, QA B4). On the diagram: the
    * level that holds it, with it selected and brought into view. On the 3D tab: selected and framed in the 3D
