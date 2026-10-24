@@ -75,6 +75,6 @@
   --uhd-shadow-md: 0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 2px 4px -1px hsl(0 0% 0% / 0.35);
   --uhd-shadow-lg: 0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 4px 6px -1px hsl(0 0% 0% / 0.35);
   --uhd-font-ui: "Kode Mono", ui-monospace, monospace;
-  --uhd-font-label: "ProtoMono", "Kode Mono", ui-monospace, monospace;
+  --uhd-font-label: "Kode Mono Bold", "Kode Mono", ui-monospace, monospace;
   --uhd-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }

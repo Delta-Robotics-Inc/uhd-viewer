@@ -6,7 +6,7 @@
 import { DERIVED, type Theme, type ThemeTokens } from "./tokens";
 
 const FONT_UI = '"Kode Mono", ui-monospace, monospace';
-const FONT_LABEL = '"ProtoMono", "Kode Mono", ui-monospace, monospace';
+const FONT_LABEL = '"Kode Mono Bold", "Kode Mono", ui-monospace, monospace';
 const FONT_MONO = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
 
 /** DRC health and finding severity read the same in every theme (owner decision, PB-894 §5). */

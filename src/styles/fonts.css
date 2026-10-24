@@ -1,4 +1,7 @@
-/* The viewer's faces: Kode Mono for the interface, ProtoMono for display labels. */
+/* The viewer's faces: Kode Mono (SIL Open Font License 1.1, OFL.txt beside the
+ * files) for the interface, and bold Kode Mono for display labels. "Kode Mono
+ * Bold" is the Bold file under every weight, so a label stays bold whatever
+ * weight its rule asks for. */
 @font-face {
   font-family: "Kode Mono";
   src: url("./fonts/KodeMono-Regular.woff2") format("woff2");
@@ -18,6 +21,14 @@
   size-adjust: 90%;
 }
 @font-face {
-  font-family: "ProtoMono";
-  src: url("./fonts/proto-mono-regular.woff2") format("woff2");
+  font-family: "Kode Mono";
+  src: url("./fonts/KodeMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  size-adjust: 90%;
+}
+@font-face {
+  font-family: "Kode Mono Bold";
+  src: url("./fonts/KodeMono-Bold.woff2") format("woff2");
+  font-weight: 100 900;
+  size-adjust: 90%;
 }
