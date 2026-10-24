@@ -10,7 +10,7 @@ import { buildView } from "../src/model/from-uhd";
 import { systemDiagnostics } from "../src/model/diagnostics";
 import { commandBus, connectParent, deliver, type ChannelWindow } from "../src/host/channel";
 import { isViewerEvent, originAllowed, originList, parseHostMessage } from "../src/host/protocol";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, hostSelection, selectTarget, selectionKey } from "../src/host/targets";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, hostSelection, saySelection, selectTarget, selectionKey } from "../src/host/targets";
 import { revealViewport, selectionBounds } from "../src/canvas/reveal";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
 
@@ -237,6 +237,23 @@ describe("focus, select and drill on the model", () => {
     const inner = expanded.links.find((l) => l.linkId.startsWith("board/") && !l.passThrough);
     if (inner) expect(hostSelection(expanded, [], { kind: "link", id: inner.linkId }, root.id)).toMatchObject({ kind: "link", id: inner.linkId, defId: "sample-imu-board" });
     expect(selectionKey(u2)).not.toBe(selectionKey(null));
+  });
+
+  it("says a selection when it changes, and again when the same module is picked again (D6)", () => {
+    const stack = { kind: "node" as const, id: "stack", defId: "fc-stack" };
+    const first = { selection: stack };
+    const sent = { key: selectionKey(stack), pick: first };
+    // the same pick (a rebuild, a re-render): said once
+    expect(saySelection(sent, { selection: { ...stack }, pick: first })).toBe(false);
+    // picked again while selected (a click on it, its hierarchy row, the host's focus): said again
+    expect(saySelection(sent, { selection: stack, pick: { selection: stack } })).toBe(true);
+    // nothing, then the same module, arriving together (one render): still said
+    expect(saySelection(sent, { selection: { ...stack }, pick: { selection: { ...stack } } })).toBe(true);
+    // another module, or nothing: a change
+    expect(saySelection(sent, { selection: { kind: "node", id: "frame" }, pick: first })).toBe(true);
+    expect(saySelection(sent, { selection: null, pick: first })).toBe(true);
+    // nothing picked again while nothing is selected: nothing to say
+    expect(saySelection({ key: "", pick: first }, { selection: null, pick: {} })).toBe(false);
   });
 
   it("reports 3D selections by instance path", () => {
