@@ -1,41 +1,15 @@
-# uhd-viewer
+# uhd-viewer reference
 
-Standalone viewer for UHD (Universal Hardware Description) systems: modules,
-interfaces, interface links, and harnesses. It depends on UHD and a neutral
-view contract, not on Protoboard types.
+The full reference for `@deltarobotics/uhd-viewer`: what the viewer draws, its
+URL parameters, the component library and theming, the 3D view, boards, the
+input bundle, serving and embedding, and the host messages. The
+[README](../README.md) is the short introduction.
 
-Tracking: PB-770 (Track B) under PB-763 in the Protoboard Stack Linear project.
+## URL parameters
 
-![Quadcopter, domain classification](docs/screenshots/01-quadcopter-domain.png)
-
-![Fault scenario: DJI O4 on raw 6S](docs/screenshots/05-fault-o4-on-6s.png)
-
-## Run
-
-The viewer imports UHD source from a sibling checkout (`../uhd`) until UHD
-ships a JSON form (PB-778). UHD has no part library; parts reach the viewer
-inside bundles.
-
-```bash
-# ../uhd on branch mark/pb-793-child-link-integrity (or later)
-npm install
-npm run dev          # http://localhost:5178
-npm run build        # type-check, the app (dist/app) and the library (dist/lib)
-npm test             # vitest: bundle loading, nets and boards, sample fixtures, the serve entrypoint, host options
-npm run serve -- <bundle.json>   # the built app with one bundle (see "Serving and embedding")
-```
-
-The package is private (`"private": true`, so `npm publish` refuses it): it is
-published only to the stack's local registry, by protoboard-cli's
-`scripts/registry/publish-stack.mjs` from a staged copy (`prepack` runs
-`npm run build`, so the tarball's `dist/` matches the source). See
-protoboard-cli's `docs/guides/local-registry.md`.
-
-Building and testing need `../uhd` only. The dev server's default bundle is the
-quadcopter example in a sibling `../protoboard-cli` checkout (or `UHD_BUNDLE`);
-without one, open the dev server with `?bundle=<url>`.
-
-To open a particular view, pass URL parameters:
+The standalone app and the dev server (`npm run dev`, which shows the bundle
+given as `?bundle=<url>` or `UHD_BUNDLE=<path>`) open a particular view from
+URL parameters:
 
 | Parameter | Example | Effect |
 | --- | --- | --- |
@@ -56,7 +30,7 @@ To open a particular view, pass URL parameters:
 Clicking a link's label selects it; on a bundle (`2 LINKS`, a harness's
 lanes) it also opens or closes it, as its +/− box does.
 
-## What the MVP covers
+## What the diagram covers
 
 - **Canvas:** React Flow v12, using the alpha app's dark visual language: cards, status dots, a dot grid, Kode Mono (bold for headers), and Lucide icons.
 - **Links (D1, D3):** stored UHD `InterfaceLink`s route orthogonally with filleted corners and stubs at the ports.
@@ -69,7 +43,7 @@ lanes) it also opens or closes it, as its +/− box does.
   - Mechanical ports are square.
   - Ground links show as ground symbols; *GND WIRES* draws them as wires instead.
 - **Classification (D7):** domain, DRC health (from `validateLinks`), and electrical signal type, each with its own legend.
-- **Isolating a legend entry (PB-946):** every entry of the legend is a button.
+- **Isolating a legend entry:** every entry of the legend is a button.
   - A click isolates it: the links of that signal type, domain or state stay, with the interfaces and modules
     they touch (and the nets of that kind, and the container that holds any of them); everything else on the
     level fades. A link that carries several kinds (a cable with power and a UART) stays for each of them.
@@ -85,7 +59,7 @@ lanes) it also opens or closes it, as its +/− box does.
     card of its own draws `DiagramLegendItems` and `IsolationClear` in it.
 - **Hierarchy (D8, D9):**
   - Groups (dashed) and modules (solid) expand in place, and double-click toggles expansion.
-  - A module expanded in place holds what is in it (PB-897): its children are laid out inside it as their
+  - A module expanded in place holds what is in it: its children are laid out inside it as their
     own level would be (unless the display file places them), it wraps them with room for their links, the
     links between them are routed inside it, and with a hand layout of the level the cards beside and below
     it move by what it grew. A child dragged left of it or above it stops at its edge.
@@ -119,19 +93,19 @@ Not yet built: dragging conductors on the canvas to remap.
 
 ## Design
 
-- [`uhd-viewer-design.pen`](uhd-viewer-design.pen): Pencil design file with sample boards 01–08.
-- [docs/design-direction.md](docs/design-direction.md): the agreed design decisions (D1–D11).
-- [docs/uhd-model-support.md](docs/uhd-model-support.md): what the UHD model supports for each sample.
+- [`uhd-viewer-design.pen`](../uhd-viewer-design.pen): Pencil design file with sample boards 01–08.
+- [design-direction.md](design-direction.md): the agreed design decisions (D1–D11).
+- [uhd-model-support.md](uhd-model-support.md): what the UHD model supports for each sample.
 - `docs/screenshots/`: reference renders of the quadcopter.
 
 ## Layout of the code
 
 | Path | Contents |
 | --- | --- |
-| `src/model/types.ts` | The neutral view contract (PB-784). |
+| `src/model/types.ts` | The neutral view contract. |
 | `src/model/from-uhd.ts` | Adapter from a UHD system `ModuleDef` to the view model. |
 | `src/model/classification.ts` | Classification colours and legends. |
-| `src/model/nets.ts` | Board nets: junction nodes, grouped membership lines, links derived over nets (PB-823). |
+| `src/model/nets.ts` | Board nets: junction nodes, grouped membership lines, links derived over nets. |
 | `src/model/diagnostics.ts` | The viewer's own checks: the root, and each board on its own, re-based onto the root. |
 | `src/model/outputs.ts` | Standard outputs by file name, pick-and-place parsing, component rectangles on PCB drawings. |
 | `src/layout/board-layout.ts` | Board layout for levels with nets: function columns, passive clusters, junction channels and lanes. |
@@ -155,10 +129,10 @@ Not yet built: dragging conductors on the canvas to remap.
 | `src/lib.tsx`, `src/components.ts` | The library entries: `mountViewer` (the app in an element) and the component library. |
 | `bin/` | `uhd-viewer serve` (`serve.mjs` holds the server). |
 
-## Component library and theming (PB-909, PB-900)
+## Component library and theming
 
 The package is a component library and a plain app built from it
-(protoboard-cli `docs/specs/viewer-stack.md` has the whole stack):
+([viewer-stack.md](https://github.com/Delta-Robotics-Inc/protoboard-stack/blob/main/docs/specs/viewer-stack.md) in the Protoboard stack has the whole picture):
 
 - `@deltarobotics/uhd-viewer` (`mountViewer`): the standalone app in an element, everything bundled.
 - `@deltarobotics/uhd-viewer/components` (+ `/components.css`): the views as React components, with
@@ -215,7 +189,7 @@ no mark keeps the dot of its links' state. A tone's colour is the theme's:
 severity colour (the faint text colour for `neutral`). The viewer does not
 know what a mark means.
 
-**Artifacts as cards (PB-940).** The inspector shows every artifact of a
+**Artifacts as cards.** The inspector shows every artifact of a
 definition as a card: images, 3D and STEP models, a board's schematic and PCB
 drawings, datasheets, documents, design files and data, each under its kind
 with a count. A card has a picture (the image itself, loaded lazily; else the
@@ -229,7 +203,7 @@ preview) stay above the cards. `artifactCards(def, resolve, options)`
 room there is (a container query in `src/styles/ui.css`): two or more a row,
 or one a row with the picture at the left below 264 px.
 
-**The hierarchy panel (PB-1042).** `ViewerHierarchy` is the module tree of
+**The hierarchy panel.** `ViewerHierarchy` is the module tree of
 the whole system (the root, its sub-modules, their parts and harnesses), docked
 at the left of the view: render it beside the shell's `.workspace` (its sibling,
 before it), and the workspace starts after it (`--uhd-dock-left`). Each row has the kind's icon, the host's mark (`nodeMarks`, as the
@@ -281,7 +255,7 @@ Styles are Tailwind 4 (no Preflight; everything in cascade layers, so a host
 page's own rules win). Scroll containers are Radix ScrollAreas with thin,
 auto-hiding, themed scrollbars; toolbars are icon buttons with tooltips.
 
-## 3D view (PB-775)
+## 3D view
 
 `?view=3d` (or DIAGRAM | 3D in the header) shows the system assembled from its
 UHD links: every mechanical link with frames on both ends is a mate
@@ -296,7 +270,7 @@ geometry is resolved per binding direction:
 
 Click a module to see each interface's frame and binding status; selecting an
 interface also highlights its mated counterpart (e.g. motor face ↔ arm pad).
-ASSEMBLED / EXPLODED takes the model apart in assembly order along its up direction (PB-899, `src/cad/explode.ts`):
+ASSEMBLED / EXPLODED takes the model apart in assembly order along its up direction (`src/cad/explode.ts`):
 the part at the bottom of each column stays and every part above rises until it clears what it sits on. Two parts
 interact only where one lies over the other, so each motor lifts off its own arm. A part held inside another (the other
 surrounds it across the axis) comes out through the side the holder leaves open: a cell and a board out of the top of
@@ -344,14 +318,14 @@ Screenshots: `docs/screenshots/cad/`.
 the dev server, Google Chrome and an ffmpeg binary (`FFMPEG=...`; e.g. the one
 bundled by the `imageio-ffmpeg` Python package). The mp4 is not committed.
 
-## Boards, nets and enclosures (PB-823)
+## Boards, nets and enclosures
 
 The viewer shows custom boards and enclosures from UHD and the standard
-outputs their providers export (protoboard-cli
-`docs/specs/tool-integrations.md` §8), read as ordinary artifacts and found by
+outputs their providers export ([tool-integrations.md](https://github.com/Delta-Robotics-Inc/protoboard-stack/blob/main/docs/specs/tool-integrations.md)
+§8 in the Protoboard stack), read as ordinary artifacts and found by
 their fixed file names. It never reads a tool's native files. Design
-decisions: D14–D18 in [docs/design-direction.md](docs/design-direction.md).
-Samples to try it on: [fixtures/](fixtures/README.md).
+decisions: D14–D18 in [design-direction.md](design-direction.md).
+Samples to try it on: [fixtures/](../fixtures/README.md).
 
 - **Diagram.** A board drills in like any module. Each net (UHD `Net`
   interface) is a junction; each component on it has one port and one line
@@ -383,7 +357,7 @@ URL: `view=3d&section=y&at=0.4` (`flip=1` keeps the other side), `xray=1`,
 Screenshots: `node scripts/capture-board-shots.mjs <dev-server-url> <out-dir>`
 renders the board and enclosure views of the fixtures.
 
-## Input: a UHD bundle (PB-800)
+## Input: a UHD bundle
 
 The viewer loads one UHD bundle (`uhd.bundle/v0`, defined in `@deltarobotics/uhd`)
 and nothing else: a root, its definitions, scenarios, per-definition artifact
@@ -412,13 +386,13 @@ hints, appearance, keyed by instance path). It never imports a project.
 - Without display hints, the diagram lays itself out and 3D labels are derived
   from instance names, harness children and mates; the assembly is placed from
   the top-level module with the most interface frames.
-- The 3D view shows what is being viewed (PB-897): at the root the whole assembly; on a module's level
+- The 3D view shows what is being viewed: at the root the whole assembly; on a module's level
   that module alone, in its own coordinates (a board as its `board.glb` with its components, not where its
   enclosure holds it). A card in the corner names what is shown and how much of it is placed ("1 of 2 parts
   placed: LiPo cell"; its tooltip lists the rest). A module with nothing to draw says so in the middle of
   the view, and why: no body of its own, and nothing that places its parts. `Scene3D` takes the module as
   `scope` (default: the level) and a host's `emptyHint` (how the model is made).
-- The scene is lit for the background it is seen against (PB-946): on a dark one a dark part is told from
+- The scene is lit for the background it is seen against: on a dark one a dark part is told from
   it by its faces, each lit to a tone of its own.
 - The 3D view opens fitted to what it shows once every model has loaded.
   `spatial.view` in the display hints can set how it opens: `up` (the model
@@ -427,9 +401,9 @@ hints, appearance, keyed by instance path). It never imports a project.
   `distance` in mm, `target`; without a distance the model is still fitted).
   The URL's `az`, `el` and `dist` override it.
 
-Boundary: `protoboard-cli/docs/specs/uhd-boundary.md`.
+The boundary between UHD, the viewer and its hosts: [uhd-boundary.md](https://github.com/Delta-Robotics-Inc/protoboard-stack/blob/main/docs/specs/uhd-boundary.md) in the Protoboard stack.
 
-## Serving and embedding (PB-814)
+## Serving and embedding
 
 `npm run build` writes two things:
 
@@ -509,7 +483,7 @@ viewer.unmount();
   after the host saves what it was sent and reloads it, changes nothing and is
   not sent again.
 - View state still comes from the page's URL parameters (the table under
-  "Run").
+  "URL parameters").
 - The stylesheet is not scoped yet: it sets `html`, `body`, `button` and the
   fonts, so the viewer is best given a page of its own (as `protoboard dev`
   will).
@@ -663,21 +637,3 @@ selects there and is reported. It writes two PNGs (with page rasterization on th
 CPU: in software GL a frame on another origin otherwise keeps stale tiles of
 earlier levels in its screenshots, nodes that are not in the DOM) and
 `messages-summary.json`, and exits 1 on any failure.
-
-## Licence
-
-uhd-viewer is part of Protoboard Stack and open source under the
-[Apache License 2.0](LICENSE), like [UHD](https://github.com/Delta-Robotics-Inc/OpenUHD).
-[NOTICE](NOTICE) holds the copyright notice; the npm package carries both
-files. Contributions are welcome under the same licence, with a Developer
-Certificate of Origin sign-off (`git commit -s`) and no CLA: see
-[CONTRIBUTING.md](CONTRIBUTING.md). "Protoboard", its logo and the "0" mark
-are trademarks of Delta Robotics, Inc.: see [TRADEMARKS.md](TRADEMARKS.md)
-(a draft under legal review).
-
-### Open source and the Protoboard cloud
-
-The viewer is Apache-2.0 and knows only UHD: it draws any bundle it is given
-and needs no account or service. The hosted Protoboard cloud (the parts
-library and its content, accounts and the cloud services) is a separate
-service run by Delta Robotics with its own terms, not covered by this licence.
