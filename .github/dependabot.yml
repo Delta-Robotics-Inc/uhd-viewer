@@ -1,0 +1,25 @@
+# Weekly updates, grouped so each ecosystem opens one pull request a week:
+# the actions (pinned by commit SHA; Dependabot updates the SHA and the
+# version comment together) and the npm packages. Dependabot's commits are
+# exempt from the DCO check.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # UHD is built from a checkout at the tag ci.yml names, moved on purpose
+      - dependency-name: "@deltarobotics/*"
