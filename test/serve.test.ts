@@ -68,12 +68,12 @@ describe("the server", () => {
     writeFileSync(bundleFile, JSON.stringify({ schema: "uhd.bundle/v0", root: "p", definitions: [def("p", files)], artifactBases: { p: project } }));
 
   const get = (path: string, opts: { host?: string; method?: string } = {}) =>
-    new Promise<{ status: number; type?: string; body: string }>((ok, fail) => {
+    new Promise<{ status: number; type?: string; body: string; headers: Record<string, unknown> }>((ok, fail) => {
       const url = new URL(path, origin);
       const req = request({ host: url.hostname, port: url.port, path, method: opts.method ?? "GET", headers: opts.host ? { host: opts.host } : {} }, (res) => {
         let body = "";
         res.on("data", (c) => (body += c));
-        res.on("end", () => ok({ status: res.statusCode ?? 0, type: res.headers["content-type"], body }));
+        res.on("end", () => ok({ status: res.statusCode ?? 0, type: res.headers["content-type"], body, headers: res.headers }));
       });
       req.on("error", fail);
       req.end();
@@ -88,11 +88,13 @@ describe("the server", () => {
     project = join(dir, "project");
     mkdirSync(join(project, "cad"), { recursive: true });
     writeFileSync(join(project, "cad", "body.glb"), "glTF");
+    writeFileSync(join(project, "cad", "notes.html"), "<script>parent.postMessage('x','*')</script>");
+    writeFileSync(join(project, "cad", "drawing.svg"), "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>");
     writeFileSync(join(project, ".env"), "SECRET=1");
     writeFileSync(join(dir, "outside.txt"), "outside");
     symlinkSync(join(dir, "outside.txt"), join(project, "cad", "link.glb"));
     bundleFile = join(dir, "bundle.json");
-    write(["cad/body.glb", "cad/link.glb", "../outside.txt"]);
+    write(["cad/body.glb", "cad/link.glb", "../outside.txt", "cad/notes.html", "cad/drawing.svg"]);
     ({ close, url: origin } = await startServer({ bundleFile, port: 0, appDir: app }));
   });
   afterAll(async () => {
@@ -129,6 +131,20 @@ describe("the server", () => {
   it("serves referenced artifacts with their media type", async () => {
     const res = await get("/artifacts/project/cad/body.glb");
     expect(res).toMatchObject({ status: 200, type: "model/gltf-binary", body: "glTF" });
+  });
+
+  it("sends every artifact sandboxed and unsniffed, and an HTML file as a download (PB-1048)", async () => {
+    const csp = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox";
+    for (const path of ["/artifacts/project/cad/body.glb", "/artifacts/project/cad/drawing.svg", "/artifacts/project/cad/notes.html", "/artifacts/project/.env", "/artifacts/project/cad/link.glb"]) {
+      const res = await get(path);
+      expect([path, res.headers["content-security-policy"], res.headers["x-content-type-options"]]).toEqual([path, csp, "nosniff"]);
+    }
+    const svg = await get("/artifacts/project/cad/drawing.svg");
+    expect([svg.type, svg.headers["content-disposition"]]).toEqual(["image/svg+xml", undefined]);
+    const html = await get("/artifacts/project/cad/notes.html");
+    expect([html.status, html.headers["content-disposition"]]).toEqual([200, 'attachment; filename="notes.html"']);
+    // the app's own pages are not sandboxed
+    expect((await get("/")).headers["content-security-policy"]).toBeUndefined();
   });
 
   it("serves nothing else from a base", async () => {
