@@ -26,6 +26,11 @@ export interface BundlePlan {
 /** What to serve for one parsed `uhd.bundle/v0` read from `bundleFile`. Throws if it is not a bundle. */
 export declare function planBundle(bundle: unknown, bundleFile: string): BundlePlan;
 
+/** Headers every artifact response carries: a sandboxing Content-Security-Policy and `X-Content-Type-Options: nosniff`. */
+export declare const ARTIFACT_HEADERS: Readonly<Record<"content-security-policy" | "x-content-type-options", string>>;
+/** The headers an artifact file is sent with: ARTIFACT_HEADERS, and `Content-Disposition: attachment` for an HTML file. */
+export declare function artifactHeaders(file: string): Record<string, string>;
+
 /** The app's index.html with `config` injected as `<script type="application/json" id="uhd-viewer-config">`. */
 export declare function injectConfig(html: string, config: { bundleUrl?: string; hostOrigins?: string[] }): string;
 

@@ -7,7 +7,8 @@
  * `/artifacts/<name>/`, and the served bundle names those URLs instead, so no
  * local path reaches the browser. Only files the bundle references as
  * artifacts are served from a base, and only if their real path stays inside
- * it (no `..`, no symlink out).
+ * it (no `..`, no symlink out). Each goes out with a sandboxing
+ * Content-Security-Policy and `nosniff`; an HTML file as a download.
  *
  * Bound to 127.0.0.1 by default, and then only answers requests addressed to a
  * loopback name (a page on another site cannot reach it by DNS rebinding).
@@ -51,6 +52,23 @@ const TYPES = {
   ".woff": "font/woff",
   ".ttf": "font/ttf",
 };
+
+/**
+ * Headers on every artifact response (PB-1048): an artifact is a file from a
+ * part or a project, not part of the app, so it runs no script, loads nothing
+ * but its own images, and is never sniffed into another type. An HTML file is
+ * downloaded, not shown.
+ */
+export const ARTIFACT_HEADERS = {
+  "content-security-policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+  "x-content-type-options": "nosniff",
+};
+const DOWNLOADED = /\.(html?|xhtml|xht|shtml|mht|mhtml)$/i;
+
+/** The headers an artifact file is sent with. */
+export function artifactHeaders(file) {
+  return DOWNLOADED.test(file) ? { ...ARTIFACT_HEADERS, "content-disposition": `attachment; filename="${basename(file).replace(/[^\x20-\x7e]|["\\]/g, "_")}"` } : { ...ARTIFACT_HEADERS };
+}
 
 const typeOf = (file) => TYPES[file.slice(file.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream";
 const isUrl = (s) => /^https?:\/\//.test(s);
@@ -136,10 +154,10 @@ function send(res, status, body, type = "text/plain; charset=utf-8", headers = {
   res.end(res.req.method === "HEAD" ? undefined : body);
 }
 
-async function sendFile(res, file, cache) {
+async function sendFile(res, file, cache, headers = {}) {
   const info = await stat(file).catch(() => undefined);
-  if (!info?.isFile()) return send(res, 404, "not found");
-  res.writeHead(200, { "content-type": typeOf(file), "content-length": info.size, "cache-control": cache });
+  if (!info?.isFile()) return send(res, 404, "not found", undefined, headers);
+  res.writeHead(200, { "content-type": typeOf(file), "content-length": info.size, "cache-control": cache, ...headers });
   if (res.req.method === "HEAD") return res.end();
   createReadStream(file).pipe(res);
 }
@@ -188,12 +206,12 @@ export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (
         const p = await plan();
         const key = path.slice("/artifacts/".length);
         const file = p.files.get(key);
-        if (!file) return send(res, 404, "not an artifact of this bundle");
+        if (!file) return send(res, 404, "not an artifact of this bundle", undefined, ARTIFACT_HEADERS);
         const base = await realOf(p.mounts.get(key.split("/")[0]));
         const real = await realpath(file).catch(() => undefined);
-        if (!base || !real) return send(res, 404, "not found");
-        if (!inside(base, real)) return send(res, 403, "outside the artifact base");
-        return sendFile(res, real, "no-cache");
+        if (!base || !real) return send(res, 404, "not found", undefined, ARTIFACT_HEADERS);
+        if (!inside(base, real)) return send(res, 403, "outside the artifact base", undefined, ARTIFACT_HEADERS);
+        return sendFile(res, real, "no-cache", artifactHeaders(real));
       }
       // the built app: hashed assets are immutable
       const file = resolve(appDir, `.${path}`);
