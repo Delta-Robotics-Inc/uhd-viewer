@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Delta-Robotics-Inc/uhd-viewer/security/advisories/new
+    about: Report it privately, never in a public issue (SECURITY.md).
+  - name: UHD, the description language
+    url: https://github.com/Delta-Robotics-Inc/OpenUHD
+    about: Questions and changes about modules, interfaces and links belong there.
+  - name: Protoboard stack
+    url: https://github.com/Delta-Robotics-Inc/protoboard-stack
+    about: The command line, the VS Code extension and the agent tools that build UHD bundles.

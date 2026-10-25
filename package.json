@@ -1,7 +1,6 @@
 {
   "name": "@deltarobotics/uhd-viewer",
   "version": "0.2.0",
-  "private": true,
   "type": "module",
   "description": "Viewer for UHD systems (modules, interfaces, interface links, harnesses): a React component library and its plain standalone app.",
   "bin": {
@@ -39,11 +38,12 @@
     "src/styles/fonts/OFL.txt",
     "bin",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "NOTICE"
   ],
   "publishConfig": {
-    "registry": "http://127.0.0.1:4873/"
+    "access": "public"
   },
   "engines": {
     "node": ">=22"
@@ -95,5 +95,18 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Delta-Robotics-Inc/uhd-viewer.git"
-  }
+  },
+  "homepage": "https://github.com/Delta-Robotics-Inc/uhd-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/Delta-Robotics-Inc/uhd-viewer/issues"
+  },
+  "keywords": [
+    "uhd",
+    "hardware",
+    "viewer",
+    "react",
+    "diagram",
+    "3d",
+    "systems-engineering"
+  ]
 }
