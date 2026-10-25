@@ -34,7 +34,9 @@ npm test             # vitest
 npm run build        # type-check, then the app, the library, the components and the headless renderer into dist/
 ```
 
-`scripts/check-render.mjs` renders the viewer in a headless browser and checks what it draws; run it for a change to drawing or interaction. Protoboard Stack's CI (`scripts/ci-stack.sh` in protoboard-cli) builds and tests this repository with the others.
+`scripts/check-render.mjs` renders the viewer in a headless browser and checks what it draws; run it for a change to drawing or interaction.
+
+CI (`.github/workflows/ci.yml`) runs the type-check, the tests, the build and `npm pack --dry-run` on every pull request, against UHD at the release tag it names; the DCO check (`.github/workflows/dco.yml`) checks the sign-offs. The viewer builds against a UHD release: check out the same tag in `../uhd` (`git -C ../uhd checkout v0.3.0`) when your `main` of UHD has moved on.
 
 ## Pull request process
 
@@ -79,3 +81,13 @@ The code is yours to use, change and fork under Apache-2.0. The name "Protoboard
 - TypeScript, strict mode. Match the surrounding code; no formatter is enforced.
 - The viewer stays domain-neutral: it knows UHD and the view contract, not Protoboard's types.
 - Scrollbars are never the browser's default, and colours come from the theme tokens.
+
+## Releasing
+
+Maintainers only. A release is a commit of `main` tagged `v<version>`; nobody runs `npm publish` from a laptop or a branch.
+
+1. In a pull request, set the version (`npm version <version> --no-git-tag-version`, which updates `package-lock.json` too) and move the entries under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) to a heading `## [<version>] — YYYY-MM-DD`.
+2. Merge it, then tag the merged commit and push the tag: `git tag v<version> && git push origin v<version>`.
+3. `.github/workflows/release.yml` checks that the tag, `package.json` and the changelog agree, runs the type-check, the tests and the build, publishes the package to npmjs with provenance, and creates the GitHub release from the changelog's section.
+
+`node .github/scripts/release.mjs version --tag v<version>`, `package` and `notes <version>` run the same checks locally.

@@ -1,0 +1,221 @@
+# Publishes a release of @deltarobotics/uhd-viewer when a tag v<version> is
+# pushed. It is the only way a version reaches npmjs: nobody publishes from a
+# laptop or a branch.
+#
+#   check    the tag is a commit of main (or of a maintenance branch release/*)
+#            and names package.json's version; the package can be published
+#            from this repository; CHANGELOG.md has the version's section;
+#            npm ci, type-check, tests and the build pass against UHD (the
+#            public Delta-Robotics-Inc/OpenUHD at UHD_REF). Then the package is
+#            packed once: that tarball is what is published
+#   npm      the tarball published to npmjs with provenance, in the environment
+#            `release`; a version already on npmjs is skipped, so a failed run
+#            can be re-run
+#   github   the GitHub release, with the changelog's section as its notes
+#
+# npm: either of two setups, with no edit here.
+#   - the NPM_TOKEN secret of the environment `release`: an npm granular access
+#     token that may publish @deltarobotics/uhd-viewer (bypass 2FA). Used only
+#     while it is set. npm allows a trusted publisher only on a package that
+#     exists, so the first release (0.2.0) needs it; delete it afterwards.
+#   - npm trusted publishing (OIDC): on npmjs the package names this
+#     repository, this workflow file (release.yml) and the environment
+#     `release` as its trusted publisher. No secret.
+#
+# Run by hand (Actions > Release > Run workflow) to check and pack without a
+# tag: the publish and release jobs are skipped.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release at a time per tag, and a release that started is never cancelled.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # The UHD release the viewer is built against (as in ci.yml).
+  UHD_REF: v0.3.0
+  NPM_CONFIG_PROGRESS: "false"
+  NPM_CONFIG_UPDATE_NOTIFIER: "false"
+
+jobs:
+  check:
+    name: Check, test, build, pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.1
+        with:
+          path: uhd-viewer
+          fetch-depth: 0 # the ancestry check reads main
+          persist-credentials: false
+
+      # A release is a commit of main, or of a maintenance branch release/* (a patch of an older release).
+      - name: The tagged commit is in main or a release/* branch
+        if: github.event_name == 'push'
+        working-directory: uhd-viewer
+        run: |
+          git fetch --no-tags --prune "https://github.com/$GITHUB_REPOSITORY.git" '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/release/*:refs/remotes/origin/release/*'
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_REF_NAME ($GITHUB_SHA) is in main."
+            exit 0
+          fi
+          maintenance="$(git branch --remotes --contains "$GITHUB_SHA" --list 'origin/release/*')"
+          if [ -n "$maintenance" ]; then
+            echo "$GITHUB_REF_NAME ($GITHUB_SHA) is not in main; it is in:"
+            echo "$maintenance"
+            exit 0
+          fi
+          echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is neither in main nor in a release/* branch. Merge first, then tag the merged commit."
+          exit 1
+
+      - name: The tag names package.json's version
+        id: version
+        working-directory: uhd-viewer
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          if [ -n "$TAG" ]; then version="$(node .github/scripts/release.mjs version --tag "$TAG")"; else version="$(node .github/scripts/release.mjs version)"; fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "dist_tag=$(node .github/scripts/release.mjs dist-tag "$version")" >>"$GITHUB_OUTPUT"
+          echo "Version $version"
+
+      - name: The package can be published from this repository
+        working-directory: uhd-viewer
+        run: node .github/scripts/release.mjs package --repository "$GITHUB_REPOSITORY"
+
+      - name: The changelog has the version's section
+        working-directory: uhd-viewer
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node .github/scripts/release.mjs notes "$VERSION" >"$RUNNER_TEMP/notes.md" && cat "$RUNNER_TEMP/notes.md"
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.1
+        with:
+          repository: Delta-Robotics-Inc/OpenUHD
+          ref: ${{ env.UHD_REF }}
+          path: uhd
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: uhd-viewer/package-lock.json
+
+      - name: Install
+        working-directory: uhd-viewer
+        run: npm ci --no-audit --no-fund
+      - name: Type-check
+        working-directory: uhd-viewer
+        run: npm run type-check
+      - name: Tests
+        working-directory: uhd-viewer
+        run: npm test
+
+      # The tarball published is this one: packed once, from the tested tree (prepack runs the build).
+      - name: Build and pack
+        working-directory: uhd-viewer
+        run: |
+          mkdir -p "$RUNNER_TEMP/npm"
+          npm pack --pack-destination "$RUNNER_TEMP/npm"
+          ls -l "$RUNNER_TEMP/npm"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/npm/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes.md
+          if-no-files-found: error
+          retention-days: 30
+
+  npm:
+    name: Publish to npm
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance (OIDC)
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - name: npm new enough for trusted publishing
+        run: npm install --global npm@^11.5.1 && npm --version
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: npm-package
+          path: npm
+      - name: Publish (a version already on npmjs is skipped)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DIST_TAG: ${{ needs.check.outputs.dist_tag }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          # Only a secret that is set becomes the token. An empty NODE_AUTH_TOKEN would stand in for the identity
+          # trusted publishing gets from OIDC, so it is never exported empty.
+          if [ -n "$NPM_TOKEN" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+            echo "Publishing with the NPM_TOKEN secret. Delete it once the package has its trusted publisher."
+          else
+            unset NODE_AUTH_TOKEN
+            echo "No NPM_TOKEN secret: publishing with npm trusted publishing (OIDC)."
+          fi
+          tgz="$(ls npm/*.tgz)"
+          read -r name version < <(tar -xOzf "$tgz" package/package.json | node -e 'const p = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(p.name, p.version)')
+          if [ "$version" != "$VERSION" ]; then echo "::error::the tarball is $name@$version, the tag names $VERSION"; exit 1; fi
+          # a public read, without the token file setup-node wrote
+          if [ "$(npm view --userconfig /dev/null "$name@$version" version 2>/dev/null || true)" = "$version" ]; then
+            echo "$name@$version is on npmjs already: skipped"
+            exit 0
+          fi
+          npm publish "$tgz" --access public --provenance --tag "$DIST_TAG"
+
+  github:
+    name: GitHub release
+    needs: [check, npm]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: release-notes
+          path: notes
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIST_TAG: ${{ needs.check.outputs.dist_tag }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "The GitHub release $GITHUB_REF_NAME exists; nothing to create (a re-run)."
+            exit 0
+          fi
+          flags=(--latest)
+          if [ "$DIST_TAG" = "next" ]; then flags=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes/notes.md "${flags[@]}"
