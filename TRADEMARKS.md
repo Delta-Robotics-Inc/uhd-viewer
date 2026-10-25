@@ -1,8 +1,6 @@
 # Protoboard trademark policy
 
-> **DRAFT for legal review (2026-10-21). Not yet in effect.** This policy has
-> not been reviewed by counsel. Until it is, treat it as a statement of intent.
-> The contact address below is a placeholder.
+> This policy may still change after legal review.
 
 Protoboard Stack is open source. The code is licensed under the
 [Apache License 2.0](LICENSE): you may use it, study it, change it, fork it and
@@ -86,7 +84,7 @@ These are Delta's, and only Delta operates or publishes them:
 
 ## Asking for permission
 
-Write to **[trademarks contact: placeholder, to be set by Delta Robotics]**
+Write to **trademarks@protoboard.ai**
 with what you would like to do. When in doubt, ask: a short email usually gets a
 quick answer.
 
