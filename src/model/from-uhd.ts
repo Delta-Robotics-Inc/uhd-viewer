@@ -137,9 +137,9 @@ function portsOf(def: ModuleDef, lookup: ModuleLookup): ViewPort[] {
   );
   return own.map((iface) => {
     const ex = exports.get(iface.id);
-    return ex
-      ? toPort(iface, ex.childDef, { child: ex.from.child, interfaceId: ex.from.interfaceId })
-      : toPort(iface, def);
+    if (!ex) return toPort(iface, def);
+    // a net port (UHD 0.3.0) exports the module's own net: no child behind it to draw a pass-through to
+    return "child" in ex.from ? toPort(iface, ex.childDef, { child: ex.from.child, interfaceId: ex.from.interfaceId }) : toPort(iface, def);
   });
 }
 
@@ -569,6 +569,8 @@ export function buildView(root: ModuleDef, lookup: ModuleLookup, drill: string[]
     // pass-through lines from each boundary export to the child port it exposes
     const exports = def.exports?.length || def.kind === "group" ? resolveExports(def, lookup) : [];
     for (const ex of exports) {
+      // a net port's net is drawn as the sub-module's own junction, joined by its memberships
+      if (!("child" in ex.from)) continue;
       links.push({
         id: `${ref.id}:${ex.id}`,
         linkId: `${ref.id}:${ex.id}`,

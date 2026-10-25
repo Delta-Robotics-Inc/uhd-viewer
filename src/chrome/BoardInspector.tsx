@@ -34,13 +34,13 @@ function Row({ k, v }: { k: string; v?: string }) {
 const mm = (n?: number) => (n === undefined ? "" : `${+n.toFixed(2)}`);
 
 /** A part's package as the manufacturer states it (UHD `partPackage`), with its body size. */
-export function PackageSection({ def }: { def?: ModuleDef }) {
+export function PackageSection({ def, titled = true }: { def?: ModuleDef; titled?: boolean }) {
   const pkg = def ? partPackage(def) : undefined;
   if (!pkg) return null;
   const s = pkg.size_mm;
   return (
     <>
-      <div className="section-title">PACKAGE</div>
+      {titled && <div className="section-title">PACKAGE</div>}
       <div className="facts package-facts">
         <Row k="NAME" v={pkg.name} />
         <Row k="CODE" v={pkg.code} />
@@ -84,7 +84,7 @@ function pinType(i: InterfaceDef): string {
  * Every pin with a designator, in package order, with the net it is on at
  * this level (from the grouped membership lines of `node`).
  */
-export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; vm: ViewModel }) {
+export function PinTable({ def, node, vm, titled = true }: { def?: ModuleDef; node: ViewNode; vm: ViewModel; titled?: boolean }) {
   const pins = useMemo(() => (def?.interfaces ?? []).filter((i) => i.pin !== undefined).sort(pinOrder), [def]);
   const netOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -94,10 +94,12 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
   if (!pins.length) return null;
   return (
     <>
-      <div className="section-title">
-        PINS · {pins.length}
-        {netOf.size > 0 && <span className="muted"> · {netOf.size} ON NETS</span>}
-      </div>
+      {titled && (
+        <div className="section-title">
+          PINS · {pins.length}
+          {netOf.size > 0 && <span className="muted"> · {netOf.size} ON NETS</span>}
+        </div>
+      )}
       <ScrollArea className="pin-table-wrap" axis="both">
         <table className="child-table pin-table">
           <thead>
@@ -125,13 +127,15 @@ export function PinTable({ def, node, vm }: { def?: ModuleDef; node: ViewNode; v
 }
 
 /** Functional links derived over nets, listed by name. */
-export function DerivedList({ items, title, onSelect }: { items: ViewDerived[]; title: string; onSelect: (s: Selection) => void }) {
+export function DerivedList({ items, title, onSelect, titled = true }: { items: ViewDerived[]; title: string; onSelect: (s: Selection) => void; titled?: boolean }) {
   if (!items.length) return null;
   return (
     <>
-      <div className="section-title">
-        {title} · {items.length}
-      </div>
+      {titled && (
+        <div className="section-title">
+          {title} · {items.length}
+        </div>
+      )}
       {items.map((d) => (
         <button key={d.id} className="tree-item" onClick={() => onSelect({ kind: "link", id: d.id })} title={d.diagnostics.join("\n")}>
           <span className={`state-dot ${d.state}`} />

@@ -12,16 +12,17 @@ import { tapRails } from "../layout/taps";
 import type { Pt } from "../canvas/routing";
 import { loadBundle, sourceFromBundle, type LoadedSource } from "../source/source";
 import type { ViewerEvent, ViewerLayout, ViewerOptions, ViewerSelection } from "../api";
-import { sameLayout } from "../options";
+import { hostViewportsChange, sameLayout } from "../options";
 import type { Selection, ViewCommand } from "../canvas/Canvas";
 import { applySelectChanges, initialInteraction, interactionReducer, validViewport, type CanvasTool, type Viewport } from "../canvas/interaction";
 import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
 import type { CadSelection } from "../cad/CadView";
+import type { LegendStage } from "../ui/legendFit";
 import { defAt } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
 import { pairEnds } from "../chrome/PairView";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, selectTarget, selectionKey } from "../host/targets";
+import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, saySelection, selectTarget, selectionKey } from "../host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -214,6 +215,19 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [viewports, setViewports] = useState<Record<string, Viewport>>(() => viewportsOf(hostedViewports ? options.viewports : load("uhd-viewer:viewports", {})));
   const viewportHandler = useRef(options.onViewportChange);
   viewportHandler.current = options.onViewportChange;
+  // viewports a host passes later (ViewerHandle.update, a host reusing the viewer for another project) replace the
+  // viewer's, and the canvas opens again on them (PB-1037); its own viewports passed back are not a change
+  const knownViewports = useRef(hostedViewports ? options.viewports : undefined);
+  const wasHostedViewports = useRef(hostedViewports);
+  const [viewportsSeq, setViewportsSeq] = useState(0);
+  useEffect(() => {
+    const change = hostViewportsChange({ hosted: hostedViewports, wasHosted: wasHostedViewports.current, host: options.viewports, known: knownViewports.current });
+    wasHostedViewports.current = hostedViewports;
+    if (change === "keep") return;
+    knownViewports.current = hostedViewports ? options.viewports : undefined;
+    setViewports(viewportsOf(hostedViewports ? options.viewports : load("uhd-viewer:viewports", {})));
+    setViewportsSeq((n) => n + 1);
+  }, [hostedViewports, options.viewports]);
   // a narrow host (a VS Code panel beside an editor) starts with the view, not the panel over it (PB-861)
   const [panel, setPanel] = useState<Panel | null>((params.get("panel") as Panel) ?? (typeof window !== "undefined" && window.innerWidth < NARROW ? null : "hierarchy"));
   const [pairLink, setPairLink] = useState<string | null>(params.get("pair"));
@@ -279,6 +293,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
         if (v) next[viewportKey] = { x: Math.round(v.x * 100) / 100, y: Math.round(v.y * 100) / 100, zoom: Math.round(v.zoom * 10000) / 10000 };
         else if (viewportKey in next) delete next[viewportKey];
         else return all;
+        if (viewportHandler.current) knownViewports.current = next;
         viewportHandler.current?.(next);
         return next;
       }),
@@ -386,6 +401,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
+  // how much of the diagram's legend fits beside the toolbar (ui/legendFit.ts): the legend measures, the toolbar shows its button
+  const [legendStage, setLegendStage] = useState<LegendStage>("full");
   // a module's menu (`id`), or the empty canvas's
   const [menu, setMenu] = useState<{ id?: string; x: number; y: number } | null>(null);
   escapeState.current = { isolated, menu: Boolean(menu) };
@@ -401,6 +418,12 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
       setMenu(null);
       switch (m.type) {
         case "uhd-viewer:focus": {
+          // on the 3D tab: selected and framed in the view as it is scoped (QA B4), as a click in the hierarchy
+          if (shownView === "3d") {
+            setPanel((p) => p ?? "hierarchy");
+            focusRef.current(m.path);
+            return;
+          }
           const t = focusTarget(sys, lookup, m.path, { drill: d, expanded: ex });
           setDrill(sameDrill(t.drill));
           setSelection(t.selection);
@@ -443,16 +466,45 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     readySent.current = true;
     host.emit({ type: "uhd-viewer:ready" });
   }, [host]);
-  // every selection change, in the view on screen, once
-  const diagramSelection = useMemo(() => hostSelection(vm, drill, selection, levelDef.id), [vm, drill, selection, levelDef]);
+  // every selection change, in the view on screen, once; and a module picked again while it is selected
+  // (modules selected together are said too, every one: the host's inspector lists them, QA B10)
+  const diagramSelection = useMemo(
+    () => (group.length > 1 ? { kind: "node" as const, id: fullId(drill, group[0]), ids: group.map((g) => fullId(drill, g)) } : hostSelection(vm, drill, selection, levelDef.id)),
+    [vm, drill, selection, group, levelDef],
+  );
   const shown = view === "3d" ? cadSelection : diagramSelection;
-  const sentSelection = useRef("");
+  // a pick: the diagram's selection state (made anew by every pick, D6), the 3D view's selection
+  const pick = view === "3d" ? cadSelection : picked;
+  const sentSelection = useRef<{ key: string; pick: unknown }>({ key: "", pick: undefined });
   useEffect(() => {
-    const key = selectionKey(shown);
-    if (!host || key === sentSelection.current) return;
-    sentSelection.current = key;
+    if (!host || !saySelection(sentSelection.current, { selection: shown, pick })) return;
+    sentSelection.current = { key: selectionKey(shown), pick };
     host.emit({ type: "uhd-viewer:selectionChanged", selection: shown });
-  }, [host, shown]);
+  }, [host, shown, pick]);
+  /**
+   * Show a module by its path from the root, as the hierarchy panel asks (PB-1042, QA B4). On the diagram: the
+   * level that holds it, with it selected and brought into view. On the 3D tab: selected and framed in the 3D
+   * view as it is scoped now (the drill level is the 3D view's scope: changing it would show another module); a
+   * module outside that scope takes the view back to the whole assembly first. The root: nothing selected.
+   */
+  const focusPath = useCallback((path: string) => {
+    const { system: sys, lookup, drill: d, expanded: ex, view: shownView } = latest.current;
+    const n = ++seq.current;
+    setPairLink(null);
+    if (shownView === "3d") {
+      const scope = d.join("/");
+      const inside = !scope || path === scope || path.startsWith(`${scope}/`);
+      if (!inside) setDrill((cur) => (cur.length ? [] : cur));
+      setCadFocus(path === "" || path === scope ? { path, seq: n, kind: "none" } : { path, seq: n });
+      return;
+    }
+    const t = focusTarget(sys, lookup, path, { drill: d, expanded: ex });
+    setDrill((cur) => (cur.join("/") === t.drill.join("/") ? cur : t.drill));
+    setSelection(t.selection);
+    if (t.selection) setCentre({ id: t.selection.id, seq: n });
+  }, [setSelection]);
+  const focusRef = useRef(focusPath);
+  focusRef.current = focusPath;
   const onCadSelect = useCallback(
     (s: CadSelection) => setCadSelection(cadHostSelection(s, (path) => defAt(system, scenario.lookup, path))),
     [system, scenario],
@@ -547,6 +599,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     present,
     onIsolate,
     clearIsolated,
+    legendStage,
+    setLegendStage,
     panel,
     setPanel,
     selection,
@@ -565,6 +619,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     zoomIn,
     zoomOut,
     viewport: viewports[viewportKey] as Viewport | undefined,
+    /** Counts the times a host replaced the viewports: the canvas opens again on them. */
+    viewportsSeq,
     onViewport,
     openLinks,
     overrides,
@@ -588,6 +644,9 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     reveal,
     cadFocus,
     onCadSelect,
+    // the 3D view's selection, as the host hears it (paths from the root)
+    cadSelection,
+    focusPath,
     hostActions,
     onOpenNode,
     onNodeContext,

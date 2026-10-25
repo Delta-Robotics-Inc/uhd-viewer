@@ -15,6 +15,7 @@
 import type { InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { EndpointTarget } from "@uhd/types/module.js";
 import { boundaryInterfaces, resolveEndpoint, type ModuleLookup } from "@uhd/system/index.js";
+import { isNet } from "@uhd/protocols/net.js";
 
 /** A definition the bundle names and does not hold. */
 export interface MissingDefinition {
@@ -94,7 +95,7 @@ export function tolerantSystem(root: ModuleDef, lookup: ModuleLookup): TolerantS
           for (const id of ids) want(id, "child" in end && end.compose ? undefined : like);
         }
       }
-      for (const ex of def.exports ?? []) if (ex.from.child === ref.id) want(ex.from.interfaceId);
+      for (const ex of def.exports ?? []) if ("child" in ex.from && ex.from.child === ref.id) want(ex.from.interfaceId);
       for (const u of ref.unconnected ?? []) want(u.interfaceId);
     }
   };
@@ -130,10 +131,16 @@ export function tolerantSystem(root: ModuleDef, lookup: ModuleLookup): TolerantS
     const children = (def.children ?? []).filter((ref) => withPlaceholders(ref.moduleDefId));
     const exports = (def.exports ?? []).filter((ex) => {
       try {
-        const ref = children.find((c) => c.id === ex.from.child);
+        const from = ex.from;
+        if (!("child" in from)) {
+          // a net port (UHD 0.3.0): the module exports one of its own nets
+          if (!def.interfaces.some((i) => i.id === from.interfaceId && isNet(i))) throw new Error(`"${from.interfaceId}" is not a net of "${def.id}"`);
+          return true;
+        }
+        const ref = children.find((c) => c.id === from.child);
         const child = ref && cleanLookup(ref.moduleDefId);
-        if (!child) throw new Error(`"${def.id}" has no child "${ex.from.child}"`);
-        if (!boundaryInterfaces(child, cleanLookup).some((i) => i.id === ex.from.interfaceId)) throw new Error(`child "${ex.from.child}" has no interface "${ex.from.interfaceId}"`);
+        if (!child) throw new Error(`"${def.id}" has no child "${from.child}"`);
+        if (!boundaryInterfaces(child, cleanLookup).some((i) => i.id === from.interfaceId)) throw new Error(`child "${from.child}" has no interface "${from.interfaceId}"`);
         return true;
       } catch (e) {
         leftOut.push({ kind: "export", on: def.id, id: ex.id, why: why(e) });

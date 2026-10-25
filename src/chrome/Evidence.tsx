@@ -28,16 +28,21 @@ function Row({ k, v }: { k: string; v?: string }) {
 
 const text = (v: unknown): string => (typeof v === "string" ? v : typeof v === "object" && v ? JSON.stringify(v) : String(v));
 
-export function EvidenceSection({ def }: { def?: ModuleDef }) {
+/** Whether a definition has evidence to show (its performance facts count only when `performance` is shown). */
+export function hasEvidence(ev: ReturnType<typeof evidenceFor>, performance = true): boolean {
+  return Boolean(ev && (ev.sources.length || (performance && ev.performance.length) || ev.assumptions.length || ev.discrepancies.length || ev.verification));
+}
+
+export function EvidenceSection({ def, titled = true, performance = true }: { def?: ModuleDef; titled?: boolean; performance?: boolean }) {
   const host = useHost();
   const ev = evidenceFor(def, def ? host.evidence?.(def.id) : undefined);
-  if (!def || !ev || (!ev.sources.length && !ev.performance.length && !ev.assumptions.length && !ev.discrepancies.length && !ev.verification)) return null;
+  if (!def || !ev || !hasEvidence(ev, performance)) return null;
   const v = ev.verification;
   // assumptions the verification record lists by name only, when no trait says more
   const named = (v?.assumptions ?? []).map(text).filter((a) => !ev.assumptions.some((t) => t.field === a));
   return (
     <>
-      <div className="section-title">EVIDENCE</div>
+      {titled && <div className="section-title">EVIDENCE</div>}
       <div className="evidence">
         {!ev.filesKnown ? null : v?.audit ? (
           <div className={`audit ${v.audit.wrong + v.audit.unsupported > 0 ? "repaired" : "ok"}`}>
@@ -53,7 +58,7 @@ export function EvidenceSection({ def }: { def?: ModuleDef }) {
             {v?.repairs && <span className="muted"> · {v.repairs}</span>}
           </div>
         )}
-        {ev.performance.map((p) => (
+        {(performance ? ev.performance : []).map((p) => (
           <div key={p.kind} className="facts">
             <div className="facts-title">{p.kind.toUpperCase()}</div>
             {p.facts.map(([k, val]) => (

@@ -172,4 +172,16 @@ export function linkOwner(vm: ViewModel, linkId: string, levelDefId?: string): s
 const withDef = (defId?: string) => (defId ? { defId } : {});
 
 /** Selections compare by content (the host hears each change once). */
-export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}` : "");
+export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}|${s.ids?.join(",") ?? ""}` : "");
+
+/**
+ * Whether the host hears the selection now: when it changed, and when a module or link was picked again while it
+ * was selected (a click on it, a row of the hierarchy, a host's focus). A pick is a new `pick` (the controller's
+ * state object, made anew by each pick, kept when nothing was picked); a rebuild or a view change makes none.
+ * The host then knows the user chose it (D6: the Inspector comes back every time, also for the module already
+ * selected), and two picks that arrive together (nothing, then the same module again) are still said.
+ */
+export function saySelection(sent: { key: string; pick: unknown }, now: { selection: ViewerSelection | null; pick: unknown }): boolean {
+  if (selectionKey(now.selection) !== sent.key) return true;
+  return now.selection !== null && now.pick !== sent.pick;
+}

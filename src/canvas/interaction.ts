@@ -4,8 +4,11 @@
  * canvas's keys. No React and no DOM here, so the rules are tested as data.
  *
  * - Select (the default): a left-drag on the empty canvas draws a selection
- *   box; a middle-button drag pans; holding Space makes a left-drag pan.
+ *   box; a middle-button drag pans; holding Space makes a left-drag pan,
+ *   also one that starts on a module (modules are not dragged while it is held).
  * - Pan: a left-drag pans, also over modules (they are not dragged).
+ * - With either tool, a right-drag pans, over the empty canvas, modules and
+ *   links; a right-click that does not move (`rightPress`) opens the menu.
  * - The wheel and a pinch zoom with either tool.
  */
 
@@ -52,9 +55,37 @@ export interface InteractionProps {
 /** What React Flow is told for a state: the tool, and Space held over it. */
 export function interactionProps(state: InteractionState): InteractionProps {
   if (state.tool === "pan") return { panOnDrag: true, selectionOnDrag: false, nodesDraggable: false, cursor: "grab" };
-  if (state.space) return { panOnDrag: [LEFT, MIDDLE], selectionOnDrag: false, nodesDraggable: true, cursor: "grab" };
+  // Space held: a left-drag that starts on a module pans too, as with the pan tool (PB-1037)
+  if (state.space) return { panOnDrag: [LEFT, MIDDLE], selectionOnDrag: false, nodesDraggable: false, cursor: "grab" };
   return { panOnDrag: [MIDDLE], selectionOnDrag: true, nodesDraggable: true, cursor: "default" };
 }
+
+/** The right button: a drag with it pans, a click opens the menu. */
+export const RIGHT = 2;
+/** How far (px) the pointer may move with the right button down and still be a click. */
+export const CLICK_SLOP = 4;
+
+/** The right button held on the canvas: where it went down, and whether it has become a pan. */
+export interface RightPress {
+  x: number;
+  y: number;
+  panning: boolean;
+}
+
+export const rightPress = (x: number, y: number): RightPress => ({ x, y, panning: false });
+
+/**
+ * The press after the pointer moved to (x, y): a pan once it has gone further
+ * than the slop from where it went down, and a pan from then on, also if it
+ * comes back (a drag that returns to its start is still not a click).
+ */
+export function rightMove(press: RightPress, x: number, y: number, slop = CLICK_SLOP): RightPress {
+  if (press.panning || Math.hypot(x - press.x, y - press.y) <= slop) return press;
+  return { ...press, panning: true };
+}
+
+/** What letting go of the right button does: open the menu (a click) or nothing more (a pan, which already moved the view). */
+export const rightRelease = (press: RightPress): "menu" | "pan" => (press.panning ? "pan" : "menu");
 
 /** The tool toggle's two choices (Lucide icons), each with its key. */
 export const TOOL_OPTIONS = [
@@ -121,9 +152,15 @@ export function canvasCommand(e: KeyLike, grid = 16): CanvasCommand | undefined 
   }
 }
 
-/** Keys typed into a field, or pressed on a control that uses them, are not the canvas's. */
+/**
+ * Keys typed into a field, or pressed on a control that uses them, are not the
+ * canvas's: a menu, a dialog (the legend's popover), and a tree or list that walks its rows with the arrows and
+ * filters as you type (the hierarchy panel). The canvas listens on the window
+ * before them, so without this an arrow on a hierarchy row nudged the selected
+ * module and a letter switched the tool (UI QA phase 3).
+ */
 export function typingTarget(target: { closest?: (selector: string) => unknown } | null | undefined): boolean {
-  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu']"));
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog'], [role='tree'], [role='listbox'], [role='grid']"));
 }
 
 /**
@@ -160,17 +197,23 @@ export interface FirstViewState {
   fittedKey: string | null;
   /** The canvas has a size (a tab opened in the background has none yet). */
   sized: boolean;
+  /** The canvas's size now and at the last automatic fit (`w×h`): a panel docked beside it or folded changes it. */
+  size?: string;
+  fittedSize?: string | null;
 }
 
 /**
  * What the canvas does with its view when it opens or its modules change:
  * a saved viewport is put back, once; with none, the diagram is fitted, and
- * fitted again when modules come or go, until the user moves the view.
+ * fitted again when modules come or go or the canvas changes size (a panel
+ * docked beside it opens or folds), until the user moves the view.
  */
 export function firstView(s: FirstViewState): { kind: "restore"; viewport: Viewport } | { kind: "fit" } | { kind: "keep" } {
   if (!s.sized) return { kind: "keep" };
   if (s.saved) return s.restored ? { kind: "keep" } : { kind: "restore", viewport: s.saved };
-  if (s.moved || !s.nodesKey || s.nodesKey === s.fittedKey) return { kind: "keep" };
+  if (s.moved || !s.nodesKey) return { kind: "keep" };
+  // the same modules in a canvas of the same size: the fit stands
+  if (s.nodesKey === s.fittedKey && (s.size === undefined || s.size === s.fittedSize)) return { kind: "keep" };
   return { kind: "fit" };
 }
 

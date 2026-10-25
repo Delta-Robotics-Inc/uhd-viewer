@@ -1,7 +1,6 @@
 {
   "name": "@deltarobotics/uhd-viewer",
-  "version": "0.1.5",
-  "private": true,
+  "version": "0.2.0",
   "type": "module",
   "description": "Viewer for UHD systems (modules, interfaces, interface links, harnesses): a React component library and its plain standalone app.",
   "bin": {
@@ -18,6 +17,10 @@
       "import": "./dist/components/index.js"
     },
     "./components.css": "./dist/components/components.css",
+    "./headless": {
+      "types": "./dist/headless/index.d.ts",
+      "import": "./dist/headless/index.js"
+    },
     "./tailwind-theme.css": "./src/styles/tailwind-theme.css",
     "./app/*": "./dist/app/*",
     "./serve": {
@@ -30,19 +33,24 @@
     "dist/app",
     "dist/lib",
     "dist/components",
+    "dist/headless",
     "src/styles/tailwind-theme.css",
+    "src/styles/fonts/OFL.txt",
     "bin",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "publishConfig": {
-    "registry": "http://127.0.0.1:4873/"
+    "access": "public"
   },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && npm run build:app && npm run build:lib && npm run build:components",
+    "build": "npm run type-check && npm run build:app && npm run build:lib && npm run build:components && npm run build:headless",
     "build:app": "vite build",
     "build:lib": "vite build --config vite.lib.config.ts && node scripts/build-types.mjs",
     "serve": "node bin/uhd-viewer.mjs serve",
@@ -50,10 +58,11 @@
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
     "prepack": "npm run build",
-    "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs"
+    "build:components": "vite build --config vite.components.config.ts && node scripts/build-components-types.mjs",
+    "build:headless": "vite build --config vite.headless.config.ts && node scripts/build-headless-types.mjs"
   },
   "peerDependencies": {
-    "@deltarobotics/uhd": ">=0.2.1"
+    "@deltarobotics/uhd": ">=0.3.0"
   },
   "peerDependenciesMeta": {
     "@deltarobotics/uhd": {
@@ -81,5 +90,23 @@
     "vite": "^8.3.1",
     "vitest": "^5.0.3"
   },
-  "license": "UNLICENSED"
+  "license": "Apache-2.0",
+  "author": "Delta Robotics, Inc.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Delta-Robotics-Inc/uhd-viewer.git"
+  },
+  "homepage": "https://github.com/Delta-Robotics-Inc/uhd-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/Delta-Robotics-Inc/uhd-viewer/issues"
+  },
+  "keywords": [
+    "uhd",
+    "hardware",
+    "viewer",
+    "react",
+    "diagram",
+    "3d",
+    "systems-engineering"
+  ]
 }

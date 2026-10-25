@@ -1,62 +1,55 @@
-# Type-check and build the viewer against UHD checked out beside it
+# Type-check, test, build and pack the viewer against UHD checked out beside it
 # (vite.config.ts and tsconfig.json resolve @uhd/* to ../uhd/src).
-# UHD is public, so no token is needed. It is checked out at the first branch
-# it has of: this branch's name, the pull request's base branch, the
-# STACK_BASE_BRANCH repository variable, main.
+#
+# UHD is the public repository Delta-Robotics-Inc/OpenUHD, checked out at a
+# release tag (UHD_REF below; "Run workflow" takes another tag or commit). No
+# secret and no private repository is used, so a pull request from a fork runs
+# the same checks. Workflows on `pull_request` get a read-only token and no
+# secrets for a fork's pull request; nothing here uses `pull_request_target`.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: ["mark/**"]
+    branches: [main, "release/**"]
   workflow_dispatch:
+    inputs:
+      uhd-ref:
+        description: The Delta-Robotics-Inc/OpenUHD tag (or commit) to build against
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
-# One run per branch: a push and the pull request from the same branch share
-# a group, so the later one cancels the earlier.
+# One run per branch: a later push cancels the run before it.
 concurrency:
   group: ci-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
+env:
+  # The UHD release the viewer builds against. Move it with package.json's peerDependencies.
+  UHD_REF: v0.3.0
+  NPM_CONFIG_PROGRESS: "false"
+  NPM_CONFIG_UPDATE_NOTIFIER: "false"
+
 jobs:
   viewer:
-    name: Type-check, build
+    name: Type-check, test, build, pack
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.1
         with:
           path: uhd-viewer
-      - name: Pick the UHD branch
-        id: uhd
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-          BASE_REF: ${{ github.base_ref }}
-          STACK_BASE_BRANCH: ${{ vars.STACK_BASE_BRANCH }}
-          GIT_TERMINAL_PROMPT: "0"
-        run: |
-          # The first candidate UHD has. git ls-remote --exit-code returns 2
-          # for no such branch (bash -e: keep the status).
-          for ref in "$BRANCH" "$BASE_REF" "$STACK_BASE_BRANCH" main; do
-            if [ -z "$ref" ]; then continue; fi
-            status=0
-            git ls-remote --exit-code --heads https://github.com/Delta-Robotics-Inc/uhd.git "refs/heads/$ref" >/dev/null || status=$?
-            case $status in
-              0) echo "UHD at $ref"; echo "ref=$ref" >>"$GITHUB_OUTPUT"; exit 0 ;;
-              2) echo "UHD has no branch $ref" ;;
-              *) echo "::error::cannot list Delta-Robotics-Inc/uhd branches"; exit 1 ;;
-            esac
-          done
-          echo "::error::UHD has none of the candidate branches"
-          exit 1
-      - uses: actions/checkout@v5
+          persist-credentials: false
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.1
         with:
-          repository: Delta-Robotics-Inc/uhd
-          ref: ${{ steps.uhd.outputs.ref }}
+          repository: Delta-Robotics-Inc/OpenUHD
+          ref: ${{ inputs.uhd-ref || env.UHD_REF }}
           path: uhd
-      - uses: actions/setup-node@v5
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
@@ -65,5 +58,14 @@ jobs:
         working-directory: uhd-viewer
       - run: npm run type-check
         working-directory: uhd-viewer
+      - run: npm test
+        working-directory: uhd-viewer
       - run: npm run build
         working-directory: uhd-viewer
+      - name: The package can be published from this repository
+        working-directory: uhd-viewer
+        run: node .github/scripts/release.mjs version && node .github/scripts/release.mjs package --repository Delta-Robotics-Inc/uhd-viewer
+      - name: What the npm package would carry
+        working-directory: uhd-viewer
+        # prepack builds again; the build above already failed if it would
+        run: npm pack --dry-run --ignore-scripts

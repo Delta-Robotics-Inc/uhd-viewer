@@ -28,8 +28,11 @@ describe("the pointer's tool", () => {
 
   it("pans with a left-drag while Space is held on the select tool, and selects again when it is released", () => {
     const held = interactionReducer(initialInteraction, { type: "space", down: true });
-    expect(interactionProps(held)).toEqual({ panOnDrag: [0, 1], selectionOnDrag: false, nodesDraggable: true, cursor: "grab" });
-    expect(interactionProps(interactionReducer(held, { type: "space", down: false })).selectionOnDrag).toBe(true);
+    // modules are not dragged while Space is held: a left-drag that starts on one pans (PB-1037)
+    expect(interactionProps(held)).toEqual({ panOnDrag: [0, 1], selectionOnDrag: false, nodesDraggable: false, cursor: "grab" });
+    const released = interactionProps(interactionReducer(held, { type: "space", down: false }));
+    expect(released.selectionOnDrag).toBe(true);
+    expect(released.nodesDraggable).toBe(true);
     // a key released while the window was away
     expect(interactionReducer(held, { type: "blur" })).toEqual(initialInteraction);
     // on the pan tool Space changes nothing
@@ -74,6 +77,10 @@ describe("the canvas's keys", () => {
     const inside = (selector: string) => ({ closest: (s: string) => (s.includes(selector) ? {} : null) });
     expect(typingTarget(inside("input"))).toBe(true);
     expect(typingTarget(inside("[role='menu']"))).toBe(true);
+    expect(typingTarget(inside("[role='dialog']"))).toBe(true);
+    // the hierarchy panel walks its rows with the arrows and filters as you type: none of it nudges or switches tools
+    expect(typingTarget(inside("[role='tree']"))).toBe(true);
+    expect(typingTarget(inside("[role='listbox']"))).toBe(true);
     expect(typingTarget({ closest: () => null })).toBe(false);
     expect(typingTarget(null)).toBe(false);
   });
@@ -135,6 +142,13 @@ describe("the view a level opens on", () => {
   it("waits until the canvas has a size (a tab opened in the background)", () => {
     expect(firstView({ ...base, sized: false })).toEqual({ kind: "keep" });
     expect(firstView({ ...base, sized: false, saved: { x: 0, y: 0, zoom: 1 } })).toEqual({ kind: "keep" });
+  });
+
+  it("fits again when the canvas changes size (the hierarchy docked beside it, or folded), until the user moves the view", () => {
+    const fitted = { ...base, fittedKey: "a|b", fittedSize: "1400x860" };
+    expect(firstView({ ...fitted, size: "1400x860" })).toEqual({ kind: "keep" });
+    expect(firstView({ ...fitted, size: "1120x860" })).toEqual({ kind: "fit" });
+    expect(firstView({ ...fitted, size: "1120x860", moved: true })).toEqual({ kind: "keep" });
   });
 
   it("fits again when modules come or go, until the user moves the view", () => {

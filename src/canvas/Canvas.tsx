@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Position,
@@ -25,6 +25,7 @@ import type { Live } from "../viewer/controller";
 import { revealViewport, selectionBounds } from "./reveal";
 import { canvasCommand, firstView, interactionProps, typingTarget, type InteractionAction, type InteractionState, type Viewport } from "./interaction";
 import { GRID } from "../layout/router";
+import { createRightDrag } from "./rightDrag";
 
 import { CanvasActionsContext, type CanvasActions } from "./actions";
 
@@ -286,16 +287,19 @@ export function Canvas(props: CanvasProps) {
   const saved = useRef(props.viewport);
   const restored = useRef(false);
   const fittedKey = useRef<string | null>(null);
+  const fittedSize = useRef<string | null>(null);
   const nodesKey = useMemo(() => vm.nodes.map((n) => n.id).sort().join("|"), [vm]);
   const padding = fitPadding(inspector ?? false);
   useEffect(() => {
-    const step = firstView({ saved: saved.current, restored: restored.current, moved: moved.current, nodesKey, fittedKey: fittedKey.current, sized: Boolean(drawn && paneWidth && paneHeight) });
+    const size = `${Math.round(paneWidth)}x${Math.round(paneHeight)}`;
+    const step = firstView({ saved: saved.current, restored: restored.current, moved: moved.current, nodesKey, fittedKey: fittedKey.current, sized: Boolean(drawn && paneWidth && paneHeight), size, fittedSize: fittedSize.current });
     if (step.kind === "restore") {
       restored.current = true;
       void flow.setViewport(step.viewport);
     } else if (step.kind === "fit") {
       const first = fittedKey.current === null;
       fittedKey.current = nodesKey;
+      fittedSize.current = size;
       void flow.fitView({ padding, maxZoom: 1.25, duration: first ? 0 : 300 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -317,6 +321,7 @@ export function Canvas(props: CanvasProps) {
         saved.current = undefined;
         moved.current = false;
         fittedKey.current = nodesKey;
+        fittedSize.current = null;
         onViewport?.(null);
         void flow.fitView({ padding, maxZoom: 1.25, duration: 300 });
       } else {
@@ -422,6 +427,91 @@ export function Canvas(props: CanvasProps) {
     };
   }, []);
 
+  // ---- the right button (rightDrag.ts): a drag pans the view with either tool, over the empty canvas, modules
+  // and links; a click opens the canvas's menu where it was let go (a module's over a module, else the canvas's)
+  const [rightPanning, setRightPanning] = useState(false);
+  useEffect(() => {
+    const el = element.current;
+    if (!el || typeof window === "undefined") return;
+    const nodeAt = (t: EventTarget | null) => (t as Element | null)?.closest?.(".react-flow__node") as HTMLElement | null;
+    // the canvas's own surface: not a floating card or a menu a shell put inside it
+    const onCanvas = (t: EventTarget | null) => Boolean((t as Element | null)?.closest?.(".react-flow__renderer, .react-flow__pane"));
+    const gesture = createRightDrag<EventTarget | null>({
+      viewport: () => flow.getViewport(),
+      setViewport: (v) => void flow.setViewport(v),
+      panStart: () => {
+        moved.current = true;
+        setRightPanning(true);
+      },
+      panEnd: (v) => {
+        setRightPanning(false);
+        keys.current.props.onViewport?.(v);
+      },
+      hasMenu: (t) => {
+        const p = keys.current.props;
+        return nodeAt(t)?.dataset.id ? Boolean(p.onNodeContext) : Boolean(p.onPaneContext);
+      },
+      openMenu: (t, x, y) => {
+        const { props: p, vm: model } = keys.current;
+        const id = nodeAt(t)?.dataset.id;
+        if (id && p.onNodeContext) {
+          const node = model.nodes.find((n) => n.id === id);
+          const at = node?.tapOf ?? id;
+          p.onSelect({ kind: "node", id: at });
+          p.onNodeContext(at, x, y);
+        } else p.onPaneContext?.(x, y);
+      },
+    });
+    const at = (e: MouseEvent) => ({ x: e.clientX, y: e.clientY, target: e.target, button: e.button, buttons: e.buttons });
+    const move = (e: PointerEvent) => {
+      const was = gesture.panning;
+      if (!gesture.move(at(e))) return;
+      e.preventDefault();
+      // the pan follows the pointer past the canvas's edge, and out of the window, until the button comes up
+      if (!was) {
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* the pointer is already gone */
+        }
+      }
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+    };
+    const up = (e: PointerEvent) => {
+      if (gesture.up(at(e))) stop();
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || !onCanvas(e.target) || !gesture.down(at(e))) return;
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", up, true);
+    };
+    const menu = (e: MouseEvent) => {
+      if (!onCanvas(e.target)) return;
+      if (gesture.contextMenu(at(e))) {
+        // the canvas's own menu (now or on release), not the browser's or the webview host's; not React Flow's handlers either
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const blur = () => {
+      gesture.cancel();
+      stop();
+      setRightPanning(false);
+    };
+    el.addEventListener("pointerdown", down, true);
+    el.addEventListener("contextmenu", menu, true);
+    window.addEventListener("blur", blur);
+    return () => {
+      el.removeEventListener("pointerdown", down, true);
+      el.removeEventListener("contextmenu", menu, true);
+      window.removeEventListener("blur", blur);
+      stop();
+    };
+  }, [flow]);
+
   // a double press of the middle button fits the diagram
   const middle = useRef({ at: 0, x: 0, y: 0 });
   const onMouseDown = (e: React.MouseEvent) => {
@@ -438,7 +528,7 @@ export function Canvas(props: CanvasProps) {
     <CanvasActionsContext.Provider value={actions}>
     <ReactFlow
       ref={element}
-      className={`uhd-tool-${interaction.tool}${pointer.cursor === "grab" ? " uhd-grab" : ""}`}
+      className={`uhd-tool-${interaction.tool}${pointer.cursor === "grab" ? " uhd-grab" : ""}${rightPanning ? " uhd-right-panning" : ""}`}
       onMouseDown={onMouseDown}
       nodes={nodes}
       edges={edges}
@@ -454,21 +544,6 @@ export function Canvas(props: CanvasProps) {
       onNodeDragStop={() => props.onLive(null)}
       onEdgeClick={(_, e) => props.onSelect({ kind: "link", id: vm.links.find((l) => l.id === e.id)?.linkId ?? e.id })}
       onNodeDoubleClick={(_, n) => (props.onOpenNode ?? props.onToggleExpand)(n.id)}
-      onNodeContextMenu={
-        props.onNodeContext &&
-        ((e, n) => {
-          e.preventDefault();
-          props.onSelect({ kind: "node", id: n.data.node.tapOf ?? n.id });
-          props.onNodeContext?.(n.data.node.tapOf ?? n.id, e.clientX, e.clientY);
-        })
-      }
-      onPaneContextMenu={
-        props.onPaneContext &&
-        ((e) => {
-          e.preventDefault();
-          props.onPaneContext?.(e.clientX, e.clientY);
-        })
-      }
       onPaneClick={() => props.onSelect(null)}
       onMoveEnd={(e, viewport) => {
         // a pan or a zoom by the user (the view's own fits and a host's moves carry no event)

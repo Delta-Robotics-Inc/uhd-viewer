@@ -1,0 +1,22 @@
+Protoboard Stack: UHD Viewer (@deltarobotics/uhd-viewer)
+Copyright 2026 Delta Robotics, Inc.
+
+This product includes software developed at Delta Robotics, Inc.
+(https://deltaroboticsinc.com).
+
+Licensed under the Apache License, Version 2.0 (the "License").
+See the LICENSE file in the root of this repository for full terms.
+
+"Protoboard", the Protoboard logo and the "0" mark are trademarks of
+Delta Robotics, Inc. The License grants no rights to them (section 6);
+see TRADEMARKS.md.
+
+The built application and headless bundles (dist/app, dist/headless)
+include third-party packages (React, three.js, React Flow, Radix UI,
+Lucide), each under its own licence, which applies to that code.
+
+The stylesheets (src/styles, and the built dist/components and dist/app)
+carry the Kode Mono font, Copyright 2023 The Kode Mono Project Authors
+(https://github.com/isaozler/kode-mono), under the SIL Open Font License
+1.1: src/styles/fonts/OFL.txt. The .woff2 files are the released fonts
+converted to WOFF2, glyphs unchanged.
