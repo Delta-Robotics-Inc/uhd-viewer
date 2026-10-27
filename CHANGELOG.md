@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- **The model view's card no longer covers the model** (`ModelView`). The name and size are behind a Model info button in the toolbar (`infoOpen` shows them from the start), and nothing in the view selects as text: a drag that starts on the card turns the model, and Select All no longer lights the card up. The 3D view's caption is not selectable either.
+- **The model view's card no longer covers the model** (`ModelView`). The name and size are behind a Model info button in the toolbar (`infoOpen` shows them from the start), and nothing in the view selects as text: a drag that starts on the card turns the model, and Select All no longer lights the card up. The 3D view's caption and the tooltips are not selectable either.
 
 ## [0.2.0] — 2026-10-25
 
