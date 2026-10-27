@@ -404,8 +404,8 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const reopen = useFold(!kept.open);
   const foldRef = useRef<HTMLButtonElement>(null);
   const reopenRef = useRef<HTMLButtonElement>(null);
-  const cardRef = useRef<HTMLElement>(null);
-  // the keyboard follows the fold: from inside the card to the button that opens it, and from that button back
+  const cardRef = useRef<HTMLDivElement>(null);
+  // the keyboard follows the fold: from anywhere in the card (its resize edge too) to the button that opens it, and from that button back
   // to the card's fold button, so neither leaves the keyboard on a control that is no longer there
   const wasOpenForFocus = useRef(kept.open);
   useLayoutEffect(() => {
@@ -486,20 +486,21 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
           data-hierarchy-reopen=""
           inert={kept.open || undefined}
           onClick={() => setKept({ open: true })}
-          className={cx(L.folded, !reopen.shown && L.foldedAway)}
+          className={cx(L.folded, !reopen.shown && L.foldedAway, className)}
         >
           <Icon name="panel-left-open" size={16} strokeWidth={1.75} aria-hidden />
         </button>
       )}
       {motion.mounted && (
         <div
+          ref={cardRef}
           className={cx(L.dock, !motion.shown && L.dockAway, className)}
           style={{ width: shownWidth } as CSSProperties}
           data-hierarchy={kept.open ? "open" : "folded"}
           inert={!kept.open || undefined}
           aria-hidden={!kept.open || undefined}
         >
-          <section ref={cardRef} id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
+          <section id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
             <header className={L.header}>
               <span className={L.title}>
                 Hierarchy<span className="text-fg-faint"> · {count}</span>
