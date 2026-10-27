@@ -406,14 +406,21 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const reopenRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   // the keyboard follows the fold: from anywhere in the card (its resize edge too) to the button that opens it, and from that button back
-  // to the card's fold button, so neither leaves the keyboard on a control that is no longer there
+  // to the card's fold button, so neither leaves the keyboard on a control that is no longer there. Where the focus was is read while
+  // rendering the change, before the outgoing control is made inert (a browser may move the focus to the body as soon as it is)
   const wasOpenForFocus = useRef(kept.open);
+  const focusFrom = useRef<"card" | "reopen" | null>(null);
+  if (wasOpenForFocus.current !== kept.open && typeof document !== "undefined") {
+    const active = document.activeElement;
+    focusFrom.current = !active ? null : cardRef.current?.contains(active) ? "card" : active === reopenRef.current ? "reopen" : null;
+  }
   useLayoutEffect(() => {
     if (wasOpenForFocus.current === kept.open) return;
     wasOpenForFocus.current = kept.open;
-    const active = typeof document === "undefined" ? null : document.activeElement;
-    if (!kept.open && active && cardRef.current?.contains(active)) reopenRef.current?.focus();
-    else if (kept.open && active && active === reopenRef.current) foldRef.current?.focus();
+    const from = focusFrom.current;
+    focusFrom.current = null;
+    if (!kept.open && from === "card") reopenRef.current?.focus();
+    else if (kept.open && from === "reopen") foldRef.current?.focus();
   }, [kept.open]);
   // the workspace beside it starts after it and its gaps (`.workspace` reads the width: app.css)
   const docked = kept.open ? CARD_GAP + shownWidth + CARD_GAP : RAIL_WIDTH;

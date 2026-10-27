@@ -350,8 +350,9 @@ describe("folding and opening again (PB-1070)", () => {
   it("keeps the slide and reduced motion, and the keyboard follows the fold", () => {
     expect(panel).toMatch(/const motion = useFold\(kept\.open\);\s+[^\n]*\n\s+const reopen = useFold\(!kept\.open\);/);
     expect(panel).toMatch(/prefers-reduced-motion: reduce/);
-    expect(panel).toMatch(/if \(!kept\.open && active && cardRef\.current\?\.contains\(active\)\) reopenRef\.current\?\.focus\(\);/);
-    expect(panel).toMatch(/else if \(kept\.open && active && active === reopenRef\.current\) foldRef\.current\?\.focus\(\);/);
+    // where the focus was is read while rendering the change, before the outgoing control is inert
+    expect(panel).toMatch(/if \(wasOpenForFocus\.current !== kept\.open && typeof document !== "undefined"\) \{\s+const active = document\.activeElement;\s+focusFrom\.current = !active \? null : cardRef\.current\?\.contains\(active\) \? "card" : active === reopenRef\.current \? "reopen" : null;/);
+    expect(panel).toMatch(/if \(!kept\.open && from === "card"\) reopenRef\.current\?\.focus\(\);\s+else if \(kept\.open && from === "reopen"\) foldRef\.current\?\.focus\(\);/);
   });
   it("a host's commands fold and open the same state", () => {
     expect(panel).toMatch(/else if \(command\.type === "toggle"\) setKept\(\{ open: !kept\.open \}\);/);
