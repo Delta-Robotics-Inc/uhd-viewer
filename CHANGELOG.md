@@ -9,11 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **The hierarchy panel floats.** `ViewerHierarchy` is a card like a host's header: 4 px from the view's edges and below the header, with the panel radius, a border all round and the panel shadow. The canvas starts beside it. It slides open and folded in 200 ms (none with reduced motion), and the 36 px folded rail with its vertical label is gone.
-- **One fold control.** A host with a toggle of its own passes `foldButton={false}`: the panel then has no fold button, and folded it leaves nothing on screen. Without it, the panel folds to a single button. `RAIL_WIDTH` is now what that button takes of the view's width (40 px).
+- **The hierarchy folds from inside the panel.** Its header has a Hide hierarchy button. Folded, it leaves one icon-only button floating at the card's top left, below the header, that opens it again (Show hierarchy): a small card with the panel's border, radius and shadow, and no text. The button takes none of the view's width (`RAIL_WIDTH` is 0), and the keyboard moves between the two buttons as the panel folds and opens. A host's `open`, `close` and `toggle` commands work as before.
 - **The inspector lists every interface** of a module, not only those on its outline. A pin bound into another interface comes last and says which one ("part of UART2").
 - **Long lists show ten at a time**: the interface cards and a module's parameters have "Show 10 more" and "Show fewer" (`useLoadMore`, exported from `components`).
 - **A long description is cut to five lines**, with More and Less (`ClampedText`).
 - **A parent's Artifacts section shows its own artifacts only**: no row of its parts to pick from, and its count is its own.
+
+### Deprecated
+
+- `HierarchyToggle`, a header button for the panel: the panel brings its own controls, so a host needs none. It will be removed in a later minor release.
 
 ### Fixed
 
