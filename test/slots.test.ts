@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ModuleDef } from "@uhd/types/index.js";
 import { buildView } from "../src/model/from-uhd";
 import { checkFindings, direction, groupSlots, humanize, interfaceSlots, levelNames, paramValue, slotSummary, type InterfaceSlot } from "../src/model/slots";
-import { DetailsSection, SelectionKey, Sections, keptInspectorState, navTarget } from "../src/chrome/Sections";
+import { ClampedText, DetailsSection, SelectionKey, Sections, keptInspectorState, navTarget } from "../src/chrome/Sections";
 import { InterfaceCards } from "../src/chrome/InterfaceCards";
 
 const leaf = (id: string, pin: string, type: string, role: string, extra: Record<string, unknown> = {}) => ({ id, name: pin, pin, domain: "electrical", exposed: true, protocols: [{ type, roles: [role] }], ...extra });
@@ -230,12 +230,66 @@ describe("rendered", () => {
     expect(closed).not.toContain(">body<");
   });
 
-  it("many interfaces: the first few, then “N more · names”, and an expanded card is never hidden", () => {
-    const many = Array.from({ length: 7 }, (_, i) => ({ ...slots[0], id: `s${i}`, name: `Slot ${i}` }));
-    expect(render(createElement(InterfaceCards, { slots: many, actions: {}, first: 4 }))).toContain("3 more · Slot 4, Slot 5, Slot 6");
-    keptInspectorState.setExpanded("node:stack", new Set(["s5"]));
-    const html = render(createElement(InterfaceCards, { slots: many, actions: {}, first: 4 }));
-    expect(html).toContain('data-slot="s5"');
-    expect(html).toContain("1 more · Slot 6");
+  it("many interfaces: ten at a time, Show 10 more, Show fewer, and an expanded card is never hidden (PB-1088)", () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ ...slots[0], id: `s${i}`, name: `Slot ${i}` }));
+    const first = render(createElement(InterfaceCards, { slots: many, actions: {} }));
+    expect(first.match(/data-slot="/g)).toHaveLength(10);
+    expect(first).toContain("Show 10 more");
+    expect(first).not.toContain("Show fewer");
+    keptInspectorState.setExpanded("node:stack", new Set(["s15"]));
+    const html = render(createElement(InterfaceCards, { slots: many, actions: {} }));
+    expect(html.match(/data-slot="/g)).toHaveLength(16);
+    expect(html).toContain('data-slot="s15"');
+    expect(html).toContain("Show 9 more");
+    expect(html).toContain("Show fewer");
+    // ten or fewer: no footer
+    expect(render(createElement(InterfaceCards, { slots: many.slice(0, 10), actions: {} }))).not.toContain("data-load-more");
+  });
+
+  it("a long description: five lines and More; a short one has no toggle (PB-1088)", () => {
+    const long = "A paragraph of design notes. ".repeat(40);
+    const html = render(createElement(ClampedText, { text: long, lines: 5 }));
+    expect(html).toContain("data-clamped");
+    expect(html).toContain("-webkit-line-clamp:5");
+    expect(html).toContain(">More<");
+    const short = render(createElement(ClampedText, { text: "Main flight controller stack.", lines: 5 }));
+    expect(short).not.toContain("data-clamped");
+    expect(short).not.toContain(">More<");
+  });
+});
+
+describe("every interface is listed (PB-1071)", () => {
+  // a part whose UART is a group binding two pins: the outline draws the UART, the pins are behind it
+  const part = {
+    id: "mcu",
+    name: "MCU board",
+    interfaces: [
+      { id: "uart1", name: "UART1", domain: "electrical", exposed: true, protocols: [{ type: "uart", roles: ["host"] }], slots: [{ id: "rx" }, { id: "tx" }], profiles: [{ id: "default", bindings: { rx: "pa10", tx: "pa9" } }] },
+      leaf("pa10", "PA10", "digital", "input"),
+      leaf("pa9", "PA9", "digital", "output"),
+      leaf("vin", "VIN", "power", "input"),
+      { id: "boot", name: "BOOT", domain: "electrical", exposed: false, protocols: [{ type: "digital", roles: ["input"] }] },
+    ],
+  } as unknown as ModuleDef;
+  const root = { id: "root", name: "Root", interfaces: [], children: [{ id: "mcu", moduleDefId: "mcu", name: "MCU" }], links: [] } as unknown as ModuleDef;
+  const find = (id: string) => (id === "mcu" ? part : id === "root" ? root : undefined);
+  const view = buildView(root, find, [], { expanded: new Set() });
+  const node = view.nodes.find((n) => n.id === "mcu")!;
+  const all = interfaceSlots(node, view, { lookup: find });
+
+  it("the outline draws only the primary interfaces", () => {
+    expect(node.ports.map((p) => p.id).sort()).toEqual(["uart1", "vin"]);
+  });
+
+  it("the cards list every interface of the definition, the pins bound into another last, saying which", () => {
+    expect(all.map((s) => s.id).sort()).toEqual(["boot", "pa10", "pa9", "uart1", "vin"]);
+    expect(slotSummary(all).total).toBe(5);
+    const pin = all.find((s) => s.id === "pa10")!;
+    expect(pin.partOf).toBe("UART1");
+    expect(pin.open).toBe(false);
+    expect(all.slice(-2).map((s) => s.id).sort()).toEqual(["pa10", "pa9"]);
+    // an interface not exposed on the outline is listed too
+    expect(all.find((s) => s.id === "boot")!.open).toBe(true);
+    expect(renderToStaticMarkup(createElement(InterfaceCards, { slots: all, actions: {} }))).toContain("part of UART1");
   });
 });

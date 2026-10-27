@@ -73,7 +73,7 @@ export {
 // the inspector's details on their own, for a host with an inspector of its own
 export { SelectionDetails, type SelectionDetailsProps, type DetailsTarget, type InterfaceRequest } from "./viewer/details";
 // the inspector's sections and interface slot cards (PB-1042, design A with expandable cards)
-export { Sections, DetailsSection, KeyValues, useShowAll, useSectionOpen, useExpandedCards, SelectionKey, keptInspectorState, navTarget, onNavKey, SECTION_LOOK, type DetailsSectionProps } from "./chrome/Sections";
+export { Sections, DetailsSection, KeyValues, useShowAll, useLoadMore, ClampedText, LIST_STEP, useSectionOpen, useExpandedCards, SelectionKey, keptInspectorState, navTarget, onNavKey, SECTION_LOOK, type DetailsSectionProps } from "./chrome/Sections";
 export { InterfaceCards, InterfaceCard, SlotGlyph, CARD_LOOK, SLOT_COLOR, type InterfaceCardActions } from "./chrome/InterfaceCards";
 export { interfaceSlots, slotSummary, groupSlots, checkFindings, levelNames, humanize, sentence, paramValue, type InterfaceSlot, type SlotKind, type SlotState, type SlotPin, type SlotLink, type SlotFinding, type SlotNote, type HostFinding, type SlotOptions } from "./model/slots";
 export { ArtifactCard, ArtifactCards, ArtifactGrid, type ArtifactCardProps } from "./chrome/ArtifactCards";
