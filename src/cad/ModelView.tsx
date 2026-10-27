@@ -211,11 +211,11 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
 
   const info = state.info;
   return (
-    // nothing in the view selects as text (a drag that starts on the card turns the model; Select All lights nothing up)
+    // nothing in the view selects as text (Select All lights nothing up); the card lets the pointer through, so a drag that starts on it turns the model
     <div className={cx("uhd-model-view relative size-full min-h-[240px] min-w-[280px] overflow-hidden bg-canvas select-none", className)}>
       <div ref={host} className="absolute inset-0 [&>canvas]:block [&>canvas]:size-full" />
       {showInfo && (name || info) && (
-        <div role="note" aria-label="Model info" className="absolute top-[calc(var(--uhd-inset-top,0px)+12px)] left-3 max-w-[min(360px,calc(100%-24px))] rounded-panel border border-line bg-surface px-3 py-2 shadow-panel outline outline-1 -outline-offset-1 outline-contrast">
+        <div role="note" aria-label="Model info" className="pointer-events-none absolute top-[calc(var(--uhd-inset-top,0px)+12px)] left-3 max-w-[min(360px,calc(100%-24px))] rounded-panel border border-line bg-surface px-3 py-2 shadow-panel outline outline-1 -outline-offset-1 outline-contrast">
           {name && <div className="truncate font-label text-[12px] tracking-[0.06em] text-fg uppercase">{name}</div>}
           {detail && <div className="truncate text-[11px] text-fg-muted">{detail}</div>}
           {info && (
