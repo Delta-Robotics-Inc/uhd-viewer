@@ -343,7 +343,7 @@ describe("folding and opening again (PB-1070)", () => {
     // an icon and nothing else to read: no text, no vertical label
     expect(body.replace(/<Icon [^>]*\/>/, "").match(/>\s*([^<\s][^<]*)</)).toBeNull();
     // at the card's corner (4 px in, below the header), a small card of its own, over the view: it takes none of its width
-    expect(panel).toMatch(/folded:\s*"uhd-hierarchy-reopen absolute left-1 z-30 top-\[calc\(var\(--uhd-inset-top,0px\)\+4px\)\] grid size-8 [^"]*rounded-panel border border-line bg-surface [^"]*shadow-panel[^"]*hover:bg-hover[^"]*focus-visible:outline-focus/);
+    expect(panel).toMatch(/folded:\s*"uhd-hierarchy-reopen absolute left-1 z-30 top-\[calc\(var\(--uhd-inset-top,0px\)\+4px\)\] grid size-8 [^"]*rounded-panel border border-line bg-surface [^"]*shadow-panel[^"]*hover:bg-active[^"]*focus-visible:outline-focus/);
     expect(panel).toMatch(/export const RAIL_WIDTH = 0;/);
     expect(panel).toMatch(/const docked = kept\.open \? CARD_GAP \+ shownWidth \+ CARD_GAP : RAIL_WIDTH;/);
   });

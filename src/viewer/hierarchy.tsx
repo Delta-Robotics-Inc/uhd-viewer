@@ -102,7 +102,7 @@ export const HIERARCHY_LOOK = {
    * that opens it again. It fades in as the card leaves and out as it comes.
    */
   folded:
-    "uhd-hierarchy-reopen absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 cursor-pointer place-items-center rounded-panel border border-line bg-surface p-0 text-fg-muted shadow-panel outline outline-1 -outline-offset-1 outline-contrast transition-[opacity,background-color,color] duration-200 ease-out motion-reduce:transition-none hover:bg-hover hover:text-fg hover:outline-contrast-active focus-visible:outline-focus active:bg-active",
+    "uhd-hierarchy-reopen absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 cursor-pointer place-items-center rounded-panel border border-line bg-surface p-0 text-fg-muted shadow-panel outline outline-1 -outline-offset-1 outline-contrast transition-[opacity,background-color,color] duration-200 ease-out motion-reduce:transition-none hover:bg-active hover:text-fg hover:outline-contrast-active focus-visible:outline-focus",
   /** The button while it fades in or out (and while the panel is open). */
   foldedAway: "pointer-events-none opacity-0",
   header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
