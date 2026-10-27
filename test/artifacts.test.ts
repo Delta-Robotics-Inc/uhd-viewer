@@ -195,3 +195,14 @@ describe("the inspector's details on their own", () => {
     expect(render({ target: { kind: "link", owner: "", ids: ["nope"] }, missing: "gone" })).toBe("gone");
   });
 });
+
+describe("a parent's artifacts are its own (PB-1088)", () => {
+  it("artifactSummary does not roll up the children's", async () => {
+    const { artifactSummary } = await import("../src/chrome/Chrome");
+    const child = { id: "motor", name: "Motor", interfaces: [], artifacts: [{ id: "m", name: "Motor model", type: "cad", filePath: "cad/motor.glb" }] } as unknown as ModuleDef;
+    const arm = { id: "arm", name: "Arm", interfaces: [], children: [{ id: "motor", moduleDefId: "motor" }], artifacts: [{ id: "doc", name: "Arm notes", type: "documentation", filePath: "docs/arm.pdf" }] } as unknown as ModuleDef;
+    const find = (id?: string) => (id === "motor" ? child : id === "arm" ? arm : undefined);
+    expect(artifactSummary(arm, find).count).toBe(1);
+    expect(artifactSummary({ ...arm, artifacts: [] } as ModuleDef, find).count).toBe(0);
+  });
+});

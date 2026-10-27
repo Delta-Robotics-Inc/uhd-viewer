@@ -10,7 +10,7 @@
  * (`data-nav`); Arrow Up and Down move between them, Home and End go to the
  * first and the last, Enter and Space open and close (they are buttons).
  */
-import { createContext, useCallback, useContext, useId, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "../canvas/Icon";
 import { cx } from "../ui/cx";
 
@@ -230,7 +230,85 @@ export function KeyValues({ rows, limit }: { rows: { key: string; value: ReactNo
   );
 }
 
-/** A section's rows shown in part, and the header action that shows them all. */
+/** How many rows of a long list are shown at first, and how many more each "Show more" adds (PB-1088). */
+export const LIST_STEP = 10;
+
+const MORE_LOOK = {
+  row: "flex min-h-6 items-center gap-3 pt-1",
+  button: "inline-flex h-6 cursor-pointer items-center gap-1 rounded-[3px] px-1 -mx-1 text-[11px] leading-none text-fg-muted hover:text-fg focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus",
+} as const;
+
+/**
+ * A long list shown `step` rows at a time (PB-1088): "Show 10 more" under the
+ * rows adds the next ones, "Show fewer" goes back to the first `step`.
+ * `keep`: rows that must stay shown (an expanded card), counted from the top.
+ */
+export function useLoadMore(total: number, step: number = LIST_STEP, keep = 0): { limit: number; footer: ReactNode } {
+  const [shown, setShown] = useState(step);
+  const limit = Math.min(total, Math.max(shown, keep));
+  if (total <= step) return { limit: total, footer: null };
+  const next = Math.min(step, total - limit);
+  return {
+    limit,
+    footer: (
+      <div className={MORE_LOOK.row} data-load-more="">
+        {next > 0 && (
+          <button type="button" data-nav="" onKeyDown={onNavKey} className={MORE_LOOK.button} onClick={() => setShown(limit + next)}>
+            <Icon name="chevron-down" size={12} strokeWidth={1.75} aria-hidden className="shrink-0" />
+            Show {next} more
+          </button>
+        )}
+        {limit > step && (
+          <button type="button" data-nav="" onKeyDown={onNavKey} className={cx(MORE_LOOK.button, next > 0 && "ml-auto")} onClick={() => setShown(step)}>
+            <Icon name="chevron-up" size={12} strokeWidth={1.75} aria-hidden className="shrink-0" />
+            Show fewer
+          </button>
+        )}
+      </div>
+    ),
+  };
+}
+
+/**
+ * A long free text (a module's description) cut to `lines` lines, with "More"
+ * to read it all and "Less" to cut it again (PB-1088). The toggle shows only
+ * when the text is cut.
+ */
+export function ClampedText({ text, lines = 5, className }: { text: string; lines?: number; className?: string }) {
+  const [open, setOpen] = useState(false);
+  // before it is laid out (and where it never is: a server render), a long text is taken as cut
+  const [cut, setCut] = useState(() => text.length > lines * 60);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const measure = () => {
+      // laid out: cut when the text is taller than its box; not laid out (a test, a hidden page): by its length
+      setCut(el.clientHeight > 0 ? el.scrollHeight > el.clientHeight + 1 : text.length > lines * 60);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, lines, open]);
+  const id = useId();
+  return (
+    <div className="pb-1.5">
+      <p ref={ref} id={id} data-clamped={!open && cut ? "" : undefined} className={cx("m-0 [overflow-wrap:anywhere] whitespace-pre-line", className)} style={open ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines, overflow: "hidden" }}>
+        {text}
+      </p>
+      {(cut || open) && (
+        <button type="button" aria-expanded={open} aria-controls={id} className={cx(MORE_LOOK.button, "mt-0.5")} onClick={() => setOpen(!open)}>
+          <Icon name={open ? "chevron-up" : "chevron-down"} size={12} strokeWidth={1.75} aria-hidden className="shrink-0" />
+          {open ? "Less" : "More"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A section's rows shown in part, and the header action that shows them all. Lists use `useLoadMore` (PB-1088). */
 export function useShowAll(total: number, limit: number): { limit: number | undefined; aside: ReactNode } {
   const [all, setAll] = useState(false);
   if (total <= limit) return { limit: undefined, aside: null };
