@@ -498,7 +498,7 @@ const shape = (name: string) => name.replace(/\d+/g, "#");
  */
 export function groupSlots(slots: InterfaceSlot[]): InterfaceSlot[] {
   const out: InterfaceSlot[] = [];
-  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : s.exportedAs ? "exported" : s.partOf ? "part" : "used"}`;
+  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : s.exportedAs ? "exported" : s.partOf ? `part of ${s.partOf}` : "used"}`;
   for (const s of slots) {
     if (!/\d/.test(s.name)) {
       out.push(s);

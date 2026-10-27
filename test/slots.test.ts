@@ -291,5 +291,9 @@ describe("every interface is listed (PB-1071)", () => {
     // an interface not exposed on the outline is listed too
     expect(all.find((s) => s.id === "boot")!.open).toBe(true);
     expect(renderToStaticMarkup(createElement(InterfaceCards, { slots: all, actions: {} }))).toContain("part of UART1");
+    // pins of different interfaces are not one card ("RX ×2" would say only the first one's)
+    const pins = ["uart1", "uart2", "uart3"].map((u, i) => ({ ...all.find((x) => x.id === "pa10")!, id: `rx${i + 1}`, name: `RX${i + 1}`, partOf: u.toUpperCase() }));
+    expect(groupSlots(pins).map((x) => x.name)).toEqual(["RX1", "RX2", "RX3"]);
+    expect(groupSlots(pins.map((x) => ({ ...x, partOf: "UART1" })))).toHaveLength(1);
   });
 });
