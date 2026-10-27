@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **The inspector lists every interface** of a module, not only those on its outline. A pin bound into another interface comes last and says which one ("part of UART2").
+- **Long lists show ten at a time**: the interface cards and a module's parameters have "Show 10 more" and "Show fewer" (`useLoadMore`, exported from `components`).
+- **A long description is cut to five lines**, with More and Less (`ClampedText`).
+- **A parent's Artifacts section shows its own artifacts only**: no row of its parts to pick from, and its count is its own.
+
 ## [0.2.0] — 2026-10-25
 
 The first public release, and the first on npmjs. The 0.1.x versions were built with the Protoboard stack and never published to npmjs; this section summarises what changed since them.
