@@ -118,7 +118,7 @@ function childPorts(owner: ModuleDef | undefined, iface: InterfaceDef): ViewChil
   });
 }
 
-function toPort(iface: InterfaceDef, owner: ModuleDef, exported?: ViewPort["exported"]): ViewPort {
+export function toPort(iface: InterfaceDef, owner: ModuleDef, exported?: ViewPort["exported"]): ViewPort {
   return {
     id: iface.id,
     name: iface.name ?? iface.id,

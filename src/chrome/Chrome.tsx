@@ -6,14 +6,14 @@ import { circuitOutputs } from "../model/outputs";
 import { BoardViews, DerivedDetails, DerivedList, NetDetails, PackageSection, PinTable } from "./BoardInspector";
 import { partPackage } from "@uhd/protocols/package.js";
 import type { ViewLink, ViewModel, ViewNode } from "../model/types";
-import { ArtifactsSection, AssemblyArtifacts, type ArtifactResolver } from "./Artifacts";
+import { ArtifactsSection, type ArtifactResolver } from "./Artifacts";
 import type { Appearance } from "../source/source";
 import { colorFor, type Classification } from "../model/classification";
 import { EvidenceSection, hasEvidence } from "./Evidence";
 import { evidenceFor } from "../model/evidence";
 import { artifactCards, groupArtifactCards } from "../model/artifacts";
 import { checkFindings, interfaceSlots, levelNames, sentence, slotSummary, type HostFinding } from "../model/slots";
-import { DetailsSection, KeyValues, SelectionKey, Sections, useShowAll } from "./Sections";
+import { ClampedText, DetailsSection, KeyValues, LIST_STEP, SelectionKey, Sections, useLoadMore } from "./Sections";
 import { InterfaceCards, type InterfaceCardActions } from "./InterfaceCards";
 import { Icon } from "../canvas/Icon";
 import type { Selection } from "../canvas/Canvas";
@@ -34,22 +34,16 @@ function factRows(rows: [string, string | undefined][]): { key: string; value: s
   return rows.filter((r): r is [string, string] => Boolean(r[1])).map(([key, value]) => ({ key, value }));
 }
 
-/** "24 models · 2 docs · 1 evidence": what a definition's artifacts, and its parts', are, by group. */
-export function artifactSummary(def: ModuleDef | undefined, lookup: (id?: string) => ModuleDef | undefined): { count: number; text: string } {
+/**
+ * "4 models · 2 docs · 1 evidence": what a definition's own artifacts are, by group. A parent's are its own only
+ * (PB-1088): its children's are theirs, a selection away.
+ */
+export function artifactSummary(def: ModuleDef | undefined, _lookup?: (id?: string) => ModuleDef | undefined): { count: number; text: string } {
   if (!def) return { count: 0, text: "" };
-  const defs: ModuleDef[] = [def];
-  const seen = new Set([def.id]);
-  const walk = (d: ModuleDef, depth: number) => {
-    for (const ref of d.children ?? []) {
-      const c = lookup(ref.moduleDefId);
-      if (!c || seen.has(c.id)) continue;
-      seen.add(c.id);
-      defs.push(c);
-      if (depth < 3) walk(c, depth + 1);
-    }
-  };
-  walk(def, 0);
-  const cards = defs.flatMap((d) => artifactCards(d, () => undefined));
+  // a board's drawings and outputs are the Board section's (ArtifactsSection leaves them out too)
+  const outs = circuitOutputs(def);
+  const board = new Set(outs ? Object.values(outs).filter(Boolean) : []);
+  const cards = artifactCards(def, () => undefined, { skip: (a) => board.has(a) });
   const WORD: Record<string, [string, string]> = {
     images: ["image", "images"],
     models: ["model", "models"],
@@ -132,16 +126,13 @@ function ModuleDetails({ node, vm, def, onDrill, onToggleExpand, onSelect, artif
     ]),
     ...performance,
   ];
-  const showAll = useShowAll(params.length, 5);
+  const more = useLoadMore(params.length);
   const slots = useMemo(
     () => (node.kind === "harness" ? [] : interfaceSlots(node, vm, { lookup: (id) => find(id), drill, names, linkNames, findings })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [node, vm, def, drill?.join("/"), names, linkNames, findings],
   );
   const summary = slotSummary(slots);
-  // the linked power and signal interfaces and the open slots are shown; mechanical ones and those in use through
-  // another wait behind "N more" (at most twelve cards before it)
-  const firstCards = Math.min(12, Math.max(4, slots.filter((s) => (s.links.length && s.kind !== "mechanical") || s.open).length));
   const arts = artifactSummary(def, find);
   const derived = vm.derived.filter((d) => d.a.node === node.id || d.b.node === node.id);
   const pins = (def?.interfaces ?? []).filter((i) => i.pin !== undefined).length;
@@ -166,9 +157,11 @@ function ModuleDetails({ node, vm, def, onDrill, onToggleExpand, onSelect, artif
         </div>
       )}
       <Sections label={`${node.label} details`}>
-        <DetailsSection id="parameters" title="Parameters" aside={showAll.aside}>
-          {node.description && <p className="m-0 pb-1.5 text-[11px] leading-[1.5] text-fg-muted">{node.description}</p>}
-          <KeyValues rows={params} limit={showAll.limit} />
+        {/* a long description is cut to five lines, with More (PB-1088); long design notes belong in the docs */}
+        <DetailsSection id="parameters" title="Parameters">
+          {node.description && <ClampedText key={node.description} text={node.description} lines={5} className="text-[11px] leading-[1.5] text-fg-muted" />}
+          <KeyValues rows={params} limit={more.limit} />
+          {more.footer}
         </DetailsSection>
         {board && (
           <DetailsSection id="board" title="Board">
@@ -177,7 +170,7 @@ function ModuleDetails({ node, vm, def, onDrill, onToggleExpand, onSelect, artif
         )}
         {node.kind !== "harness" && slots.length > 0 && (
           <DetailsSection id="interfaces" title="Interfaces" count={summary.total} summary={summary.text}>
-            <InterfaceCards slots={slots} first={firstCards} actions={cardActions ?? { selectLink: (id) => onSelect({ kind: "link", id }) }} />
+            <InterfaceCards key={node.id} slots={slots} first={LIST_STEP} actions={cardActions ?? { selectLink: (id) => onSelect({ kind: "link", id }) }} />
           </DetailsSection>
         )}
         {artifacts && arts.count > 0 && (
@@ -642,7 +635,7 @@ function InspectorView(props: {
               onSelect={props.onSelect}
               board={boardFor(node)}
               onOpenSource={host.openSource && node.defId ? () => host.openSource!(node.defId!, fullId(props.drill, node.id)) : undefined}
-              artifacts={<AssemblyArtifacts key={node.id} def={props.defFor(node.defId)} lookup={props.defFor} resolve={props.resolveArtifact} appearance={props.appearance} titled={false} />}
+              artifacts={<ArtifactsSection key={node.id} def={props.defFor(node.defId)} resolve={props.resolveArtifact} appearance={node.defId ? props.appearance?.[node.defId] : undefined} titled={false} />}
               lookup={props.defFor}
               drill={props.drill}
               names={named.names}

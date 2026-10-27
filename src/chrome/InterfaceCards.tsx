@@ -12,11 +12,11 @@
  * read side by side, and opening one never closes the one being read. The
  * open set is kept per selection while the page is open (Sections.tsx).
  */
-import { useId, useState, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Icon } from "../canvas/Icon";
 import { cx } from "../ui/cx";
 import type { InterfaceSlot, SlotKind, SlotState } from "../model/slots";
-import { SECTION_LOOK, onNavKey, useExpandedCards } from "./Sections";
+import { LIST_STEP, SECTION_LOOK, onNavKey, useExpandedCards, useLoadMore } from "./Sections";
 
 /** The card's look, in one place. */
 export const CARD_LOOK = {
@@ -310,6 +310,11 @@ export function InterfaceCard({ slot, open, onToggle, actions }: { slot: Interfa
             <Icon name="corner-down-right" size={12} strokeWidth={1.75} aria-hidden className="shrink-0 text-fg-faint" />
             <span className="min-w-0 truncate text-fg-faint">in use through {slot.usedBy}</span>
           </div>
+        ) : slot.partOf ? (
+          <div className={CARD_LOOK.linked}>
+            <Icon name="corner-down-right" size={12} strokeWidth={1.75} aria-hidden className="shrink-0 text-fg-faint" />
+            <span className="min-w-0 truncate text-fg-faint">part of {slot.partOf}</span>
+          </div>
         ) : null}
       </div>
       <div id={detail} hidden={!open}>
@@ -319,28 +324,18 @@ export function InterfaceCard({ slot, open, onToggle, actions }: { slot: Interfa
   );
 }
 
-/** The cards, the first few shown; "N more · names" opens the rest. */
-export function InterfaceCards({ slots, actions, first = 4 }: { slots: InterfaceSlot[]; actions: InterfaceCardActions; first?: number }) {
+/** The cards, ten at a time (PB-1088): "Show 10 more" adds the next ten, "Show fewer" goes back to the first ten. */
+export function InterfaceCards({ slots, actions, first = LIST_STEP }: { slots: InterfaceSlot[]; actions: InterfaceCardActions; first?: number }) {
   const [expanded, toggle] = useExpandedCards();
-  const [all, setAll] = useState(false);
   // an expanded card is never hidden behind "more"
   const lastOpen = slots.reduce((m, s, i) => (expanded.has(s.id) ? i : m), -1);
-  const cut = all ? slots.length : Math.max(first, lastOpen + 1);
-  const shown = slots.slice(0, cut);
-  const rest = slots.slice(cut);
+  const more = useLoadMore(slots.length, first, lastOpen + 1);
   return (
     <div className={CARD_LOOK.list} data-interface-cards="">
-      {shown.map((s) => (
+      {slots.slice(0, more.limit).map((s) => (
         <InterfaceCard key={s.id} slot={s} open={expanded.has(s.id)} onToggle={() => toggle(s.id)} actions={actions} />
       ))}
-      {rest.length > 0 && (
-        <button type="button" data-nav="" onKeyDown={onNavKey} className={CARD_LOOK.more} aria-expanded={false} onClick={() => setAll(true)} data-tooltip={rest.map((s) => s.name).join(", ")} data-tooltip-clamp="4">
-          <Icon name="chevron-right" size={12} strokeWidth={1.75} aria-hidden className="shrink-0" />
-          <span className="min-w-0 truncate">
-            {rest.length} more · {rest.map((s) => s.name).join(", ")}
-          </span>
-        </button>
-      )}
+      {more.footer}
     </div>
   );
 }

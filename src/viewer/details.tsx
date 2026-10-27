@@ -19,7 +19,7 @@ import type { UhdBundle } from "@uhd/types/bundle.js";
 import type { ArtifactResolver } from "../api";
 import type { Selection } from "../canvas/Canvas";
 import { LinkDetails, NodeDetails } from "../chrome/Chrome";
-import { AssemblyArtifacts, ArtifactsSection } from "../chrome/Artifacts";
+import { ArtifactsSection } from "../chrome/Artifacts";
 import { BoardViews, DerivedDetails, DerivedList } from "../chrome/BoardInspector";
 import { PairPreview, pairEnds } from "../chrome/PairView";
 import { HostContext, type HostActions } from "../host/context";
@@ -217,7 +217,7 @@ export function SelectionDetails({ bundle, definitions, target, resolveArtifact 
               onToggleExpand={() => undefined}
               onSelect={select}
               board={boardFor(node)}
-              artifacts={<AssemblyArtifacts key={node.defId} def={defFor(node.defId)} lookup={defFor} resolve={resolveArtifact} appearance={appearance} titled={false} />}
+              artifacts={<ArtifactsSection key={node.defId} def={defFor(node.defId)} resolve={resolveArtifact} appearance={node.defId ? appearance?.[node.defId] : undefined} titled={false} />}
               lookup={defFor}
               drill={drill}
               names={named?.names}

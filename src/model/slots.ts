@@ -9,6 +9,7 @@
  */
 import type { InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { LinkState, ViewLink, ViewModel, ViewNode, ViewPort } from "./types";
+import { toPort } from "./from-uhd";
 
 export type SlotKind = "power" | "signal" | "mechanical";
 
@@ -89,6 +90,8 @@ export interface InterfaceSlot {
   usedBy?: string;
   /** Exported to the boundary of the module it is in, by that name: linked from outside, not open. */
   exportedAs?: string;
+  /** A pin bound into another interface of the module (a UART's RX inside its pad group), by that one's name: not on the outline, not linked on its own. */
+  partOf?: string;
   /** The worst state of its links. */
   state?: SlotState;
   pinMap: SlotPin[];
@@ -306,22 +309,32 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
     // one entry per stored link (a harness's two segments are one)
     return mine.filter((l, i) => mine.findIndex((m) => m.linkId === l.linkId) === i);
   };
-  const linkedIds = new Set(node.ports.filter((p) => linksOf(p.id).length).map((p) => p.id));
+  // every interface of the definition (PB-1071): the outline's ports, then those the outline does not draw (pins bound
+  // into another interface, interfaces not exposed)
+  const drawn = new Set(node.ports.map((p) => p.id));
+  const ports: ViewPort[] = [...node.ports, ...(def && node.kind !== "harness" ? def.interfaces.filter((i) => !drawn.has(i.id)).map((i) => toPort(i, def)) : [])];
+  // the interface each pin is bound into, by name
+  const boundInto = new Map<string, string>();
+  for (const i of def?.interfaces ?? [])
+    for (const profile of i.profiles ?? [])
+      for (const v of Object.values(profile.bindings))
+        for (const id of Array.isArray(v) ? v : [v]) if (id !== i.id && !boundInto.has(id)) boundInto.set(id, i.name && i.name !== i.id ? i.name : humanize(i.id));
+  const linkedIds = new Set(ports.filter((p) => linksOf(p.id).length).map((p) => p.id));
   // an interface the module it is in exports (a pass-through to the drilled module's edge): reached from outside
   const exportedAs = new Map<string, string>();
   for (const l of vm.links)
     if (l.passThrough && l.target.node === node.id && !exportedAs.has(l.target.port)) exportedAs.set(l.target.port, l.name);
   // an exported pad that a linked pad group binds is in use through that group
   const usedBy = new Map<string, string>();
-  for (const p of node.ports) if (linkedIds.has(p.id)) for (const c of p.children) if (c.leafId && !usedBy.has(c.leafId)) usedBy.set(c.leafId, p.name === p.id ? humanize(p.id) : p.name);
+  for (const p of ports) if (linkedIds.has(p.id)) for (const c of p.children) if (c.leafId && !usedBy.has(c.leafId)) usedBy.set(c.leafId, p.name === p.id ? humanize(p.id) : p.name);
   // an interface whose own pins are bound there too (UART2, whose RX2 and TX2 are receiver pads)
-  for (const p of node.ports) {
+  for (const p of ports) {
     if (linkedIds.has(p.id) || usedBy.has(p.id)) continue;
     const via = p.children.map((c) => c.leafId && usedBy.get(c.leafId)).find(Boolean);
     if (via) usedBy.set(p.id, via);
   }
 
-  const slots = node.ports.map((port): InterfaceSlot => {
+  const slots = ports.map((port): InterfaceSlot => {
     const iface = findInterface(def, port.id, lookup);
     const leaves = port.children.map((c) => (c.leafId ? findInterface(def, c.leafId, lookup) : undefined));
     const links = linksOf(port.id);
@@ -441,9 +454,10 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
       ...(role ? { role } : {}),
       pins,
       linked: linked.filter((x, i) => linked.findIndex((y) => y.module === x.module && y.via === x.via) === i),
-      open: !links.length && !usedBy.has(port.id) && !exportedAs.has(port.id) && !vm.derived.some((d) => (d.a.node === node.id && d.a.iface === port.id) || (d.b.node === node.id && d.b.iface === port.id)),
+      open: !links.length && !usedBy.has(port.id) && !exportedAs.has(port.id) && !(!drawn.has(port.id) && boundInto.has(port.id)) && !vm.derived.some((d) => (d.a.node === node.id && d.a.iface === port.id) || (d.b.node === node.id && d.b.iface === port.id)),
       ...(!links.length && usedBy.has(port.id) ? { usedBy: usedBy.get(port.id)! } : {}),
       ...(!links.length && !usedBy.has(port.id) && exportedAs.has(port.id) ? { exportedAs: exportedAs.get(port.id)! } : {}),
+      ...(!links.length && !usedBy.has(port.id) && !exportedAs.has(port.id) && !drawn.has(port.id) && boundInto.has(port.id) ? { partOf: boundInto.get(port.id)! } : {}),
       ...(state ? { state } : {}),
       pinMap,
       params,
@@ -454,10 +468,10 @@ export function interfaceSlots(node: ViewNode, vm: ViewModel, opts: SlotOptions)
       refs: [...refs],
     };
   });
-  // linked power and signal first, then open slots, then mechanical ones, then those in use through another interface;
-  // the module's order within each
+  // linked power and signal first, then open slots, then mechanical ones, then those in use through another interface,
+  // then the pins bound into another interface; the module's order within each
   // power before signal among the linked ones, as a reader traces a build: supply first
-  const order = (s: InterfaceSlot) => (s.linked.length || s.links.length ? (s.kind === "mechanical" ? 3 : s.kind === "power" ? 0 : 1) : s.open ? 2 : 4);
+  const order = (s: InterfaceSlot) => (s.linked.length || s.links.length ? (s.kind === "mechanical" ? 3 : s.kind === "power" ? 0 : 1) : s.open ? 2 : s.partOf ? 5 : 4);
   const sorted = slots.map((s, i) => ({ s, i })).sort((a, b) => order(a.s) - order(b.s) || a.i - b.i).map((x) => x.s);
   return groupSlots(sorted);
 }
@@ -484,7 +498,7 @@ const shape = (name: string) => name.replace(/\d+/g, "#");
  */
 export function groupSlots(slots: InterfaceSlot[]): InterfaceSlot[] {
   const out: InterfaceSlot[] = [];
-  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : s.exportedAs ? "exported" : "used"}`;
+  const key = (s: InterfaceSlot) => `${shape(s.name)}|${s.kind}|${s.protocol}|${s.linked.length ? "linked" : s.open ? "open" : s.exportedAs ? "exported" : s.partOf ? `part of ${s.partOf}` : "used"}`;
   for (const s of slots) {
     if (!/\d/.test(s.name)) {
       out.push(s);
