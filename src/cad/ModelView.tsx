@@ -3,7 +3,9 @@
  * assembly): a GLB by URL, or a scene a host built (a STEP it converted), in
  * the 3D view's own scene, lights, materials and theme colours, with a
  * floating icon toolbar (fit, standard views, wireframe, x-ray, grid, turn)
- * and a card with its size. Nothing here is specific to a host.
+ * and, on request from the toolbar, a card with its name and size (PB-1074:
+ * shown all the time it covered the model, and a Select All lit it up). Nothing
+ * here is specific to a host.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -28,6 +30,8 @@ export interface ModelViewProps {
   error?: string;
   /** Called once the model is on screen, with what the card shows. */
   onReady?: (info: ModelInfo) => void;
+  /** Show the card with the name and size from the start (default: folded into the toolbar's Model info button). */
+  infoOpen?: boolean;
   /** Extra buttons at the toolbar's end (a host's "open in the system viewer"). */
   actions?: React.ReactNode;
   className?: string;
@@ -67,7 +71,7 @@ function stats(root: THREE.Object3D): Omit<ModelInfo, "size"> {
 
 const mm = (n: number) => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
 
-export function ModelView({ url, object, name, detail, error, onReady, actions, className }: ModelViewProps) {
+export function ModelView({ url, object, name, detail, error, onReady, actions, infoOpen = false, className }: ModelViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   const model = useRef<THREE.Object3D | null>(null);
@@ -77,6 +81,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
   const [grid, setGrid] = useState(true);
   const [spin, setSpin] = useState(false);
   const [view, setView] = useState<ViewDir>("iso");
+  const [showInfo, setShowInfo] = useState(infoOpen);
 
   useEffect(() => {
     if (!host.current) return;
@@ -206,10 +211,11 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
 
   const info = state.info;
   return (
-    <div className={cx("uhd-model-view relative size-full min-h-[240px] min-w-[280px] overflow-hidden bg-canvas", className)}>
+    // nothing in the view selects as text (a drag that starts on the card turns the model; Select All lights nothing up)
+    <div className={cx("uhd-model-view relative size-full min-h-[240px] min-w-[280px] overflow-hidden bg-canvas select-none", className)}>
       <div ref={host} className="absolute inset-0 [&>canvas]:block [&>canvas]:size-full" />
-      {(name || info) && (
-        <div className="absolute top-[calc(var(--uhd-inset-top,0px)+12px)] left-3 max-w-[min(360px,calc(100%-24px))] rounded-panel border border-line bg-surface px-3 py-2 shadow-panel outline outline-1 -outline-offset-1 outline-contrast">
+      {showInfo && (name || info) && (
+        <div role="note" aria-label="Model info" className="absolute top-[calc(var(--uhd-inset-top,0px)+12px)] left-3 max-w-[min(360px,calc(100%-24px))] rounded-panel border border-line bg-surface px-3 py-2 shadow-panel outline outline-1 -outline-offset-1 outline-contrast">
           {name && <div className="truncate font-label text-[12px] tracking-[0.06em] text-fg uppercase">{name}</div>}
           {detail && <div className="truncate text-[11px] text-fg-muted">{detail}</div>}
           {info && (
@@ -258,6 +264,12 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
           <IconButton icon="scan-eye" label="X-ray: see through the model" tooltipSide="top" pressed={xray} onClick={() => setXray(!xray)} />
           <IconButton icon="grid-2x2" label="Ground grid" tooltipSide="top" pressed={grid} onClick={() => setGrid(!grid)} />
           <IconButton icon="orbit" label="Turn the model" tooltipSide="top" pressed={spin} onClick={() => setSpin(!spin)} />
+          {(name || info) && (
+            <>
+              <ToolbarSeparator />
+              <IconButton icon="info" label={showInfo ? "Hide the model info" : "Model info: name and size"} tooltipSide="top" pressed={showInfo} onClick={() => setShowInfo(!showInfo)} />
+            </>
+          )}
           {actions && <ToolbarSeparator />}
           {actions}
         </Toolbar>

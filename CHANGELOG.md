@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **The hierarchy panel floats.** `ViewerHierarchy` is a card like a host's header: 4 px from the view's edges and below the header, with the panel radius, a border all round and the panel shadow. The canvas starts beside it. It slides open and folded in 200 ms (none with reduced motion), and the 36 px folded rail with its vertical label is gone.
+- **One fold control.** A host with a toggle of its own passes `foldButton={false}`: the panel then has no fold button, and folded it leaves nothing on screen. Without it, the panel folds to a single button. `RAIL_WIDTH` is now what that button takes of the view's width (40 px).
+
+### Fixed
+
+- **The model view's card no longer covers the model** (`ModelView`). The name and size are behind a Model info button in the toolbar (`infoOpen` shows them from the start), and nothing in the view selects as text: a drag that starts on the card turns the model, and Select All no longer lights the card up. The 3D view's caption is not selectable either.
+
 ## [0.2.0] — 2026-10-25
 
 The first public release, and the first on npmjs. The 0.1.x versions were built with the Protoboard stack and never published to npmjs; this section summarises what changed since them.
