@@ -4,9 +4,10 @@
  * viewer (one tab) and follows it: a click on a row selects the module on the
  * level that holds it, a double-click (or Enter on the selected row) drills
  * into it, a selection on the canvas opens and highlights its row, and the
- * level the diagram shows is marked. It folds away (to a single button, or to
- * nothing when the host has a toggle of its own), is resized by its edge,
- * filters as you type, and is a tree to the keyboard and to screen readers.
+ * level the diagram shows is marked. Its own button folds it away, to a
+ * small icon-only button floating at the top left of the view that opens it
+ * again (PB-1070); it is resized by its edge, filters as you type, and is a
+ * tree to the keyboard and to screen readers.
  *
  * Its look is the viewer's tokens only (a floating card: radius, border,
  * shadow, faces of the theme), so a host's theme decides it. What a host keeps
@@ -57,26 +58,20 @@ export interface ViewerHierarchyProps {
   state?: unknown;
   /** The panel's state changed (open, width, open rows): a host keeps it per tab. */
   onStateChange?: (state: HierarchyPanelState) => void;
-  /** The panel opened or folded (at once; a host's toggle button shows it). */
+  /** The panel opened or folded (at once). */
   onOpenChange?: (open: boolean) => void;
   command?: HierarchyCommand;
   /** Attributes a host puts on every row (`data-*`), e.g. for its own context menu. */
   rowAttributes?: (node: HierarchyNode) => Record<`data-${string}`, string>;
   /** Show the panel's own context menu (default). A host with a menu of its own passes false: a right-click then only selects the row. */
   ownMenu?: boolean;
-  /**
-   * The panel's own fold button, in its header, and the button it folds to
-   * (default). A host with a toggle of its own (a header button) passes
-   * false: the panel then has one control, the host's, and folds to nothing.
-   */
-  foldButton?: boolean;
   /** Below this width of the window the panel starts folded when nothing was kept (default 640). */
   narrow?: number;
   className?: string;
 }
 
-/** What the folded panel keeps of the view's width with its own fold button: the button and its gaps (with `foldButton={false}`, nothing). */
-export const RAIL_WIDTH = 40;
+/** What the folded panel keeps of the view's width: nothing (its button to open it again floats over the view). */
+export const RAIL_WIDTH = 0;
 
 /** The gap between the floating card and the view's edges, the host's header above it and the canvas beside it (px). */
 export const CARD_GAP = 4;
@@ -101,8 +96,15 @@ export const HIERARCHY_LOOK = {
   /** The dock while it opens or folds (and while folded): slid out to the left, faded. */
   dockAway: "pointer-events-none -translate-x-[calc(100%+8px)] opacity-0",
   panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-surface font-ui text-fg shadow-panel outline outline-1 -outline-offset-1 outline-contrast",
-  /** The folded panel with its own fold button: the button alone, on a small card. */
-  folded: "uhd-hierarchy-dock absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 place-items-center rounded-panel border border-line bg-surface shadow-panel outline outline-1 -outline-offset-1 outline-contrast",
+  /**
+   * The folded panel: one icon-only button floating at the card's corner, a
+   * small card itself (the faces, border, radius and shadow of the panel),
+   * that opens it again. It fades in as the card leaves and out as it comes.
+   */
+  folded:
+    "uhd-hierarchy-reopen absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 cursor-pointer place-items-center rounded-panel border border-line bg-surface p-0 text-fg-muted shadow-panel outline outline-1 -outline-offset-1 outline-contrast transition-[opacity,background-color,color] duration-200 ease-out motion-reduce:transition-none hover:bg-hover hover:text-fg hover:outline-contrast-active focus-visible:outline-focus active:bg-active",
+  /** The button while it fades in or out (and while the panel is open). */
+  foldedAway: "pointer-events-none opacity-0",
   header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
   title: "min-w-0 flex-1 truncate font-label text-[11px] tracking-[0.08em] text-fg-muted uppercase",
   filterBox: "mx-2 mb-1.5 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line bg-sunken px-2 focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-focus",
@@ -139,7 +141,7 @@ function useKept(given: unknown, narrow: number): [HierarchyPanelState, (patch: 
 }
 
 /** The panel, docked at the left of the view: render it beside the shell's `.workspace` (its sibling, before it), which then starts after it. */
-export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, foldButton = true, narrow = 640, className }: ViewerHierarchyProps) {
+export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, narrow = 640, className }: ViewerHierarchyProps) {
   const c = useViewer();
   const [kept, setKept] = useKept(given, narrow);
   const expanded = useMemo(() => new Set(kept.expanded), [kept.expanded]);
@@ -398,8 +400,23 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const shownWidth = clampWidth(kept.width, Math.max(HIERARCHY_WIDTH.min, viewWidth * 0.6));
   // opening and folding slide the card in and out: it stays on screen while it leaves, and enters from outside
   const motion = useFold(kept.open);
+  // folded, a button at the card's corner opens it again: it comes as the card leaves, and goes as it comes
+  const reopen = useFold(!kept.open);
+  const foldRef = useRef<HTMLButtonElement>(null);
+  const reopenRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  // the keyboard follows the fold: from inside the card to the button that opens it, and from that button back
+  // to the card's fold button, so neither leaves the keyboard on a control that is no longer there
+  const wasOpenForFocus = useRef(kept.open);
+  useLayoutEffect(() => {
+    if (wasOpenForFocus.current === kept.open) return;
+    wasOpenForFocus.current = kept.open;
+    const active = typeof document === "undefined" ? null : document.activeElement;
+    if (!kept.open && active && cardRef.current?.contains(active)) reopenRef.current?.focus();
+    else if (kept.open && active && active === reopenRef.current) foldRef.current?.focus();
+  }, [kept.open]);
   // the workspace beside it starts after it and its gaps (`.workspace` reads the width: app.css)
-  const docked = kept.open ? CARD_GAP + shownWidth + CARD_GAP : foldButton ? RAIL_WIDTH : 0;
+  const docked = kept.open ? CARD_GAP + shownWidth + CARD_GAP : RAIL_WIDTH;
   useLayoutEffect(() => {
     const parent = dock.current?.parentElement;
     if (!parent) return;
@@ -453,114 +470,128 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const rootLabel = tree[0]?.label ?? "System";
   const L = HIERARCHY_LOOK;
 
-  if (!motion.mounted) {
-    // folded: the host's toggle brings it back, or the panel's own button where the host has none
-    return (
-      <div ref={dock} className={cx(foldButton ? L.folded : "hidden", className)} data-hierarchy="folded">
-        {foldButton && <IconButton icon="panel-left-open" size="sm" label="Show the hierarchy" tooltipSide="right" aria-expanded={false} aria-controls="uhd-hierarchy" onClick={() => setKept({ open: true })} />}
-      </div>
-    );
-  }
-
+  // the wrapper takes no box (display: contents): the card and the button are placed in the shell's view, and
+  // its parent is the view the workspace sits in
   return (
-    <div
-      ref={dock}
-      className={cx(L.dock, !motion.shown && L.dockAway, className)}
-      style={{ width: shownWidth } as CSSProperties}
-      data-hierarchy={kept.open ? "open" : "folded"}
-      inert={!kept.open || undefined}
-      aria-hidden={!kept.open || undefined}
-    >
-      <section id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
-        <header className={L.header}>
-          <span className={L.title}>
-            Hierarchy<span className="text-fg-faint"> · {count}</span>
-          </span>
-          <IconButton icon="list-filter" size="sm" label="Filter modules" pressed={Boolean(filter)} onClick={() => filterRef.current?.focus()} />
-          <IconButton icon="chevrons-down-up" size="sm" label="Collapse all" onClick={() => setExpanded(new Set([""]))} />
-          {foldButton && <IconButton icon="panel-left-close" size="sm" label="Fold the hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick={() => setKept({ open: false })} />}
-        </header>
-        <label className={L.filterBox}>
-          <Icon name="search" size={12} strokeWidth={1.75} className="shrink-0 text-fg-faint" aria-hidden />
-          <input
-            ref={filterRef}
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={onFilterKey}
-            placeholder="Filter modules"
-            aria-label="Filter the hierarchy"
-            aria-controls="uhd-hierarchy-tree"
-            spellCheck={false}
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 font-ui text-[12px] text-fg outline-none placeholder:text-fg-faint"
-          />
-          {filter && (
-            <button type="button" aria-label="Clear the filter" data-tooltip="Clear the filter" onClick={() => (setFilter(""), filterRef.current?.focus())} className="grid size-5 cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-fg-muted hover:bg-hover hover:text-fg">
-              <Icon name="x" size={12} aria-hidden />
-            </button>
-          )}
-        </label>
-        <ScrollArea className="min-h-0 flex-1" axis="vertical">
-          <div ref={treeRef} id="uhd-hierarchy-tree" role="tree" aria-label={`Hierarchy of ${rootLabel}`} onKeyDown={onTreeKey} className="pb-1">
-            {rows.map((r) => (
-              <Row
-                key={r.node.path}
-                row={r}
-                focus={focus === r.node.path}
-                selected={selected === r.node.path || together.has(r.node.path)}
-                current={level === r.node.path}
-                match={filtered.matches.has(r.node.path)}
-                dim={filtered.matches.size > 0 && !filtered.matches.has(r.node.path) && !r.node.group}
-                attributes={r.node.group ? undefined : rowAttributes?.(r.node)}
-                onSelect={select}
-                onDrill={drill}
-                onToggle={toggle}
-                onContext={onRowContext}
-              />
-            ))}
-            {!rows.length && (
-              <p role="status" className="m-0 px-3 py-2 text-[12px] text-fg-muted">
-                Nothing matches “{filter}”.
-              </p>
-            )}
-          </div>
-        </ScrollArea>
-        {legend.length > 0 && (
-          <footer className={L.legend} aria-label="Part status">
-            {legend.map((l) => (
-              <span key={l.tone} className="flex items-center gap-1.5">
-                <span aria-hidden className="uhd-tree-mark" data-tone={l.tone} />
-                {l.label}
+    <div ref={dock} className="contents">
+      {reopen.mounted && (
+        <button
+          ref={reopenRef}
+          type="button"
+          aria-label="Show hierarchy"
+          aria-expanded={false}
+          aria-controls="uhd-hierarchy"
+          data-tooltip="Show hierarchy"
+          data-tooltip-side="right"
+          data-hierarchy-reopen=""
+          inert={kept.open || undefined}
+          onClick={() => setKept({ open: true })}
+          className={cx(L.folded, !reopen.shown && L.foldedAway)}
+        >
+          <Icon name="panel-left-open" size={16} strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
+      {motion.mounted && (
+        <div
+          className={cx(L.dock, !motion.shown && L.dockAway, className)}
+          style={{ width: shownWidth } as CSSProperties}
+          data-hierarchy={kept.open ? "open" : "folded"}
+          inert={!kept.open || undefined}
+          aria-hidden={!kept.open || undefined}
+        >
+          <section ref={cardRef} id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
+            <header className={L.header}>
+              <span className={L.title}>
+                Hierarchy<span className="text-fg-faint"> · {count}</span>
               </span>
-            ))}
-          </footer>
-        )}
-      </section>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize the hierarchy"
-        aria-valuemin={HIERARCHY_WIDTH.min}
-        aria-valuemax={HIERARCHY_WIDTH.max}
-        aria-valuenow={shownWidth}
-        aria-controls="uhd-hierarchy"
-        tabIndex={0}
-        onPointerDown={onResizeStart}
-        onKeyDown={onResizeKey}
-        onDoubleClick={() => setKept({ width: HIERARCHY_WIDTH.default })}
-        className="group absolute inset-y-2 -right-1 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
-      >
-        <span aria-hidden className="absolute inset-y-0 left-[3px] w-0.5 bg-transparent transition-colors group-hover:bg-focus group-focus-visible:bg-focus group-active:bg-focus" />
-      </div>
-      {menuNode && ownMenu && <NodeMenu x={menu!.x} y={menu!.y} items={menuItems} onClose={closeMenu} />}
+              <IconButton icon="list-filter" size="sm" label="Filter modules" pressed={Boolean(filter)} onClick={() => filterRef.current?.focus()} />
+              <IconButton icon="chevrons-down-up" size="sm" label="Collapse all" onClick={() => setExpanded(new Set([""]))} />
+              <IconButton ref={foldRef} icon="panel-left-close" size="sm" label="Hide hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick={() => setKept({ open: false })} />
+            </header>
+            <label className={L.filterBox}>
+              <Icon name="search" size={12} strokeWidth={1.75} className="shrink-0 text-fg-faint" aria-hidden />
+              <input
+                ref={filterRef}
+                type="text"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={onFilterKey}
+                placeholder="Filter modules"
+                aria-label="Filter the hierarchy"
+                aria-controls="uhd-hierarchy-tree"
+                spellCheck={false}
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 font-ui text-[12px] text-fg outline-none placeholder:text-fg-faint"
+              />
+              {filter && (
+                <button type="button" aria-label="Clear the filter" data-tooltip="Clear the filter" onClick={() => (setFilter(""), filterRef.current?.focus())} className="grid size-5 cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-fg-muted hover:bg-hover hover:text-fg">
+                  <Icon name="x" size={12} aria-hidden />
+                </button>
+              )}
+            </label>
+            <ScrollArea className="min-h-0 flex-1" axis="vertical">
+              <div ref={treeRef} id="uhd-hierarchy-tree" role="tree" aria-label={`Hierarchy of ${rootLabel}`} onKeyDown={onTreeKey} className="pb-1">
+                {rows.map((r) => (
+                  <Row
+                    key={r.node.path}
+                    row={r}
+                    focus={focus === r.node.path}
+                    selected={selected === r.node.path || together.has(r.node.path)}
+                    current={level === r.node.path}
+                    match={filtered.matches.has(r.node.path)}
+                    dim={filtered.matches.size > 0 && !filtered.matches.has(r.node.path) && !r.node.group}
+                    attributes={r.node.group ? undefined : rowAttributes?.(r.node)}
+                    onSelect={select}
+                    onDrill={drill}
+                    onToggle={toggle}
+                    onContext={onRowContext}
+                  />
+                ))}
+                {!rows.length && (
+                  <p role="status" className="m-0 px-3 py-2 text-[12px] text-fg-muted">
+                    Nothing matches “{filter}”.
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+            {legend.length > 0 && (
+              <footer className={L.legend} aria-label="Part status">
+                {legend.map((l) => (
+                  <span key={l.tone} className="flex items-center gap-1.5">
+                    <span aria-hidden className="uhd-tree-mark" data-tone={l.tone} />
+                    {l.label}
+                  </span>
+                ))}
+              </footer>
+            )}
+          </section>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the hierarchy"
+            aria-valuemin={HIERARCHY_WIDTH.min}
+            aria-valuemax={HIERARCHY_WIDTH.max}
+            aria-valuenow={shownWidth}
+            aria-controls="uhd-hierarchy"
+            tabIndex={0}
+            onPointerDown={onResizeStart}
+            onKeyDown={onResizeKey}
+            onDoubleClick={() => setKept({ width: HIERARCHY_WIDTH.default })}
+            className="group absolute inset-y-2 -right-1 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
+          >
+            <span aria-hidden className="absolute inset-y-0 left-[3px] w-0.5 bg-transparent transition-colors group-hover:bg-focus group-focus-visible:bg-focus group-active:bg-focus" />
+          </div>
+          {menuNode && ownMenu && <NodeMenu x={menu!.x} y={menu!.y} items={menuItems} onClose={closeMenu} />}
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * The card's way in and out: mounted while open and while it slides away, and
- * shown (in place) one frame after it mounts, so the slide runs both ways.
- * With reduced motion it simply appears and goes.
+ * The way in and out of the card (and of the button that opens it): mounted
+ * while open and while it leaves, and shown (in place) one frame after it
+ * mounts, so the transition runs both ways. With reduced motion it simply
+ * appears and goes.
  */
 function useFold(open: boolean): { mounted: boolean; shown: boolean } {
   const [mounted, setMounted] = useState(open);
@@ -664,7 +695,13 @@ const Row = memo(function Row({ row, focus, selected, current, match, dim, attri
   );
 });
 
-/** The toolbar's Hierarchy button (left of a shell's view tabs): it opens and folds the panel. */
+/**
+ * A toolbar button that opens and folds the panel from a host's header.
+ *
+ * @deprecated The panel has its own fold button and, folded, its own button to
+ * open it again (PB-1070); a host needs no toggle of its own. Kept for hosts
+ * written against 0.2.0; it will be removed in a later minor release.
+ */
 export function HierarchyToggle({ open, onClick, disabled, className }: { open: boolean; onClick: () => void; disabled?: boolean; className?: string }) {
   return (
     <button

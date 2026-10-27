@@ -326,3 +326,34 @@ describe("the panel beside a narrow view (UI QA phase 3)", () => {
     expect(panel).toMatch(/else if \(!wasWide\.current && wide && autoFolded\.current && !kept\.open\)/);
   });
 });
+
+describe("folding and opening again (PB-1070)", () => {
+  // no DOM in these tests: the panel's source says it
+  const panel = readFileSync(new URL("../src/viewer/hierarchy.tsx", import.meta.url), "utf8");
+  it("folds from its own button in the card's header, for every host", () => {
+    expect(panel).not.toMatch(/foldButton/);
+    expect(panel).toMatch(/<IconButton ref=\{foldRef\} icon="panel-left-close" size="sm" label="Hide hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick=\{\(\) => setKept\(\{ open: false \}\)\} \/>/);
+  });
+  it("folded, leaves one icon-only button floating at the card's corner that opens it again", () => {
+    const button = panel.match(/\{reopen\.mounted && \(\s*<button([\s\S]*?)<\/button>/);
+    expect(button).not.toBeNull();
+    const [, body] = button!;
+    expect(body).toMatch(/aria-label="Show hierarchy"/);
+    expect(body).toMatch(/onClick=\{\(\) => setKept\(\{ open: true \}\)\}/);
+    // an icon and nothing else to read: no text, no vertical label
+    expect(body.replace(/<Icon [^>]*\/>/, "").match(/>\s*([^<\s][^<]*)</)).toBeNull();
+    // at the card's corner (4 px in, below the header), a small card of its own, over the view: it takes none of its width
+    expect(panel).toMatch(/folded:\s*"uhd-hierarchy-reopen absolute left-1 z-30 top-\[calc\(var\(--uhd-inset-top,0px\)\+4px\)\] grid size-8 [^"]*rounded-panel border border-line bg-surface [^"]*shadow-panel[^"]*hover:bg-hover[^"]*focus-visible:outline-focus/);
+    expect(panel).toMatch(/export const RAIL_WIDTH = 0;/);
+    expect(panel).toMatch(/const docked = kept\.open \? CARD_GAP \+ shownWidth \+ CARD_GAP : RAIL_WIDTH;/);
+  });
+  it("keeps the slide and reduced motion, and the keyboard follows the fold", () => {
+    expect(panel).toMatch(/const motion = useFold\(kept\.open\);\s+[^\n]*\n\s+const reopen = useFold\(!kept\.open\);/);
+    expect(panel).toMatch(/prefers-reduced-motion: reduce/);
+    expect(panel).toMatch(/if \(!kept\.open && active && cardRef\.current\?\.contains\(active\)\) reopenRef\.current\?\.focus\(\);/);
+    expect(panel).toMatch(/else if \(kept\.open && active && active === reopenRef\.current\) foldRef\.current\?\.focus\(\);/);
+  });
+  it("a host's commands fold and open the same state", () => {
+    expect(panel).toMatch(/else if \(command\.type === "toggle"\) setKept\(\{ open: !kept\.open \}\);/);
+  });
+});
