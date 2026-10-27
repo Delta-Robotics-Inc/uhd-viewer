@@ -1296,6 +1296,8 @@
 }
 /* what the 3D view shows: the module's name, and how much of it is placed */
 .cad-scope {
+  /* a caption, never a selection (PB-1074: Select All lit the 3D view's cards up) */
+  user-select: none;
   position: absolute;
   top: calc(var(--uhd-inset-top, 0px) + 10px);
   left: calc(var(--uhd-inset-left, 0px) + 10px);
@@ -1609,8 +1611,17 @@ body {
 .workspace {
   position: absolute;
   inset: 0;
-  /* the hierarchy docked at its left (viewer/hierarchy.tsx) says its width: the workspace starts beside it */
+  /* the hierarchy card at its left (viewer/hierarchy.tsx) says its width and gaps: the workspace starts beside it */
   left: var(--uhd-dock-left, 0px);
+}
+/* while the hierarchy card opens or folds, the workspace moves with it (FOLD_MS) */
+.uhd-dock-moving > .workspace {
+  transition: left 200ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .uhd-dock-moving > .workspace {
+    transition: none;
+  }
 }
 .workspace > .canvas,
 .workspace > .cad-view {

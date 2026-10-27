@@ -1,10 +1,11 @@
 /**
- * The hierarchy panel (PB-1042): the module tree of the viewer's system,
- * docked at the left of the view, beside the canvas. It belongs to one viewer
- * (one tab) and follows it: a click on a row selects the module on the level
- * that holds it, a double-click (or Enter on the selected row) drills into it,
- * a selection on the canvas opens and highlights its row, and the level the
- * diagram shows is marked. It folds to a thin rail, is resized by its edge,
+ * The hierarchy panel (PB-1042): the module tree of the viewer's system, a
+ * floating card at the left of the view, beside the canvas. It belongs to one
+ * viewer (one tab) and follows it: a click on a row selects the module on the
+ * level that holds it, a double-click (or Enter on the selected row) drills
+ * into it, a selection on the canvas opens and highlights its row, and the
+ * level the diagram shows is marked. It folds away (to a single button, or to
+ * nothing when the host has a toggle of its own), is resized by its edge,
  * filters as you type, and is a tree to the keyboard and to screen readers.
  *
  * Its look is the viewer's tokens only (a floating card: radius, border,
@@ -63,29 +64,45 @@ export interface ViewerHierarchyProps {
   rowAttributes?: (node: HierarchyNode) => Record<`data-${string}`, string>;
   /** Show the panel's own context menu (default). A host with a menu of its own passes false: a right-click then only selects the row. */
   ownMenu?: boolean;
+  /**
+   * The panel's own fold button, in its header, and the button it folds to
+   * (default). A host with a toggle of its own (a header button) passes
+   * false: the panel then has one control, the host's, and folds to nothing.
+   */
+  foldButton?: boolean;
   /** Below this width of the window the panel starts folded when nothing was kept (default 640). */
   narrow?: number;
   className?: string;
 }
 
-/** The folded panel's width. */
-export const RAIL_WIDTH = 36;
+/** What the folded panel keeps of the view's width with its own fold button: the button and its gaps (with `foldButton={false}`, nothing). */
+export const RAIL_WIDTH = 40;
+
+/** The gap between the floating card and the view's edges, the host's header above it and the canvas beside it (px). */
+export const CARD_GAP = 4;
+
+/** How long the card takes to open or fold (ms); none when the system asks for reduced motion. */
+export const FOLD_MS = 200;
 
 const ROW_INDENT = 12;
 
 const SEVERITY_TEXT = { error: "text-error", warning: "text-warning", info: "text-info" } as const;
 
 /**
- * The panel's look, in one place (PB-1042; the Pencil iterations, 2026-10-21):
- * docked flush at the left of the canvas, below the floating header, with a
- * border at its edge; rows highlighted in the theme's selection colour. Only
- * the viewer's tokens, so a host's theme decides the colours (orange only
- * under the Protoboard theme). Swap these to restyle it.
+ * The panel's look, in one place (PB-1042, PB-1070): a floating card like the
+ * host's header, 4 px from the view's edges and below the header, with the
+ * panel radius, a border all round and the panel shadow; rows highlighted in
+ * the theme's selection colour. Only the viewer's tokens, so a host's theme
+ * decides the colours (orange only under the Protoboard theme). Swap these to
+ * restyle it.
  */
 export const HIERARCHY_LOOK = {
-  dock: "uhd-hierarchy-dock absolute inset-y-0 left-0 z-30 flex flex-col pt-[var(--uhd-inset-top,0px)]",
-  panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden border-t border-r border-line bg-surface font-ui text-fg",
-  rail: "flex min-h-0 flex-1 flex-col items-center gap-1 border-t border-r border-line bg-surface py-1",
+  dock: "uhd-hierarchy-dock absolute bottom-1 left-1 z-30 flex flex-col top-[calc(var(--uhd-inset-top,0px)+4px)] transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none",
+  /** The dock while it opens or folds (and while folded): slid out to the left, faded. */
+  dockAway: "pointer-events-none -translate-x-[calc(100%+8px)] opacity-0",
+  panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-surface font-ui text-fg shadow-panel outline outline-1 -outline-offset-1 outline-contrast",
+  /** The folded panel with its own fold button: the button alone, on a small card. */
+  folded: "uhd-hierarchy-dock absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 place-items-center rounded-panel border border-line bg-surface shadow-panel outline outline-1 -outline-offset-1 outline-contrast",
   header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
   title: "min-w-0 flex-1 truncate font-label text-[11px] tracking-[0.08em] text-fg-muted uppercase",
   filterBox: "mx-2 mb-1.5 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line bg-sunken px-2 focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-focus",
@@ -122,7 +139,7 @@ function useKept(given: unknown, narrow: number): [HierarchyPanelState, (patch: 
 }
 
 /** The panel, docked at the left of the view: render it beside the shell's `.workspace` (its sibling, before it), which then starts after it. */
-export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, narrow = 640, className }: ViewerHierarchyProps) {
+export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, command, rowAttributes, ownMenu = true, foldButton = true, narrow = 640, className }: ViewerHierarchyProps) {
   const c = useViewer();
   const [kept, setKept] = useKept(given, narrow);
   const expanded = useMemo(() => new Set(kept.expanded), [kept.expanded]);
@@ -379,14 +396,30 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
     if (wasWide.current || kept.open) autoFolded.current = autoFolded.current && !kept.open;
   }, [kept.open]);
   const shownWidth = clampWidth(kept.width, Math.max(HIERARCHY_WIDTH.min, viewWidth * 0.6));
-  // the workspace beside it starts after it (`.workspace` reads the width: app.css)
-  const docked = kept.open ? shownWidth : RAIL_WIDTH;
+  // opening and folding slide the card in and out: it stays on screen while it leaves, and enters from outside
+  const motion = useFold(kept.open);
+  // the workspace beside it starts after it and its gaps (`.workspace` reads the width: app.css)
+  const docked = kept.open ? CARD_GAP + shownWidth + CARD_GAP : foldButton ? RAIL_WIDTH : 0;
   useLayoutEffect(() => {
     const parent = dock.current?.parentElement;
     if (!parent) return;
     parent.style.setProperty("--uhd-dock-left", `${docked}px`);
     return () => void parent.style.removeProperty("--uhd-dock-left");
   }, [docked]);
+  // the workspace moves with the card while it opens or folds (not while a drag resizes it: that follows the pointer)
+  const wasOpen = useRef(kept.open);
+  useLayoutEffect(() => {
+    if (wasOpen.current === kept.open) return;
+    wasOpen.current = kept.open;
+    const parent = dock.current?.parentElement;
+    if (!parent) return;
+    parent.classList.add("uhd-dock-moving");
+    const t = setTimeout(() => parent.classList.remove("uhd-dock-moving"), FOLD_MS + 40);
+    return () => {
+      clearTimeout(t);
+      parent.classList.remove("uhd-dock-moving");
+    };
+  }, [kept.open]);
   const room = () => Math.max(HIERARCHY_WIDTH.min, (dock.current?.parentElement?.clientWidth ?? window.innerWidth) * 0.6);
   const onResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -420,27 +453,24 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const rootLabel = tree[0]?.label ?? "System";
   const L = HIERARCHY_LOOK;
 
-  if (!kept.open) {
+  if (!motion.mounted) {
+    // folded: the host's toggle brings it back, or the panel's own button where the host has none
     return (
-      <div ref={dock} className={cx(L.dock, className)} style={{ width: RAIL_WIDTH }} data-hierarchy="folded">
-        <div className={L.rail}>
-          <IconButton icon="panel-left-open" size="sm" label="Show the hierarchy" tooltipSide="right" aria-expanded={false} aria-controls="uhd-hierarchy" onClick={() => setKept({ open: true })} />
-          <button
-            type="button"
-            onClick={() => setKept({ open: true })}
-            className="mt-1 cursor-pointer border-0 bg-transparent p-0 font-label text-[10px] tracking-[0.12em] text-fg-muted uppercase [writing-mode:vertical-rl] hover:text-fg"
-            tabIndex={-1}
-            aria-hidden
-          >
-            Hierarchy
-          </button>
-        </div>
+      <div ref={dock} className={cx(foldButton ? L.folded : "hidden", className)} data-hierarchy="folded">
+        {foldButton && <IconButton icon="panel-left-open" size="sm" label="Show the hierarchy" tooltipSide="right" aria-expanded={false} aria-controls="uhd-hierarchy" onClick={() => setKept({ open: true })} />}
       </div>
     );
   }
 
   return (
-    <div ref={dock} className={cx(L.dock, className)} style={{ width: shownWidth } as CSSProperties} data-hierarchy="open">
+    <div
+      ref={dock}
+      className={cx(L.dock, !motion.shown && L.dockAway, className)}
+      style={{ width: shownWidth } as CSSProperties}
+      data-hierarchy={kept.open ? "open" : "folded"}
+      inert={!kept.open || undefined}
+      aria-hidden={!kept.open || undefined}
+    >
       <section id="uhd-hierarchy" aria-label="Hierarchy" className={L.panel}>
         <header className={L.header}>
           <span className={L.title}>
@@ -448,7 +478,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
           </span>
           <IconButton icon="list-filter" size="sm" label="Filter modules" pressed={Boolean(filter)} onClick={() => filterRef.current?.focus()} />
           <IconButton icon="chevrons-down-up" size="sm" label="Collapse all" onClick={() => setExpanded(new Set([""]))} />
-          <IconButton icon="panel-left-close" size="sm" label="Fold the hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick={() => setKept({ open: false })} />
+          {foldButton && <IconButton icon="panel-left-close" size="sm" label="Fold the hierarchy" aria-expanded aria-controls="uhd-hierarchy" onClick={() => setKept({ open: false })} />}
         </header>
         <label className={L.filterBox}>
           <Icon name="search" size={12} strokeWidth={1.75} className="shrink-0 text-fg-faint" aria-hidden />
@@ -518,13 +548,42 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
         onPointerDown={onResizeStart}
         onKeyDown={onResizeKey}
         onDoubleClick={() => setKept({ width: HIERARCHY_WIDTH.default })}
-        className="group absolute top-[var(--uhd-inset-top,0px)] -right-1 bottom-0 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
+        className="group absolute inset-y-2 -right-1 z-10 w-2 cursor-col-resize touch-none focus-visible:outline-none"
       >
         <span aria-hidden className="absolute inset-y-0 left-[3px] w-0.5 bg-transparent transition-colors group-hover:bg-focus group-focus-visible:bg-focus group-active:bg-focus" />
       </div>
       {menuNode && ownMenu && <NodeMenu x={menu!.x} y={menu!.y} items={menuItems} onClose={closeMenu} />}
     </div>
   );
+}
+
+/**
+ * The card's way in and out: mounted while open and while it slides away, and
+ * shown (in place) one frame after it mounts, so the slide runs both ways.
+ * With reduced motion it simply appears and goes.
+ */
+function useFold(open: boolean): { mounted: boolean; shown: boolean } {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(open);
+  useEffect(() => {
+    const still = typeof window === "undefined" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (open) {
+      setMounted(true);
+      if (still) return setShown(true);
+      // two frames: the card is laid out away first, then moves in
+      let inner = 0;
+      const outer = requestAnimationFrame(() => (inner = requestAnimationFrame(() => setShown(true))));
+      return () => {
+        cancelAnimationFrame(outer);
+        cancelAnimationFrame(inner);
+      };
+    }
+    setShown(false);
+    if (still) return setMounted(false);
+    const t = setTimeout(() => setMounted(false), FOLD_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+  return { mounted: mounted || open, shown: shown && open };
 }
 
 interface RowProps {

@@ -109,7 +109,7 @@ export function Tooltips({ root }: { root: HTMLElement | null }) {
     <div
       ref={ref}
       role="tooltip"
-      className={`uhd-tooltip pointer-events-none absolute z-[1000] flex items-center gap-2 rounded-md border border-line bg-raised px-2 py-1 font-ui text-[11px] leading-4 text-fg shadow-float outline outline-1 -outline-offset-1 outline-contrast ${tip.clamp ? "w-max max-w-[min(300px,calc(100%-12px))] whitespace-normal" : "whitespace-nowrap"}`}
+      className={`uhd-tooltip pointer-events-none absolute select-none z-[1000] flex items-center gap-2 rounded-md border border-line bg-raised px-2 py-1 font-ui text-[11px] leading-4 text-fg shadow-float outline outline-1 -outline-offset-1 outline-contrast ${tip.clamp ? "w-max max-w-[min(300px,calc(100%-12px))] whitespace-normal" : "whitespace-nowrap"}`}
       style={{ left: tip.x + nudge, top: tip.y, transform }}
     >
       {tip.clamp ? (
