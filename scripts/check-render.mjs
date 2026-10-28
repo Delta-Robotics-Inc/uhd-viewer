@@ -539,6 +539,11 @@ async function checkMessages(bundleFile, out) {
     await send({ type: "uhd-viewer:select", ids: ["rx_wire"] });
     const harnessBody = await selected("rx_wire");
     expect("select of a harness in the 3D view selects its body", harnessBody && (await lastSelection())?.kind === "node", await lastSelection());
+    // a focus on it frames it
+    await send({ type: "uhd-viewer:focus", path: "gnss_lead" });
+    await selected("gnss_lead");
+    await settle(1500);
+    await page.screenshot({ path: join(out, "09b-messages-3d-harness.png") });
     await send({ type: "uhd-viewer:setView", view: "diagram" });
     await frame.waitForFunction(() => !document.querySelector(".cad-view") && document.querySelectorAll(".react-flow__node").length > 5, { timeout: 15000 }).catch(() => undefined);
     expect("setView returns to the diagram", (await state()).view === "diagram", await state());

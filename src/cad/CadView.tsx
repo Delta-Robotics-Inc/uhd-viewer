@@ -1206,10 +1206,13 @@ export function CadView({
     const h = handle.current;
     const recs = selectionRecs(sel.body);
     const rec = recs.length === 1 && sel.body !== undefined ? bodies.current.get(sel.body) : undefined;
-    if (!h || !recs.length) return;
-    if (!sel.iface || !rec) {
+    // a routed wire harness selected on its own: its geometry
+    const wire = sel.body === undefined && sel.harness !== undefined ? harnessObjs.current.get(sel.harness) : undefined;
+    const objs = wire ? [wire] : recs.map((r) => r.obj);
+    if (!h || !objs.length) return;
+    if (wire || !sel.iface || !rec) {
       const box = new THREE.Box3();
-      for (const r of recs) box.expandByObject(r.obj);
+      for (const o of objs) box.expandByObject(o);
       if (box.isEmpty()) return;
       const size = box.getSize(new THREE.Vector3());
       const grow = Math.max(size.length() * 0.5, 40);
@@ -1307,7 +1310,8 @@ export function CadView({
     // a routed wire harness: selected as itself (a hierarchy row, a host's focus or select on it)
     if (model.assembly.harnesses.some((hp) => hp.key === key)) {
       setSel({ harness: key });
-      look.current = focusOn.look !== false;
+      // framed once its geometry is there (never left set for whatever is selected next)
+      look.current = focusOn.look !== false && harnessObjs.current.has(key);
       return;
     }
     const has = (k: string) => model.bodies.some((b) => b.key === k);
@@ -1322,7 +1326,9 @@ export function CadView({
     look.current = focusOn.look !== false;
   }, [focusOn, model]);
   useEffect(() => {
-    if (!look.current || sel.body === undefined || !selectionRecs(sel.body).length) return;
+    if (!look.current) return;
+    const wire = sel.body === undefined && sel.harness !== undefined && harnessObjs.current.has(sel.harness);
+    if (!wire && (sel.body === undefined || !selectionRecs(sel.body).length)) return;
     look.current = false;
     focus();
     handle.current?.renderOnce();
