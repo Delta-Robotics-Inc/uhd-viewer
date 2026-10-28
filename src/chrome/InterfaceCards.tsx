@@ -29,6 +29,16 @@ export const CARD_LOOK = {
   toggle: "min-w-0 truncate text-left text-[12px] leading-[18px] text-fg outline-none after:absolute after:inset-0 after:content-[''] cursor-pointer",
   chip: "inline-flex h-[18px] shrink-0 items-center rounded-[4px] bg-[color-mix(in_oklab,var(--uhd-text)_8%,transparent)] px-1.5 text-[10px] leading-none text-fg-muted",
   pin: "inline-flex h-4 shrink-0 items-center rounded-[4px] border border-line px-1 text-[10px] leading-none text-fg-muted",
+  /**
+   * The pin mapping's columns, shared by its rows: the pin as wide as the widest (at least 44 px, its cell's
+   * minimum; at most 40 % of the card), the leaf (when any pin binds one) at most 30 %, and what it meets in the rest.
+   */
+  pinMap: "grid gap-x-2 gap-y-[3px] text-[11px] leading-none",
+  pinMapPins: "grid-cols-[fit-content(40%)_minmax(0,1fr)]",
+  pinMapLeaves: "grid-cols-[fit-content(40%)_fit-content(30%)_minmax(0,1fr)]",
+  pinRow: "col-span-full grid min-h-5 grid-cols-subgrid items-center",
+  /** A pin in the mapping: a chip that ends in an ellipsis when the column is narrower than its name. */
+  pinName: "inline-block h-4 max-w-full truncate rounded-[4px] border border-line px-1 align-middle text-[10px] leading-[14px] text-fg-muted",
   meta: "mt-[5px] flex min-w-0 items-center gap-1",
   role: "ml-auto shrink-0 text-[10px] leading-none text-fg-faint",
   linked: "mt-[5px] flex min-w-0 items-center gap-1.5 text-[11px] leading-[16px]",
@@ -100,29 +110,59 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/**
+ * The pin mapping: one row per pin, in columns shared by every row (the pin,
+ * the leaf it binds when it is not the pin itself, and what it meets across
+ * the link). Every column fits the card: a pin or name too long for it ends
+ * in an ellipsis and says itself in full in its tooltip, so nothing runs over
+ * the next column or the next line in a narrow Inspector.
+ */
+function PinMap({ pins }: { pins: InterfaceSlot["pinMap"] }) {
+  const leaves = pins.some((p) => p.leaf);
+  return (
+    <div className={cx(CARD_LOOK.pinMap, leaves ? CARD_LOOK.pinMapLeaves : CARD_LOOK.pinMapPins)}>
+      {pins.map((p, i) => (
+        <div key={`${p.pin}-${i}`} className={CARD_LOOK.pinRow} data-pin={p.pin}>
+          <span className="min-w-11">
+            <span className={CARD_LOOK.pinName} data-tooltip={p.pin.length > 6 ? p.pin : undefined}>
+              {p.pin}
+            </span>
+          </span>
+          {leaves && (
+            <span className="min-w-0 truncate text-fg-muted" data-tooltip={p.leaf}>
+              {p.leaf ?? ""}
+            </span>
+          )}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-fg" aria-label={p.dir === "←" ? "from" : p.dir === "→" ? "to" : p.dir === "—" ? "shared with" : "with"}>
+              {p.dir}
+            </span>
+            {p.other ? (
+              <span className="max-w-[60%] min-w-0 shrink-0 truncate text-fg" data-tooltip={p.other.length > 12 ? p.other : undefined}>
+                {p.other}
+              </span>
+            ) : (
+              <span className="shrink-0 text-fg-faint">{p.otherModule ? "" : "not linked"}</span>
+            )}
+            {p.otherModule && (
+              <span className="min-w-0 truncate text-fg-faint" data-tooltip={p.otherModule.length > 12 ? p.otherModule : undefined}>
+                {p.otherModule}
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** What an expanded card shows below its summary. */
 function CardDetail({ slot, actions }: { slot: InterfaceSlot; actions: InterfaceCardActions }) {
   return (
     <div className={CARD_LOOK.detail} data-card-detail="">
       {slot.pinMap.length > 0 && (
         <Group title="Pin mapping">
-          {slot.pinMap.map((p, i) => (
-            <div key={`${p.pin}-${i}`} className="flex min-h-5 min-w-0 items-center gap-2 text-[11px] leading-none" data-pin={p.pin}>
-              <span className="w-11 shrink-0">
-                <span className={CARD_LOOK.pin}>{p.pin}</span>
-              </span>
-              <span className="w-[88px] shrink-0 truncate text-fg-muted" data-tooltip={p.leaf}>
-                {p.leaf ?? ""}
-              </span>
-              <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className="shrink-0 text-fg" aria-label={p.dir === "←" ? "from" : p.dir === "→" ? "to" : p.dir === "—" ? "shared with" : "with"}>
-                  {p.dir}
-                </span>
-                {p.other ? <span className="max-w-[60%] min-w-0 shrink-0 truncate text-fg" data-tooltip={p.other.length > 12 ? p.other : undefined}>{p.other}</span> : <span className="text-fg-faint">{p.otherModule ? "" : "not linked"}</span>}
-                {p.otherModule && <span className="min-w-0 truncate text-fg-faint">{p.otherModule}</span>}
-              </span>
-            </div>
-          ))}
+          <PinMap pins={slot.pinMap} />
         </Group>
       )}
       {(slot.protocol || slot.params.length > 0) && (

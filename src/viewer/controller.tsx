@@ -22,7 +22,7 @@ import { defAt } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
 import { pairEnds } from "../chrome/PairView";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, fullId, hostSelection, saySelection, selectTarget, selectionKey } from "../host/targets";
+import { cadHostSelection, cadSelectTarget, drawnSelection, drillTarget, focusTarget, fullId, harnessLines, hostSelection, saySelection, selectTarget, selectedHarness, selectionKey, type LevelSelection } from "../host/targets";
 
 
 type Positions = Record<string, Record<string, { x: number; y: number }>>;
@@ -396,7 +396,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const pair = pairLink ? vm.links.find((l) => l.linkId === pairLink) : undefined;
 
   // ---- the host channel: messages in, events out (README, "Host messages")
-  const [centre, setCentre] = useState<{ id: string; seq: number }>();
+  const [centre, setCentre] = useState<{ id: string; seq: number; lines?: readonly string[] }>();
   // a host's select brings what it selected into view (unless it says not to)
   const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
@@ -408,8 +408,23 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   escapeState.current = { isolated, menu: Boolean(menu) };
   const seq = useRef(0);
   // what a message applies to: the state of the latest render
-  const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm, view });
-  latest.current = { system, lookup: scenario.lookup, drill, expanded, vm, view };
+  // (`viewAt`: the view model of another level, for a focus that drills there)
+  const viewAt = (at: string[]) => (at.join("/") === drill.join("/") ? vm : buildView(system, scenario.lookup, at, { expanded, overrides, diagnostics, grounds: showGrounds }));
+  const latest = useRef({ system, lookup: scenario.lookup, drill, expanded, vm, view, viewAt });
+  latest.current = { system, lookup: scenario.lookup, drill, expanded, vm, view, viewAt };
+  /**
+   * A focus on a module (a row of the hierarchy, a host's focus, a finding's Locate), as the diagram shows it at
+   * `at`: the module selected and framed; a harness drawn along its lines (no card of its own) selected as the
+   * line with its name tab, and its lines framed.
+   */
+  const focusOn = (at: string[], target: LevelSelection, n: number): LevelSelection => {
+    if (target?.kind !== "node") return target;
+    const levelVm = latest.current.viewAt(at);
+    const shown = drawnSelection(levelVm, target);
+    const lines = shown?.kind === "link" ? harnessLines(levelVm, target.id).map((l) => l.id) : undefined;
+    setCentre(lines?.length ? { id: target.id, seq: n, lines } : { id: target.id, seq: n });
+    return shown;
+  };
   useEffect(() => {
     if (!host) return;
     return host.bus.subscribe((m) => {
@@ -425,25 +440,27 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
             return;
           }
           const t = focusTarget(sys, lookup, m.path, { drill: d, expanded: ex });
+          const n = ++seq.current;
           setDrill(sameDrill(t.drill));
-          setSelection(t.selection);
+          setSelection(focusOn(t.drill, t.selection, n));
           setPairLink(null);
           // the inspector shows the focused module
           setPanel((p) => p ?? "hierarchy");
-          if (t.selection) {
-            const n = ++seq.current;
-            setCentre({ id: t.selection.id, seq: n });
-            setCadFocus({ path: fullId(t.drill, t.selection.id), seq: n });
-          }
+          if (t.selection) setCadFocus({ path: fullId(t.drill, t.selection.id), seq: n });
           return;
         }
         case "uhd-viewer:select": {
           const sel = selectTarget(v, d, m.ids);
           if (sel !== undefined) setSelection(sel);
-          if (sel && m.reveal !== false && shownView !== "3d") setReveal({ selection: sel, seq: ++seq.current });
-          // the 3D view selects too (a module's body or a mate), without moving the camera
+          // a harness named by its path (a finding on it, or on a link inside it) is framed along its lines, as a focus frames it
+          const run = selectedHarness(v, sel ?? null);
+          const named = run !== undefined && m.ids.some((id) => [run, fullId(d, run)].includes(id.replace(/^node:/, "")));
+          if (sel && named && m.reveal !== false && shownView !== "3d") setCentre({ id: run, seq: ++seq.current, lines: harnessLines(v, run).map((l) => l.id) });
+          else if (sel && m.reveal !== false && shownView !== "3d") setReveal({ selection: sel, seq: ++seq.current });
+          // the 3D view selects too (a module's body or a mate), without moving the camera; a harness named by its
+          // path is its own body there, not the line the diagram draws it along
           if (shownView === "3d") {
-            const t = cadSelectTarget(sys, lookup, d, sel, m.ids);
+            const t = named ? { kind: "node" as const, path: fullId(d, run) } : cadSelectTarget(sys, lookup, d, sel, m.ids);
             if (t) setCadFocus({ ...t, seq: ++seq.current, look: false });
           }
           return;
@@ -500,8 +517,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     }
     const t = focusTarget(sys, lookup, path, { drill: d, expanded: ex });
     setDrill((cur) => (cur.join("/") === t.drill.join("/") ? cur : t.drill));
-    setSelection(t.selection);
-    if (t.selection) setCentre({ id: t.selection.id, seq: n });
+    setSelection(focusOn(t.drill, t.selection, n));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setSelection]);
   const focusRef = useRef(focusPath);
   focusRef.current = focusPath;

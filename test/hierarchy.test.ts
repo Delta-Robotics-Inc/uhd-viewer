@@ -147,13 +147,14 @@ describe("the hierarchy's tree", () => {
   });
 });
 
-describe("wiring and hardware, and the legend", () => {
+describe("harnesses and links, and the legend", () => {
   it("folds every harness and fastener stack into one group at the bottom", () => {
     const s = small();
     const shown = groupWiring(buildHierarchy(s.root, s.lookup));
     expect(shown.map((n) => n.path)).toEqual(["", WIRING_PATH]);
     const [structure, wiring] = shown;
     expect(wiring.group).toBe(true);
+    expect(wiring.label).toBe("Harnesses & links");
     expect(wiring.children.map((n) => n.path)).toEqual(["loom", "bolts"]);
     // each says where it belongs (four "Prop nut" rows read alike otherwise)
     expect(wiring.children.map((n) => n.where)).toEqual(["DRONE", "DRONE"]);
@@ -342,8 +343,10 @@ describe("folding and opening again (PB-1070)", () => {
     expect(body).toMatch(/onClick=\{\(\) => setKept\(\{ open: true \}\)\}/);
     // an icon and nothing else to read: no text, no vertical label
     expect(body.replace(/<Icon [^>]*\/>/, "").match(/>\s*([^<\s][^<]*)</)).toBeNull();
-    // at the card's corner (4 px in, below the header), a small card of its own, over the view: it takes none of its width
-    expect(panel).toMatch(/folded:\s*"uhd-hierarchy-reopen absolute left-1 z-30 top-\[calc\(var\(--uhd-inset-top,0px\)\+4px\)\] grid size-8 [^"]*rounded-panel border border-line bg-surface [^"]*shadow-panel[^"]*hover:bg-active[^"]*focus-visible:outline-focus/);
+    // at the card's corner (4 px in, below the header), over the view (it takes none of its width): the icon alone over the canvas: no border, face or shadow of its own; a soft fill and glow on hover
+    expect(panel).toMatch(/folded:\s*"uhd-hierarchy-reopen absolute left-1 z-30 top-\[calc\(var\(--uhd-inset-top,0px\)\+4px\)\] grid size-8 [^"]*rounded-md border-0 bg-transparent [^"]*hover:bg-hover[^"]*hover:shadow-\[0_0_10px_1px_var\(--uhd-hover\)\][^"]*focus-visible:outline-focus/);
+    const folded = panel.match(/folded:\s*"([^"]*)"/)![1];
+    expect(folded).not.toMatch(/(^| )(border border-line|bg-surface|shadow-panel|outline-contrast)( |$)/);
     expect(panel).toMatch(/export const RAIL_WIDTH = 0;/);
     expect(panel).toMatch(/const docked = kept\.open \? CARD_GAP \+ shownWidth \+ CARD_GAP : RAIL_WIDTH;/);
   });

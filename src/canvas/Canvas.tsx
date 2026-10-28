@@ -22,7 +22,7 @@ import { edgeTypes, type Detail, type LinkData } from "./LinkEdge";
 import type { Pt } from "./routing";
 import type { Isolation } from "../model/isolate";
 import type { Live } from "../viewer/controller";
-import { revealViewport, selectionBounds } from "./reveal";
+import { frameViewport, linesBounds, revealViewport, selectionBounds } from "./reveal";
 import { canvasCommand, firstView, interactionProps, typingTarget, type InteractionAction, type InteractionState, type Viewport } from "./interaction";
 import { GRID } from "../layout/router";
 import { createRightDrag } from "./rightDrag";
@@ -68,8 +68,11 @@ export interface CanvasProps {
   onMove: (id: string, x: number, y: number) => void;
   /** A drag starts (what moves) or ends (null): the layout reroutes only what moves meanwhile. */
   onLive: (live: Live | null) => void;
-  /** A node to bring into view (a host's focus), once it is drawn; `seq` tells repeats apart. */
-  centre?: { id: string; seq: number };
+  /**
+   * A node to bring into view (a host's focus, a row of the hierarchy), once it is drawn; `seq` tells repeats
+   * apart. With `lines`, a harness drawn along lines (no card of its own): those lines are framed.
+   */
+  centre?: { id: string; seq: number; lines?: readonly string[] };
   /** A selection to bring into view if it is not (a host's select): panned to, zoomed out only if it must; `seq` tells repeats apart. */
   reveal?: { selection: NonNullable<Selection>; seq: number };
   /** Right-click on a node: its context menu at the pointer (the browser's own when not given). */
@@ -254,21 +257,33 @@ export function Canvas(props: CanvasProps) {
   const moved = useRef(false);
   const centred = useRef(0);
   const { centre, inspector } = props;
+  const paneWidth = useStore((s) => s.width);
+  const paneHeight = useStore((s) => s.height);
   useEffect(() => {
-    if (!centre || !drawn || centred.current === centre.seq || !nodes.some((n) => n.id === centre.id)) return;
+    if (!centre || !drawn || centred.current === centre.seq) return;
+    if (centre.lines) {
+      // a harness along its lines: framed as a module is (centred, zoomed to fit, never past 1)
+      const rect = linesBounds(layout, centre.lines);
+      if (!rect || !paneWidth || !paneHeight) return;
+      const t = setTimeout(() => {
+        centred.current = centre.seq;
+        moved.current = true;
+        void flow.setViewport(frameViewport(rect, { width: paneWidth, height: paneHeight }, inspector ?? false), { duration: 300 });
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    if (!nodes.some((n) => n.id === centre.id)) return;
     const t = setTimeout(() => {
       centred.current = centre.seq;
       moved.current = true;
       void flow.fitView({ nodes: [{ id: centre.id }], padding: fitPadding(inspector ?? false), maxZoom: 1, duration: 300 });
     }, 60);
     return () => clearTimeout(t);
-  }, [centre, drawn, nodes, flow, inspector]);
+  }, [centre, drawn, nodes, layout, flow, inspector, paneWidth, paneHeight]);
 
   // a host's select: when what it selected is off screen (or under the inspector), pan to it
   const revealed = useRef(0);
   const { reveal } = props;
-  const paneWidth = useStore((s) => s.width);
-  const paneHeight = useStore((s) => s.height);
   useEffect(() => {
     if (!reveal || !drawn || revealed.current === reveal.seq || !paneWidth || !paneHeight) return;
     const rect = selectionBounds(vm, layout, reveal.selection);

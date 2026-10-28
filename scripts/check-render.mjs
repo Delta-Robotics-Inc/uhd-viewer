@@ -433,6 +433,35 @@ async function checkMessages(bundleFile, out) {
     await settle(300);
     expect("select picks a module", (await state()).selected === "gnss" && (await lastSelection())?.id === "gnss", await state());
 
+    // a harness drawn along its lines (no card of its own) is focused as the line with its name tab, and its lines are
+    // framed: a focus (a hierarchy row, a finding on the harness), and a host's select that names it by its path
+    // (a finding on a link inside it: drill to the harness, then select its link and the harness)
+    const harnessFramed = async (name, expected) => {
+      await selected(expected);
+      await settle(1500);
+      const got = await lastSelection();
+      const box = await frame.evaluate(() => {
+        const e = document.querySelector(".react-flow__edge.selected");
+        const r = e?.getBoundingClientRect();
+        return r ? { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2, w: innerWidth, h: innerHeight } : null;
+      });
+      expect(`${name}: selects the line that carries it`, got?.kind === "link" && got.id === expected, got);
+      expect(`${name}: frames it`, box && box.x > 40 && box.x < box.w - 380 && box.y > 50 && box.y < box.h - 60, box);
+    };
+    await send({ type: "uhd-viewer:focus", path: "rx_wire" });
+    await harnessFramed("focus on a cable harness", "rx_pads");
+    await page.screenshot({ path: join(out, "08a-messages-harness.png") });
+    await send({ type: "uhd-viewer:select", ids: [] });
+    await send({ type: "uhd-viewer:focus", path: "stack_hardware" });
+    await harnessFramed("focus on mounting hardware", "stack_mount");
+    await send({ type: "uhd-viewer:focus", path: "video" });
+    await selected("video");
+    await send({ type: "uhd-viewer:drill", path: "rx_wire" });
+    await send({ type: "uhd-viewer:select", ids: ["rx_wire/wires", "rx_wire"] });
+    await harnessFramed("select of a link inside a harness", "rx_pads");
+    await send({ type: "uhd-viewer:select", ids: ["gnss"] });
+    await selected("gnss");
+
     // select brings what it selects into view (a DRC Locate with the panel open), unless the host says not to:
     // zoom in at the top left corner until the camera cable is off screen, then select it
     await page.mouse.move(80, 120);
@@ -506,6 +535,15 @@ async function checkMessages(bundleFile, out) {
     await send({ type: "uhd-viewer:select", ids: ["arm_fl/motor"] });
     const cadSelected = await selected("arm_fl/motor");
     expect("select in the 3D view selects the body and reports it", cadSelected && (await lastSelection())?.defId, await lastSelection());
+    // a harness named by its path is its own body in 3D (the diagram selects the line it is drawn along)
+    await send({ type: "uhd-viewer:select", ids: ["rx_wire"] });
+    const harnessBody = await selected("rx_wire");
+    expect("select of a harness in the 3D view selects its body", harnessBody && (await lastSelection())?.kind === "node", await lastSelection());
+    // a focus on it frames it
+    await send({ type: "uhd-viewer:focus", path: "gnss_lead" });
+    await selected("gnss_lead");
+    await settle(1500);
+    await page.screenshot({ path: join(out, "09b-messages-3d-harness.png") });
     await send({ type: "uhd-viewer:setView", view: "diagram" });
     await frame.waitForFunction(() => !document.querySelector(".cad-view") && document.querySelectorAll(".react-flow__node").length > 5, { timeout: 15000 }).catch(() => undefined);
     expect("setView returns to the diagram", (await state()).view === "diagram", await state());
