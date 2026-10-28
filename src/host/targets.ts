@@ -110,6 +110,36 @@ export function selectableLink(vm: ViewModel, id: string): LevelSelection {
   return line ? { kind: "link", id: line.linkId } : null;
 }
 
+/**
+ * The lines a harness is drawn along on this level, when it has no card of
+ * its own: a cable between two parts is one line with the harness as a region
+ * along it, and the links that name a harness carry its region too. Empty for
+ * a harness drawn as a card (and for anything else).
+ */
+export function harnessLines(vm: ViewModel, id: string): ViewModel["links"] {
+  if (vm.nodes.some((n) => n.id === id)) return [];
+  return vm.links.filter((l) => l.run?.id === id);
+}
+
+/**
+ * A module selection as the diagram can show it: a harness drawn along its
+ * lines (no card of its own) is selected as the line that carries its name
+ * tab, so a row of the hierarchy or a host's focus on it selects and frames
+ * something drawn. Anything else as it is.
+ */
+export function drawnSelection(vm: ViewModel, selection: LevelSelection): LevelSelection {
+  if (selection?.kind !== "node") return selection;
+  const lines = harnessLines(vm, selection.id);
+  const line = lines.find((l) => l.run?.tab) ?? lines[0];
+  return line ? { kind: "link", id: line.linkId } : selection;
+}
+
+/** The harness a selected line runs through (its path on the level), if any: its row in the hierarchy. */
+export function selectedHarness(vm: ViewModel, selection: LevelSelection): string | undefined {
+  if (selection?.kind !== "link") return undefined;
+  return vm.links.find((l) => (l.linkId === selection.id || l.id === selection.id) && l.run)?.run?.id;
+}
+
 /** `id` relative to the level at `drill`: itself, and without the level's path when it starts with it. */
 function relative(id: string, drill: string[]): string[] {
   const at = drill.join("/");
@@ -133,6 +163,8 @@ export function selectTarget(vm: ViewModel, drill: string[], ids: string[]): Lev
     const id = kind ? raw.slice(5) : raw;
     for (const c of relative(id, drill)) {
       if (kind !== "link" && vm.nodes.some((n) => n.id === c)) return { kind: "node", id: c };
+      // a harness drawn along its lines: the line with its name tab
+      if (kind !== "link" && harnessLines(vm, c).length) return drawnSelection(vm, { kind: "node", id: c });
       if (kind !== "node") {
         const link = selectableLink(vm, c);
         if (link) return link;
