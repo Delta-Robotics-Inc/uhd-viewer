@@ -41,7 +41,14 @@ import {
   type HierarchyPanelState,
   type HierarchyRow,
 } from "../model/hierarchy";
-import { fullId } from "../host/targets";
+import { fullId, selectedHarness, type LevelSelection } from "../host/targets";
+import type { ViewModel } from "../model/types";
+
+/** The row of the selection on the diagram: the module selected, or the harness a selected line runs through. */
+function selectedRow(drill: string[], vm: ViewModel, selection: LevelSelection): string | undefined {
+  const harness = selectedHarness(vm, selection);
+  return harness !== undefined ? fullId(drill, harness) : selectedPath(drill, selection);
+}
 import { useViewer } from "./controller";
 
 /** What a host asks of the panel: show a module's row, put the keyboard in the filter, open or fold it. */
@@ -97,12 +104,14 @@ export const HIERARCHY_LOOK = {
   dockAway: "pointer-events-none -translate-x-[calc(100%+8px)] opacity-0",
   panel: "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-surface font-ui text-fg shadow-panel outline outline-1 -outline-offset-1 outline-contrast",
   /**
-   * The folded panel: one icon-only button floating at the card's corner, a
-   * small card itself (the faces, border, radius and shadow of the panel),
-   * that opens it again. It fades in as the card leaves and out as it comes.
+   * The folded panel: the icon alone, floating over the canvas at the card's
+   * corner (no border, face or shadow of its own), that opens it again. On
+   * hover it takes a soft rounded fill with a faint glow, in the theme's
+   * toolbar hover colour (high contrast: a dashed outline instead). It fades
+   * in as the card leaves and out as it comes.
    */
   folded:
-    "uhd-hierarchy-reopen absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 cursor-pointer place-items-center rounded-panel border border-line bg-surface p-0 text-fg-muted shadow-panel outline outline-1 -outline-offset-1 outline-contrast transition-[opacity,background-color,color] duration-200 ease-out motion-reduce:transition-none hover:bg-active hover:text-fg hover:outline-contrast-active focus-visible:outline-focus",
+    "uhd-hierarchy-reopen absolute left-1 z-30 top-[calc(var(--uhd-inset-top,0px)+4px)] grid size-8 cursor-pointer place-items-center rounded-md border-0 bg-transparent p-0 text-fg-muted transition-[opacity,background-color,color,box-shadow] duration-200 ease-out motion-reduce:transition-none hover:bg-hover hover:text-fg hover:shadow-[0_0_10px_1px_var(--uhd-hover)] hover:outline hover:outline-1 hover:outline-dashed hover:-outline-offset-1 hover:outline-contrast-active focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus",
   /** The button while it fades in or out (and while the panel is open). */
   foldedAway: "pointer-events-none opacity-0",
   header: "flex h-8 shrink-0 items-center gap-0.5 pr-1 pl-3",
@@ -188,7 +197,7 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
 
   const level = c.drill.join("/");
   // the selection of the view on screen: the diagram's, or the 3D view's (a body, a part on a board)
-  const selected = c.view === "3d" ? (c.cadSelection?.kind === "node" && !c.cadSelection.id.includes("#") ? c.cadSelection.id : undefined) : selectedPath(c.drill, c.selection);
+  const selected = c.view === "3d" ? (c.cadSelection?.kind === "node" && !c.cadSelection.id.includes("#") ? c.cadSelection.id : undefined) : selectedRow(c.drill, c.vm, c.selection);
   // modules selected together on the diagram (a box, Shift-click): every row of them is highlighted
   const together = useMemo(() => new Set(c.view === "3d" ? [] : c.group.map((g) => fullId(c.drill, g))), [c.view, c.group, c.drill]);
   const [focus, setFocus] = useState<string>(selected ?? level);

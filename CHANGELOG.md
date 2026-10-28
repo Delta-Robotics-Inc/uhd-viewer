@@ -9,11 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **The hierarchy panel floats.** `ViewerHierarchy` is a card like a host's header: 4 px from the view's edges and below the header, with the panel radius, a border all round and the panel shadow. The canvas starts beside it. It slides open and folded in 200 ms (none with reduced motion), and the 36 px folded rail with its vertical label is gone.
-- **The hierarchy folds from inside the panel.** Its header has a Hide hierarchy button. Folded, it leaves one icon-only button floating at the card's top left, below the header, that opens it again (Show hierarchy): a small card with the panel's border, radius and shadow, and no text. The button takes none of the view's width (`RAIL_WIDTH` is 0), and the keyboard moves between the two buttons as the panel folds and opens. A host's `open`, `close` and `toggle` commands work as before.
+- **The hierarchy folds from inside the panel.** Its header has a Hide hierarchy button. Folded, it leaves one icon-only button floating at the card's top left, below the header, that opens it again (Show hierarchy): the icon alone over the canvas, with no border, face or shadow of its own, that takes a soft rounded fill and a faint glow in the theme's toolbar hover colour on hover. The button takes none of the view's width (`RAIL_WIDTH` is 0), and the keyboard moves between the two buttons as the panel folds and opens. A host's `open`, `close` and `toggle` commands work as before.
 - **The inspector lists every interface** of a module, not only those on its outline. A pin bound into another interface comes last and says which one ("part of UART2").
 - **Long lists show ten at a time**: the interface cards and a module's parameters have "Show 10 more" and "Show fewer" (`useLoadMore`, exported from `components`).
 - **A long description is cut to five lines**, with More and Less (`ClampedText`).
 - **A parent's Artifacts section shows its own artifacts only**: no row of its parts to pick from, and its count is its own.
+- **The hierarchy's group of harnesses, cables and fastener stacks is called "Harnesses & links"** (it was "Wiring & hardware").
 
 ### Deprecated
 
@@ -21,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **A harness drawn along its lines is focused like a module.** A harness with no card of its own (a cable between two parts, or hardware that links name) is selected as the line that carries its name tab, and its lines are framed, when its row in the hierarchy is clicked, when a host focuses it (`uhd-viewer:focus`), and when a host's `uhd-viewer:select` names it by its path (a finding's Locate). Its row is highlighted while one of its lines is selected.
+- **The pin mapping fits a narrow inspector.** Its rows share columns that fit the card: a long pin or interface name (a mechanical interface's "ESC mount") ends in an ellipsis with its full name in the tooltip, instead of wrapping over the next row, and the leaf column shows only when a pin binds one.
 - **The model view's card no longer covers the model** (`ModelView`). The name and size are behind a Model info button in the toolbar (`infoOpen` shows them from the start), and nothing in the view selects as text: a drag that starts on the card turns the model, and Select All no longer lights the card up. The 3D view's caption and the tooltips are not selectable either.
 
 ## [0.2.0] — 2026-10-25

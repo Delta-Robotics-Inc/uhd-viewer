@@ -10,8 +10,8 @@ import { buildView } from "../src/model/from-uhd";
 import { systemDiagnostics } from "../src/model/diagnostics";
 import { commandBus, connectParent, deliver, type ChannelWindow } from "../src/host/channel";
 import { isViewerEvent, originAllowed, originList, parseHostMessage } from "../src/host/protocol";
-import { cadHostSelection, cadSelectTarget, drillTarget, focusTarget, hostSelection, saySelection, selectTarget, selectionKey } from "../src/host/targets";
-import { revealViewport, selectionBounds } from "../src/canvas/reveal";
+import { cadHostSelection, cadSelectTarget, drawnSelection, drillTarget, focusTarget, harnessLines, hostSelection, saySelection, selectTarget, selectedHarness, selectionKey } from "../src/host/targets";
+import { frameViewport, linesBounds, revealViewport, selectionBounds } from "../src/canvas/reveal";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
 
 const defs = new Map((bundle.definitions as unknown as ModuleDef[]).map((d) => [d.id, d]));
@@ -311,5 +311,60 @@ describe("select brings the selection into view", () => {
     expect(v.links.length).toBeGreaterThan(0);
     expect(selectionBounds(v, layout as never, { kind: "link", id: v.links[0].linkId })).toEqual({ x0: 10, y0: 20, x1: 300, y1: 400 });
     expect(selectionBounds(v, layout as never, { kind: "node", id: "nothing" })).toBeUndefined();
+  });
+});
+
+describe("a harness drawn along its lines is focused and framed (no card of its own)", () => {
+  // the pod with its board held by mounting hardware: the mount link names a harness, drawn as a region along it
+  const hw = { id: "mount-hw", name: "Mount hardware", kind: "harness", interfaces: [], fastenerStack: [] } as unknown as ModuleDef;
+  const podRoot = JSON.parse(JSON.stringify(root)) as ModuleDef;
+  podRoot.children!.push({ id: "mount_hw", moduleDefId: "mount-hw", name: "Mount hardware" } as never);
+  (podRoot.links as unknown as { id: string; harness?: string }[]).find((l) => l.id === "board_mount")!.harness = "mount_hw";
+  const look = (id: string) => (id === "mount-hw" ? hw : id === podRoot.id ? podRoot : lookup(id));
+  const pod = buildView(podRoot, look, [], { expanded: new Set(), diagnostics: systemDiagnostics(podRoot, look) });
+
+  it("has no card: its lines carry it", () => {
+    expect(pod.nodes.some((n) => n.id === "mount_hw")).toBe(false);
+    expect(harnessLines(pod, "mount_hw").map((l) => l.linkId)).toEqual(["board_mount"]);
+    expect(harnessLines(pod, "board")).toEqual([]);
+  });
+
+  it("a focus on it (a row of the hierarchy, a finding's Locate) selects the line with its name tab", () => {
+    const t = focusTarget(podRoot, look, "mount_hw", { drill: [], expanded: new Set() });
+    expect(t).toEqual({ drill: [], selection: { kind: "node", id: "mount_hw" } });
+    expect(drawnSelection(pod, t.selection)).toEqual({ kind: "link", id: "board_mount" });
+    // a module with a card, a link, nothing: as they are
+    expect(drawnSelection(pod, { kind: "node", id: "board" })).toEqual({ kind: "node", id: "board" });
+    expect(drawnSelection(pod, { kind: "link", id: "board_mount" })).toEqual({ kind: "link", id: "board_mount" });
+    expect(drawnSelection(pod, null)).toBeNull();
+  });
+
+  it("a host's select names it by its path (a finding on it, or on a link inside it)", () => {
+    expect(selectTarget(pod, [], ["mount_hw"])).toEqual({ kind: "link", id: "board_mount" });
+    expect(selectTarget(pod, [], ["mount_hw/screw_1", "mount_hw"])).toEqual({ kind: "link", id: "board_mount" });
+    expect(selectTarget(pod, [], ["node:mount_hw"])).toEqual({ kind: "link", id: "board_mount" });
+  });
+
+  it("its line selected shows its row in the hierarchy", () => {
+    expect(selectedHarness(pod, { kind: "link", id: "board_mount" })).toBe("mount_hw");
+    expect(selectedHarness(pod, { kind: "node", id: "board" })).toBeUndefined();
+    expect(selectedHarness(view([]), { kind: "link", id: "board_mount" })).toBeUndefined();
+  });
+
+  it("frames its lines as a module is framed: centred clear of the chrome, zoomed to fit, never past 1", () => {
+    const layout = { boxes: {}, routes: { board_mount: [[100, 100], [300, 140]] } };
+    const rect = linesBounds(layout as never, ["board_mount"])!;
+    expect(rect).toEqual({ x0: 100, y0: 100, x1: 300, y1: 140 });
+    expect(linesBounds(layout as never, ["nothing"])).toBeUndefined();
+    const pane = { width: 1000, height: 700 };
+    const small = frameViewport(rect, pane, false);
+    expect(small.zoom).toBe(1);
+    expect(small.x + 200).toBeCloseTo(500);
+    expect(small.y + 120).toBeCloseTo(342);
+    const long = frameViewport({ x0: 0, y0: 0, x1: 4000, y1: 100 }, pane, false);
+    expect(long.zoom).toBeCloseTo((1000 - 128 - 48) / 4000);
+    // the inspector open: centred in what it leaves
+    const beside = frameViewport(rect, pane, true);
+    expect(beside.x + 200).toBeCloseTo((64 + (1000 - 376)) / 2);
   });
 });

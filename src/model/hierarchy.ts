@@ -386,14 +386,14 @@ export function panelState(v: unknown, fallbackOpen = true): HierarchyPanelState
 
 export const clampWidth = (w: number, room = Infinity) => Math.round(Math.max(HIERARCHY_WIDTH.min, Math.min(HIERARCHY_WIDTH.max, room, w)));
 
-/** The row that holds the wiring and hardware (harnesses, cables, fastener stacks): not a module of the system. */
+/** The row "Harnesses & links" that holds the harnesses, cables and fastener stacks: not a module of the system. */
 export const WIRING_PATH = "#wiring";
 const WIRING_KINDS: ReadonlySet<HierarchyKind> = new Set(["harness", "fasteners"]);
 
 /**
  * The tree as the panel shows it: the system's structure first, and its
- * wiring and hardware (every harness and fastener stack, wherever it sits)
- * folded into one group row at the bottom, `WIRING_PATH`. Without any, the
+ * harnesses and links (every harness, cable and fastener stack, wherever it
+ * sits) folded into one group row at the bottom, `WIRING_PATH`. Without any, the
  * tree as it is.
  */
 export function groupWiring(nodes: readonly HierarchyNode[]): HierarchyNode[] {
@@ -413,7 +413,7 @@ export function groupWiring(nodes: readonly HierarchyNode[]): HierarchyNode[] {
   for (const w of wiring) worst = worse(worst, w.worst);
   const group: HierarchyNode = {
     path: WIRING_PATH,
-    label: "Wiring & hardware",
+    label: "Harnesses & links",
     defId: "",
     kind: "group",
     icon: "cable",
