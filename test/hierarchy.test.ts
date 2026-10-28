@@ -27,8 +27,10 @@ import {
   selectedPath,
   treeKey,
   visibleRows,
+  walkHierarchy,
   HIERARCHY_WIDTH,
   WIRING_PATH,
+  type HierarchyNode,
 } from "../src/model/hierarchy";
 import { systemDiagnostics } from "../src/model/diagnostics";
 import bundle from "../fixtures/imu-pod/uhd-bundle.json";
@@ -165,6 +167,42 @@ describe("harnesses and links, and the legend", () => {
     // a system without any: the tree as it was
     const imu = buildHierarchy(root, lookup);
     expect(groupWiring(imu)).toEqual(imu);
+  });
+
+  it("holds only the level's own harnesses when given the level", () => {
+    const all = [
+      mod("quad", { children: [{ id: "stack", moduleDefId: "stack", name: "FC + ESC stack" }, { id: "battery", moduleDefId: "battery" }, { id: "xt60", moduleDefId: "xt60" }] }),
+      mod("stack", { children: [{ id: "fc", moduleDefId: "fc" }, { id: "esc", moduleDefId: "esc" }, { id: "sh8", moduleDefId: "sh8", name: "SH1.0 8-pin cable" }, { id: "screws", moduleDefId: "screws" }] }),
+      mod("fc", {}),
+      mod("esc", {}),
+      mod("battery", {}),
+      mod("xt60", { kind: "harness" }),
+      mod("sh8", { kind: "harness" }),
+      mod("screws", { kind: "harness", fastenerStack: [{ part: "m2", quantity: 4 } as never] }),
+    ];
+    const m = new Map(all.map((d) => [d.id, d]));
+    const tree = buildHierarchy(m.get("quad")!, (id) => m.get(id));
+    const group = (shown: HierarchyNode[]) => shown.find((n) => n.path === WIRING_PATH);
+    // the root: its own lead, not the stack's cable and screws
+    const top = groupWiring(tree, "");
+    expect(group(top)!.children.map((n) => n.path)).toEqual(["xt60"]);
+    expect(group(top)!.children.every((n) => n.where === undefined)).toBe(true);
+    // inside the stack: its own, and the root's are gone
+    const inside = groupWiring(tree, "stack");
+    expect(group(inside)!.children.map((n) => n.path)).toEqual(["stack/sh8", "stack/screws"]);
+    // either way no harness stays in the structure
+    for (const shown of [top, inside]) {
+      const structure = [...walkHierarchy(shown.filter((n) => !n.group))].map((n) => n.path);
+      expect(structure).toEqual(["", "stack", "stack/fc", "stack/esc", "battery"]);
+    }
+    // a level with none of its own: no group
+    expect(group(groupWiring(tree, "stack/fc"))).toBeUndefined();
+    // without a level: every harness, each with the module it is in
+    expect(group(groupWiring(tree))!.children.map((n) => [n.path, n.where])).toEqual([
+      ["stack/sh8", "FC + ESC stack"],
+      ["stack/screws", "FC + ESC stack"],
+      ["xt60", "QUAD"],
+    ]);
   });
 
   it("names each tone the tree shows once, from its marks", () => {

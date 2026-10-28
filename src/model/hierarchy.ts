@@ -391,19 +391,24 @@ export const WIRING_PATH = "#wiring";
 const WIRING_KINDS: ReadonlySet<HierarchyKind> = new Set(["harness", "fasteners"]);
 
 /**
- * The tree as the panel shows it: the system's structure first, and its
- * harnesses and links (every harness, cable and fastener stack, wherever it
- * sits) folded into one group row at the bottom, `WIRING_PATH`. Without any, the
- * tree as it is.
+ * The tree as the panel shows it: the system's structure first, and the
+ * harnesses and links (harnesses, cables and fastener stacks) folded into one
+ * group row at the bottom, `WIRING_PATH`. With `level` (the instance path of
+ * the level on screen, "" for the root), the group holds only that level's own
+ * harnesses, not those of the modules inside it: they show once that module is
+ * the level. Without `level`, every harness, wherever it sits, each with the
+ * module it belongs to. Harnesses never show in the structure. Without any for
+ * the group, the structure alone.
  */
-export function groupWiring(nodes: readonly HierarchyNode[]): HierarchyNode[] {
+export function groupWiring(nodes: readonly HierarchyNode[], level?: string): HierarchyNode[] {
   const wiring: HierarchyNode[] = [];
   const strip = (n: HierarchyNode): HierarchyNode => {
     if (!n.children.some((c) => WIRING_KINDS.has(c.kind) || c.children.length)) return n;
     const kept: HierarchyNode[] = [];
     for (const c of n.children) {
-      if (WIRING_KINDS.has(c.kind)) wiring.push({ ...c, where: n.label });
-      else kept.push(strip(c));
+      if (!WIRING_KINDS.has(c.kind)) kept.push(strip(c));
+      else if (level === undefined) wiring.push({ ...c, where: n.label });
+      else if (n.path === level) wiring.push(c);
     }
     return { ...n, children: kept, drillable: n.drillable };
   };
