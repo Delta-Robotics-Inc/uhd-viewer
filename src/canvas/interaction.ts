@@ -89,8 +89,8 @@ export const rightRelease = (press: RightPress): "menu" | "pan" => (press.pannin
 
 /** The tool toggle's two choices (Lucide icons), each with its key. */
 export const TOOL_OPTIONS = [
-  { id: "select", icon: "mouse-pointer-2", label: "Select: drag on the canvas to select several", shortcut: "V" },
-  { id: "pan", icon: "hand", label: "Pan: drag to move the view", shortcut: "H" },
+  { id: "select", icon: "mouse-pointer-2", label: "Select", shortcut: "V" },
+  { id: "pan", icon: "hand", label: "Pan", shortcut: "H" },
 ] as const satisfies readonly { id: CanvasTool; icon: string; label: string; shortcut: string }[];
 
 /** What a key press asks of the canvas. */

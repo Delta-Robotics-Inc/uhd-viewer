@@ -39,7 +39,7 @@ export type { Panel, Goto } from "./chrome/Chrome";
 export { initialInteraction, interactionReducer, interactionProps, canvasCommand, applySelectChanges, firstView, TOOL_OPTIONS, type CanvasTool, type InteractionState, type InteractionAction, type CanvasCommand, type Viewport } from "./canvas/interaction";
 export { openAction } from "./viewer/controller";
 export { cardWidth, labelIsCut, CARD_W, CARD_W_MAX } from "./layout/card-body";
-export { DiagramCanvas, DiagramToolbar, ToolToggle, ViewButtons, DiagramLegend, DiagramLegendBody, DiagramLegendItems, FittedLegend, LegendToolbarButton, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type Scene3DProps } from "./viewer/views";
+export { DiagramCanvas, DiagramToolbar, ToolToggle, ViewButtons, DiagramLegend, DiagramLegendBody, DiagramLegendItems, FittedLegend, LegendFold, LegendToolbarButton, IsolationClear, MissingNotice, ScenarioBanner, Scene3D, ViewerInspector, ViewerNodeMenu, CLASSIFICATION_OPTIONS, DETAIL_OPTIONS, type DiagramCanvasProps, type FittedLegendProps, type Scene3DProps } from "./viewer/views";
 export { ModelView, type ModelViewProps, type ModelInfo } from "./cad/ModelView";
 // the module tree, docked at the left of the view (PB-1042), and its model
 export { ViewerHierarchy, HierarchyToggle, RAIL_WIDTH, HIERARCHY_LOOK, type ViewerHierarchyProps, type HierarchyCommand } from "./viewer/hierarchy";
@@ -85,8 +85,8 @@ export { HostContext, type HostActions } from "./host/context";
 // ---- primitives
 export { ScrollArea, type ScrollAreaProps } from "./ui/ScrollArea";
 export { Toolbar, ToolbarSeparator, IconButton, ToggleGroup, type ToolbarProps, type IconButtonProps, type ToggleGroupProps } from "./ui/Toolbar";
-export { Legend, LegendItem, LegendSwatches, type LegendItemProps, type LegendProps } from "./ui/Legend";
-export { legendStage, legendRoom, type LegendStage } from "./ui/legendFit";
+export { Legend, LegendItem, LegendSwatches, LegendTab, type LegendItemProps, type LegendProps, type LegendTabProps } from "./ui/Legend";
+export { legendStage, legendRoom, legendFolded, LEGEND_SHORT, type LegendStage } from "./ui/legendFit";
 export { InspectorPanel, Section, PropertyRow, Badge, StatusDot, EmptyState, type InspectorPanelProps, type Tone } from "./ui/Inspector";
 export { Tooltips } from "./ui/Tooltips";
 export { Icon } from "./canvas/Icon";

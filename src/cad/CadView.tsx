@@ -1359,8 +1359,8 @@ export function CadView({
               label="Assembly"
               tooltipSide="top"
               options={[
-                { id: "assembled", icon: "box", label: "Assembled: every module where its links put it" },
-                { id: "exploded", icon: "layers", label: "Exploded: apart in assembly order, bottom to top" },
+                { id: "assembled", icon: "box", label: "Assembled" },
+                { id: "exploded", icon: "layers", label: "Exploded" },
               ]}
               value={exploded ? "exploded" : "assembled"}
               onChange={(v) => toggleExploded(v === "exploded")}
@@ -1389,7 +1389,7 @@ export function CadView({
               )}
             </div>
             {(model?.assembly.hardware.length ?? 0) > 0 && (
-              <IconButton icon="wrench" label="Mounting hardware from the harnesses' fastener stacks" tooltipSide="top" pressed={showHardware} onClick={() => setShowHardware(!showHardware)} />
+              <IconButton icon="wrench" label="Mounting hardware" tooltipSide="top" pressed={showHardware} onClick={() => setShowHardware(!showHardware)} />
             )}
             {(model?.assembly.harnesses.length ?? 0) > 0 && (
               <IconButton icon="cable" label="Routed wire harnesses" tooltipSide="top" pressed={showWires} onClick={() => setShowWires(!showWires)} />
@@ -1397,7 +1397,7 @@ export function CadView({
             <IconButton icon="move-3d" label="Every interface frame" tooltipSide="top" pressed={showFrames} onClick={() => setShowFrames(!showFrames)} />
             <ToolbarSeparator />
             <div className="cad-menu-wrap">
-              <IconButton icon="scissors" label="Section: cut the model with a plane" tooltipSide="top" pressed={Boolean(section)} onClick={() => setSection(section ? null : { axis: 1, at: 0.5 })} />
+              <IconButton icon="scissors" label="Section" tooltipSide="top" pressed={Boolean(section)} onClick={() => setSection(section ? null : { axis: 1, at: 0.5 })} />
               <IconButton icon="chevron-up" size="sm" className="w-5" label="Section plane" tooltipSide="top" aria-expanded={sectionMenu} onClick={() => setSectionMenu(!sectionMenu)} />
               {sectionMenu && (
                 <div className="cad-menu cad-section">
@@ -1435,7 +1435,7 @@ export function CadView({
             </div>
             <IconButton
               icon="scan-eye"
-              label={shells ? "X-ray: see through bodies that hold others" : "X-ray: nothing to see through here (no body holds another)"}
+              label={shells ? "X-ray" : "X-ray: nothing to see through"}
               tooltipSide="top"
               pressed={xray && shells > 0}
               aria-disabled={!shells || undefined}
@@ -1462,7 +1462,7 @@ export function CadView({
             />
             <ToolbarSeparator />
             <IconButton icon="maximize" label="Fit" tooltipSide="top" onClick={fitAsSeen} />
-            <IconButton icon="crosshair" label="Look along the selected interface's normal" tooltipSide="top" disabled={!sel.body} onClick={focus} />
+            <IconButton icon="crosshair" label="Look along normal" tooltipSide="top" disabled={!sel.body} onClick={focus} />
           </Toolbar>
         )}
         {!model && <div className="cad-loading">Loading manifests…</div>}

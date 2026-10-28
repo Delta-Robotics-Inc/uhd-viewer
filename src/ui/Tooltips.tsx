@@ -17,7 +17,7 @@ interface Tip {
   side: "top" | "bottom" | "left" | "right";
 }
 
-const OPEN_DELAY = 350;
+const OPEN_DELAY = 250;
 /** Moving from one control to the next within this time shows the next tip at once. */
 const SKIP_DELAY = 300;
 

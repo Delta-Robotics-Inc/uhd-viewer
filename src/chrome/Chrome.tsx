@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ChildLink, ModuleDef } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { ScopedDiagnostic } from "../model/diagnostics";
@@ -708,8 +708,15 @@ function InspectorView(props: {
 // ---------------------------------------------------------------------------
 
 export interface NodeMenuItem {
+  /** Title case, a few words. */
   label: string;
   run: () => void;
+  /** A Lucide icon name, at the item's left. */
+  icon?: string;
+  /** The key that does the same, at the item's right (`F`, `Ctrl+A`). */
+  shortcut?: string;
+  /** A rule above the item: it starts a group. */
+  separator?: boolean;
 }
 
 /** A small menu at the pointer; any click elsewhere, Escape, or a choice closes it. */
@@ -729,21 +736,29 @@ export function NodeMenu({ x, y, items, onClose }: { x: number; y: number; items
   }, [onClose]);
   if (!items.length) return null;
   // kept inside the window
-  const left = Math.min(x, window.innerWidth - 180);
-  const top = Math.min(y, window.innerHeight - 12 - items.length * 30);
+  const rules = items.filter((it, i) => it.separator && i > 0).length;
+  const left = Math.min(x, window.innerWidth - 228);
+  const top = Math.max(4, Math.min(y, window.innerHeight - 12 - items.length * 28 - rules * 9));
   return (
     <div ref={ref} className="context-menu" style={{ left, top }} role="menu">
-      {items.map((it) => (
-        <button
-          key={it.label}
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            it.run();
-          }}
-        >
-          {it.label}
-        </button>
+      {items.map((it, i) => (
+        <Fragment key={it.label}>
+          {it.separator && i > 0 && <div role="separator" className="context-menu-rule" />}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onClose();
+              it.run();
+            }}
+          >
+            <span className="context-menu-icon" aria-hidden>
+              {it.icon && <Icon name={it.icon} size={14} strokeWidth={1.75} />}
+            </span>
+            <span className="context-menu-label">{it.label}</span>
+            {it.shortcut && <kbd className="context-menu-key">{it.shortcut}</kbd>}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

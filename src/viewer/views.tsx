@@ -4,7 +4,7 @@
  * scene, the inspector panels and a module's context menu. Shells place them;
  * none of them is app chrome.
  */
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Canvas } from "../canvas/Canvas";
 import { TOOL_OPTIONS, type CanvasTool } from "../canvas/interaction";
@@ -14,9 +14,10 @@ import { Inspector, NodeMenu } from "../chrome/Chrome";
 import { CadView } from "../cad/CadView";
 import { CLASSIFICATIONS, legendFor, type Classification } from "../model/classification";
 import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
-import { Legend, LegendItem, LegendSwatches } from "../ui/Legend";
-import { legendStage, type LegendStage } from "../ui/legendFit";
+import { Legend, LegendItem, LegendSwatches, LegendTab } from "../ui/Legend";
+import { LEGEND_SHORT, legendFolded, legendStage, type LegendStage } from "../ui/legendFit";
 import { cx } from "../ui/cx";
+import { levelModules } from "../model/level";
 import { useViewer } from "./controller";
 
 export interface DiagramCanvasProps {
@@ -28,11 +29,17 @@ export interface DiagramCanvasProps {
   coveredRight?: boolean;
   /** What the shell adds to the notice about definitions the bundle does not hold (how its producer gets them). */
   missingHint?: ReactNode;
+  /**
+   * What a level with no modules offers: a dashed box with a plus and this
+   * label, a button (the shell's way to add one, such as its parts library).
+   * Without it the empty level only says so.
+   */
+  emptyAction?: { label: string; onClick: () => void };
   className?: string;
 }
 
 /** The diagram of the current level: modules, interfaces, links and harnesses. */
-export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, missingHint, className }: DiagramCanvasProps) {
+export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, missingHint, emptyAction, className }: DiagramCanvasProps) {
   const c = useViewer();
   const covered = coveredRight ?? Boolean(c.panel);
   return (
@@ -74,14 +81,24 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, mis
         viewport={c.viewport}
         onViewport={c.onViewport}
       />
-      {c.drawn.nodes.length === 0 && (
-        <div className={cx("canvas-empty", covered && "covered-right")} role="status">
-          <div className="canvas-empty-title">{c.levelDef.name} has no modules yet</div>
-          <p>Add child modules to its definition to see them here.</p>
-        </div>
-      )}
+      {levelModules(c.vm.nodes).length === 0 &&
+        (emptyAction ? (
+          <div className={cx("canvas-empty", covered && "covered-right")} role="status" aria-label={`${c.levelDef.name}: no modules`}>
+            <button type="button" className="canvas-empty-add" data-add-part="" onClick={emptyAction.onClick}>
+              <span className="canvas-empty-box" aria-hidden>
+                <Icon name="plus" size={48} strokeWidth={1.5} />
+              </span>
+              <span className="canvas-empty-label">{emptyAction.label}</span>
+            </button>
+          </div>
+        ) : (
+          <div className={cx("canvas-empty", covered && "covered-right")} role="status">
+            <div className="canvas-empty-title">{c.levelDef.name} has no modules yet</div>
+            <p>Add child modules to its definition to see them here.</p>
+          </div>
+        ))}
       {toolbar && <DiagramToolbar coveredRight={covered} />}
-      {legend && <DiagramLegend />}
+      {legend && <DiagramLegend coveredRight={covered} />}
       {c.pair && <PairView vm={c.vm} link={c.pair} mode={c.mode} onClose={() => c.setPairLink(null)} />}
     </main>
   );
@@ -138,7 +155,7 @@ export function MissingNotice({ hint, className }: { hint?: ReactNode; className
         )}
         {hint ? <div className="missing-notice-hint">{hint}</div> : null}
       </div>
-      <IconButton icon="x" size="sm" tooltipSide="bottom" label="Hide this notice" onClick={() => setDismissed(key)} className="size-6 shrink-0" />
+      <IconButton icon="x" size="sm" tooltipSide="bottom" label="Hide" onClick={() => setDismissed(key)} className="size-6 shrink-0" />
     </div>
   );
 }
@@ -151,8 +168,8 @@ export const CLASSIFICATION_OPTIONS = [
 ] as const satisfies readonly { id: Classification; icon: string; label: string }[];
 
 export const DETAIL_OPTIONS = [
-  { id: "bundled", icon: "minus", label: "Basic: one line per link" },
-  { id: "conductors", icon: "rows-3", label: "Ribbon: every conductor" },
+  { id: "bundled", icon: "minus", label: "One line per link" },
+  { id: "conductors", icon: "rows-3", label: "Every conductor" },
 ] as const;
 
 /**
@@ -221,13 +238,13 @@ const DiagramToolbarView = memo(function DiagramToolbarView(p: DiagramToolbarVie
           <ToggleGroup label="Classification" tooltipSide="top" options={CLASSIFICATION_OPTIONS} value={p.mode} onChange={p.onMode} />
           <ToolbarSeparator />
           <ToggleGroup label="Detail" tooltipSide="top" options={DETAIL_OPTIONS} value={p.conductors ? "conductors" : "bundled"} onChange={(v) => p.onConductors(v === "conductors")} />
-          <IconButton icon="arrow-down-to-line" tooltipSide="top" label={p.showGrounds ? "Draw grounds as symbols" : "Draw grounds as wires"} pressed={p.showGrounds} onClick={() => p.onGrounds(!p.showGrounds)} />
+          <IconButton icon="arrow-down-to-line" tooltipSide="top" label={p.showGrounds ? "Grounds as symbols" : "Grounds as wires"} pressed={p.showGrounds} onClick={() => p.onGrounds(!p.showGrounds)} />
           <ToolbarSeparator />
         </>
       )}
       <ViewButtonsView onFit={p.onFit} onZoomIn={p.onZoomIn} onZoomOut={p.onZoomOut} tooltipSide="top" />
       <ToolbarSeparator />
-      <IconButton icon="rotate-ccw" label="Reset layout of this level" tooltipSide="top" onClick={p.onReset} />
+      <IconButton icon="rotate-ccw" label="Reset layout" tooltipSide="top" onClick={p.onReset} />
     </Toolbar>
   );
 });
@@ -272,7 +289,6 @@ interface LegendItemsProps {
 }
 
 const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated, onIsolate, compact }: LegendItemsProps) {
-  const what = mode === "signal" ? "signal type" : mode === "domain" ? "domain" : "state";
   return (
     <>
       {legendFor(mode, present).map((item) => {
@@ -283,12 +299,13 @@ const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated,
             key={item.key}
             color={item.color}
             label={item.label}
+            meaning={item.meaning}
             onSelect={(add) => onIsolate(item.key, add)}
             pressed={pressed}
             dimmed={isolated.size > 0 && !pressed}
             absent={absent}
-            hint={absent ? `Nothing on this level is of this ${what}` : pressed ? (isolated.size > 1 ? "Stop isolating this one" : "Show everything again") : `Isolate: fade everything that is not of this ${what}`}
-            hintShortcut={absent ? undefined : pressed && isolated.size === 1 ? "Esc" : "Shift+click: hold several"}
+            hint={absent ? "Not on this level" : pressed ? (isolated.size > 1 ? "Release" : "Show all") : "Isolate"}
+            hintShortcut={absent ? undefined : pressed && isolated.size === 1 ? "Esc" : "Shift+click: several"}
             compact={compact}
           />
         );
@@ -301,13 +318,14 @@ const LegendItemsView = memo(function LegendItemsView({ mode, present, isolated,
  * The entries of the current classification's legend, as buttons: a click
  * isolates one (its links stay, with the interfaces and modules they touch;
  * the rest of the level fades), a click on it again shows everything, a
- * click on another switches, and Shift, Ctrl or Cmd holds several. For a
- * shell that draws its own legend card.
+ * click on another switches, and Shift, Ctrl or Cmd holds several. Each
+ * reads as its name and, under it, what it stands for. For a shell that
+ * draws its own legend card.
  */
 export function DiagramLegendItems({ compact, columns = 3 }: { compact?: boolean; columns?: number } = {}) {
   const c = useViewer();
   const items = <LegendItemsView mode={c.mode} present={c.present} isolated={c.isolated} onIsolate={c.onIsolate} compact={compact} />;
-  if (!compact) return items;
+  if (!compact) return <div className="flex flex-col gap-1">{items}</div>;
   return (
     <LegendSwatches columns={columns} label={CLASSIFICATIONS.find((x) => x.id === c.mode)?.label}>
       {items}
@@ -319,13 +337,27 @@ export function DiagramLegendItems({ compact, columns = 3 }: { compact?: boolean
 export function IsolationClear({ className }: { className?: string }) {
   const c = useViewer();
   if (!c.isolated.size) return null;
-  return <IconButton icon="x" size="sm" tooltipSide="top" label="Show everything again" shortcut="Esc" onClick={c.clearIsolated} className={cx("size-6", className)} />;
+  return <IconButton icon="x" size="sm" tooltipSide="top" label="Show all" shortcut="Esc" onClick={c.clearIsolated} className={cx("size-6", className)} />;
+}
+
+/** What a legend that folds gives the content it draws: the way to fold it (`FittedLegend`). */
+const LegendFoldContext = createContext<(() => void) | null>(null);
+
+/**
+ * The legend's fold button, at the right of its header: the legend becomes a
+ * tab at the right edge. Nothing where the legend does not fold (the
+ * toolbar's popover).
+ */
+export function LegendFold({ className }: { className?: string }) {
+  const fold = useContext(LegendFoldContext);
+  if (!fold) return null;
+  return <IconButton icon="chevron-right" size="sm" tooltipSide="top" label="Hide legend" onClick={fold} className={cx("size-6", className)} />;
 }
 
 /**
  * What the legend shows in a form: `full` the title and the entries with their
- * labels; `compact` the classification's icon and the swatches alone (each
- * named by its label).
+ * names and meanings; `compact` the classification's icon and the swatches
+ * alone (each named by its label).
  */
 export function DiagramLegendBody({ form }: { form: "full" | "compact" }) {
   const c = useViewer();
@@ -336,7 +368,8 @@ export function DiagramLegendBody({ form }: { form: "full" | "compact" }) {
       <>
         <div className="flex min-h-6 items-center justify-between gap-1">
           <Icon name={icon} size={13} strokeWidth={1.75} className="text-fg-muted" aria-label={title} role="img" />
-          <IsolationClear className="-my-1 -mr-1.5" />
+          <IsolationClear className="-my-1" />
+          <LegendFold className="-my-1 -mr-1.5" />
         </div>
         <DiagramLegendItems compact columns={3} />
       </>
@@ -344,9 +377,12 @@ export function DiagramLegendBody({ form }: { form: "full" | "compact" }) {
   }
   return (
     <>
-      <div className="mb-0.5 flex min-h-6 items-center justify-between gap-2">
+      <div className="legend-head -mx-3 -mt-1 mb-1 flex min-h-7 items-center justify-between gap-2 border-b border-line-subtle px-3 pb-1">
         <span className="font-label text-[10px] tracking-[0.8px] text-fg-muted uppercase">{title}</span>
-        <IsolationClear className="-my-1 -mr-1.5" />
+        <span className="-mr-1.5 flex items-center">
+          <IsolationClear />
+          <LegendFold />
+        </span>
       </div>
       <DiagramLegendItems />
     </>
@@ -354,23 +390,66 @@ export function DiagramLegendBody({ form }: { form: "full" | "compact" }) {
 }
 
 /** What the link colours mean in the current classification; a click on an entry isolates it. It gives way to the toolbar as the canvas narrows (`FittedLegend`). */
-export function DiagramLegend({ className }: { className?: string }) {
-  return <FittedLegend label="Legend" className={className} render={(form) => <DiagramLegendBody form={form} />} />;
+export function DiagramLegend({ className, coveredRight }: { className?: string; coveredRight?: boolean }) {
+  return <FittedLegend label="Legend" className={className} coveredRight={coveredRight} render={(form) => <DiagramLegendBody form={form} />} />;
+}
+
+export interface FittedLegendProps {
+  label: string;
+  /** Draws a form of the card. `LegendFold` inside it folds the legend. */
+  render: (form: "full" | "compact") => ReactNode;
+  className?: string;
+  /** Open (the card) or folded (the tab at the right edge). Given: the shell keeps it, with `onOpenChange`; else the legend does, from `defaultOpen`. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Where an uncontrolled legend starts. Default open. */
+  defaultOpen?: boolean;
+  /** A panel floats over the canvas's right side (an inspector): the legend sits left of it. */
+  coveredRight?: boolean;
 }
 
 /**
- * A legend card at the canvas's bottom left that stays there and gives way
+ * A legend card at the canvas's bottom right that stays there and gives way
  * to the bottom toolbar (ui/legendFit.ts): the full form while it fits beside
  * the toolbar, then the compact one, and at its smallest none, the toolbar
- * then offering it behind a button (`LegendToolbarButton`). It measures the
- * room it has (a `ResizeObserver` on the canvas, the toolbar and both forms)
- * from hidden copies of the two forms, so it never overlaps the toolbar.
- * `render` draws a form; the card is a sibling of the toolbar (`.toolbar`).
+ * then offering it behind a button (`LegendToolbarButton`). Folded, it is a
+ * tab at the right edge with a dot per colour, which opens it; a canvas
+ * shorter than `LEGEND_SHORT` folds it until the user opens it there. It
+ * measures the room it has (a `ResizeObserver` on the canvas, the toolbar and
+ * every form) from hidden copies of the forms, so it never overlaps the
+ * toolbar. `render` draws a form; the card is a sibling of the toolbar
+ * (`.toolbar`).
  */
-export function FittedLegend({ label, render, className }: { label: string; render: (form: "full" | "compact") => ReactNode; className?: string }) {
-  const { legendStage: stage, setLegendStage, panel } = useViewer();
+export function FittedLegend({ label, render, className, open: given, onOpenChange, defaultOpen = true, coveredRight = false }: FittedLegendProps) {
+  const { legendStage: stage, setLegendStage, panel, mode, present, isolated } = useViewer();
+  const [own, setOwn] = useState(defaultOpen);
+  const open = given ?? own;
+  const setOpen = (next: boolean) => {
+    if (given === undefined) setOwn(next);
+    onOpenChange?.(next);
+  };
+  // the canvas's height: a short one folds the legend, until it is opened there (`peek`, forgotten when it is tall again)
+  const [height, setHeight] = useState(0);
+  const [peek, setPeek] = useState(false);
+  const short = height > 0 && height < LEGEND_SHORT;
+  useEffect(() => {
+    if (!short) setPeek(false);
+  }, [short]);
+  const folded = legendFolded(open, height, peek);
+  const unfold = () => {
+    if (!open) setOpen(true);
+    if (short) setPeek(true);
+  };
+  const fold = useCallback(() => {
+    if (open && short && peek) setPeek(false);
+    else {
+      if (given === undefined) setOwn(false);
+      onOpenChange?.(false);
+    }
+  }, [open, short, peek, given, onOpenChange]);
   const full = useRef<HTMLDivElement>(null);
   const compact = useRef<HTMLDivElement>(null);
+  const tab = useRef<HTMLButtonElement>(null);
   const current = useRef<LegendStage>(stage);
   current.current = stage;
   const measure = useCallback(() => {
@@ -378,21 +457,23 @@ export function FittedLegend({ label, render, className }: { label: string; rend
     const k = compact.current;
     const host = f?.parentElement;
     if (!f || !k || !host) return;
+    setHeight(host.clientHeight);
     const toolbar = host.querySelector<HTMLElement>(":scope > .toolbar");
     // a toolbar not drawn (display: none) is not in the way
     const box = toolbar && toolbar.getClientRects().length ? toolbar.getBoundingClientRect() : null;
     const slotEl = toolbar?.querySelector<HTMLElement>("[data-legend-slot]");
     const slot = slotEl ? slotEl.getBoundingClientRect().width + (parseFloat(getComputedStyle(toolbar!).columnGap) || 0) : 0;
     const fr = f.getBoundingClientRect();
-    const next = legendStage({ left: fr.left, full: fr, compact: k.getBoundingClientRect(), toolbar: box, slot }, current.current);
+    const tr = tab.current?.getBoundingClientRect();
+    const next = legendStage({ right: fr.right, full: fr, compact: k.getBoundingClientRect(), ...(tr ? { tab: tr } : {}), toolbar: box, slot }, current.current, folded);
     if (next !== current.current) {
       current.current = next;
       setLegendStage(next);
     }
-  }, [setLegendStage]);
-  // when a size changes (the canvas, the toolbar, either form: what the legend lists, a fold), and when the
+  }, [setLegendStage, folded]);
+  // when a size changes (the canvas, the toolbar, any form: what the legend lists, a fold), and when the
   // inspector opens or closes (it moves the toolbar without resizing it); not on every render, as a drag re-renders
-  useLayoutEffect(measure, [measure, panel, stage]);
+  useLayoutEffect(measure, [measure, panel, stage, coveredRight]);
   useEffect(() => {
     const host = full.current?.parentElement;
     if (!host || typeof ResizeObserver === "undefined") return;
@@ -400,27 +481,37 @@ export function FittedLegend({ label, render, className }: { label: string; rend
     ro.observe(host);
     if (full.current) ro.observe(full.current);
     if (compact.current) ro.observe(compact.current);
+    if (tab.current) ro.observe(tab.current);
     const toolbar = host.querySelector(":scope > .toolbar");
     if (toolbar) ro.observe(toolbar);
     return () => ro.disconnect();
   }, [measure]);
   // a legend no longer drawn leaves the toolbar as it was
   useEffect(() => () => setLegendStage("full"), [setLegendStage]);
+  // the folded tab's dots: the colours on this level (all of them on a level with none)
+  const entries = legendFor(mode, present);
+  const shown = entries.filter((e) => present.has(e.key) || isolated.has(e.key));
+  const dots = (shown.length ? shown : entries).slice(0, 8).map((e) => ({ key: e.key, color: e.color, dimmed: isolated.size > 0 && !isolated.has(e.key) }));
+  const side = cx(coveredRight && "covered-right", className);
   return (
-    <>
-      {stage !== "button" && (
-        <Legend role="group" aria-label={label} compact={stage === "compact"} className={cx("legend", className)} data-legend-stage={stage}>
-          {render(stage)}
-        </Legend>
-      )}
+    <LegendFoldContext.Provider value={fold}>
+      {stage !== "button" &&
+        (folded ? (
+          <LegendTab ref={tab} dots={dots} aria-label={label} aria-expanded={false} data-tooltip={label} data-tooltip-side="left" data-legend-tab="" onClick={unfold} className={cx("legend-tab", side)} />
+        ) : (
+          <Legend role="group" aria-label={label} compact={stage === "compact"} className={cx("legend", side)} data-legend-stage={stage}>
+            {render(stage)}
+          </Legend>
+        ))}
       {/* the measuring copies: never seen, never focused, after the card (a query for the legend finds the card) */}
-      <Legend ref={full} aria-hidden inert className={cx("legend-measure", className)}>
+      <Legend ref={full} aria-hidden inert className={cx("legend-measure", side)}>
         {render("full")}
       </Legend>
-      <Legend ref={compact} aria-hidden inert compact className={cx("legend-measure", className)}>
+      <Legend ref={compact} aria-hidden inert compact className={cx("legend-measure", side)}>
         {render("compact")}
       </Legend>
-    </>
+      {folded && stage === "button" && <LegendTab ref={tab} dots={dots} aria-hidden inert tabIndex={-1} className={cx("legend-tab legend-measure", side)} />}
+    </LegendFoldContext.Provider>
   );
 }
 

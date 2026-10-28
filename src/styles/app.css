@@ -448,6 +448,48 @@
   font-size: 13px;
   color: var(--uhd-text);
 }
+/* the empty level's call to action: a dashed box with a plus, and its label under it */
+.canvas-empty-add {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: none;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--uhd-radius);
+  background: transparent;
+  color: var(--uhd-text-muted);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.canvas-empty-add:hover {
+  background: color-mix(in oklab, var(--uhd-hover) 70%, transparent);
+  color: var(--uhd-text);
+}
+.canvas-empty-add:focus-visible {
+  outline: 1px solid var(--uhd-focus-ring);
+  outline-offset: 2px;
+}
+.canvas-empty-box {
+  display: grid;
+  place-items: center;
+  width: 192px;
+  height: 192px;
+  border: 2px dashed currentColor;
+  border-radius: var(--uhd-radius);
+  opacity: 0.85;
+}
+.canvas-empty-label {
+  font: 500 13px/1.2 var(--uhd-font-label);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+[data-uhd-scheme^="high-contrast"] .canvas-empty-add:hover {
+  outline: 1px dashed var(--uhd-focus-ring);
+  outline-offset: -1px;
+}
 /* a legend entry is isolated and none of its links touch this node */
 .react-flow__node {
   transition: opacity 0.15s ease;
@@ -1848,25 +1890,51 @@ body {
   z-index: 30;
   flex-wrap: nowrap;
 }
+/* the legend at the bottom right (the bottom left is the hierarchy's), left of a floating inspector when one is open */
 .legend {
-  left: calc(var(--uhd-inset-left, 0px) + 8px);
-  right: auto;
+  left: auto;
+  right: 8px;
   bottom: 8px;
   background: var(--uhd-surface);
   border: 1px solid var(--uhd-border);
   border-radius: var(--uhd-radius);
   box-shadow: var(--uhd-shadow-md);
 }
-/* the legend as it gives way to the toolbar (FittedLegend, ui/legendFit.ts): the copies it measures its two
+.legend.covered-right {
+  right: calc(min(340px, 100% - 64px) + 12px);
+}
+/* folded: a tab at the right edge (Legend.tsx, LegendTab), on the toolbar's baseline */
+.legend-tab {
+  position: absolute;
+  right: 0;
+  bottom: 8px;
+  z-index: 10;
+}
+.legend-tab.covered-right {
+  right: calc(min(340px, 100% - 64px) + 8px);
+  border-right-width: 1px;
+  border-radius: var(--uhd-radius);
+}
+/* the legend as it gives way to the toolbar (FittedLegend, ui/legendFit.ts): the copies it measures its
    forms on, where the card sits, at their natural width, never seen (the compact form drops the card's 150 px minimum) */
 .legend-measure {
   position: absolute;
-  left: calc(var(--uhd-inset-left, 0px) + 8px);
+  left: auto;
+  right: 8px;
   bottom: 8px;
   width: max-content;
   visibility: hidden;
   pointer-events: none;
   z-index: -1;
+}
+.legend-measure.covered-right {
+  right: calc(min(340px, 100% - 64px) + 12px);
+}
+.legend-tab.legend-measure {
+  right: 0;
+}
+.legend-tab.legend-measure.covered-right {
+  right: calc(min(340px, 100% - 64px) + 8px);
 }
 /* at its smallest, the legend opens from its button in the toolbar, above it */
 .legend-popover {
@@ -2458,16 +2526,56 @@ body {
   border-radius: var(--uhd-radius);
   box-shadow: var(--uhd-shadow-lg);
 }
+.context-menu {
+  min-width: 200px;
+}
+/* an item: its icon, its name in title case, and its key at the right */
 .context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
   text-align: left;
-  padding: 6px 10px;
+  padding: 0 8px;
   border-radius: 5px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font: 12px/1 var(--uhd-font-ui);
+  letter-spacing: normal;
+  color: var(--uhd-text);
+  white-space: nowrap;
+}
+.context-menu button:hover,
+.context-menu button:focus-visible {
+  background: var(--uhd-active);
+  outline: none;
+}
+.context-menu-icon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--uhd-text-muted);
+}
+.context-menu button:hover .context-menu-icon {
   color: var(--uhd-text);
 }
-.context-menu button:hover {
-  background: var(--uhd-active);
+.context-menu-label {
+  flex: 1;
+}
+.context-menu-key {
+  margin-left: 16px;
+  font: 10.5px/1 var(--uhd-font-mono);
+  color: var(--uhd-text-faint);
+}
+.context-menu-rule {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--uhd-border);
+}
+[data-uhd-scheme^="high-contrast"] .context-menu button:hover,
+[data-uhd-scheme^="high-contrast"] .context-menu button:focus-visible {
+  outline: 1px dashed var(--uhd-focus-ring);
+  outline-offset: -1px;
 }
 
 /* narrow hosts (a VS Code panel beside an editor, ~600 px; PB-861): the title keeps its room and
@@ -2568,8 +2676,14 @@ body {
     display: none;
   }
   .toolbar.covered-right,
-  .cad-view:has(.cad-inspector) .cad-toolbar {
+  .cad-view:has(.cad-inspector) .cad-toolbar,
+  .legend.covered-right,
+  .legend-measure.covered-right {
     right: calc(min(300px, 100% - 96px) + 12px);
+  }
+  .legend-tab.covered-right,
+  .legend-tab.legend-measure.covered-right {
+    right: calc(min(300px, 100% - 96px) + 8px);
   }
 }
 
