@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-28
+
 ### Added
 
 - **An empty level can offer a way to add a part.** `DiagramCanvas` takes `emptyAction` (`{ label, onClick }`): a level with no modules then shows a 192 px dashed box with a large plus and the label under it, a button (a host's parts library, for instance). Without it the level says it has no modules, as before.
