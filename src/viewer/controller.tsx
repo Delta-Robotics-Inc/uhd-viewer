@@ -4,6 +4,7 @@ import type { ChildLink } from "@uhd/types/index.js";
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import { buildView, levelModule, withOverrides } from "../model/from-uhd";
 import { systemDiagnostics } from "../model/diagnostics";
+import { levelModules } from "../model/level";
 import type { Classification } from "../model/classification";
 import { isolate, presentKeys, toggleIsolated } from "../model/isolate";
 import type { ViewLink } from "../model/types";
@@ -574,7 +575,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     if (drawn.nodes.length > 1) menuItems.push({ label: "Select all", icon: "square-dashed", shortcut: "Ctrl+A", run: onSelectAll });
     menuItems.push(interaction.tool === "pan" ? { label: "Select tool", icon: "mouse-pointer-2", shortcut: "V", run: () => setTool("select") } : { label: "Pan tool", icon: "hand", shortcut: "H", run: () => setTool("pan") });
     if (isolated.size) menuItems.push({ label: "Show all", icon: "eye", shortcut: "Esc", run: clearIsolated });
-    const chosen = selection?.kind === "node" && group.length <= 1 ? vm.nodes.find((n) => n.id === selection.id) : undefined;
+    // a module selected (not a board net, its tap or a boundary port): what its own menu offers about it
+    const chosen = selection?.kind === "node" && group.length <= 1 ? levelModules(vm.nodes).find((n) => n.id === selection.id) : undefined;
     const about = chosen ? nodeItems(chosen) : [];
     about.forEach((it, i) => menuItems.push(i === 0 ? { ...it, separator: true } : it));
   }
