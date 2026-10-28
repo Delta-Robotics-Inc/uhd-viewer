@@ -17,6 +17,7 @@ import { IconButton, ToggleGroup, Toolbar, ToolbarSeparator } from "../ui/Toolba
 import { Legend, LegendItem, LegendSwatches, LegendTab } from "../ui/Legend";
 import { LEGEND_SHORT, legendFolded, legendStage, type LegendStage } from "../ui/legendFit";
 import { cx } from "../ui/cx";
+import { levelModules } from "../model/level";
 import { useViewer } from "./controller";
 
 export interface DiagramCanvasProps {
@@ -80,7 +81,7 @@ export function DiagramCanvas({ toolbar = true, legend = true, coveredRight, mis
         viewport={c.viewport}
         onViewport={c.onViewport}
       />
-      {c.drawn.nodes.length === 0 &&
+      {levelModules(c.vm.nodes).length === 0 &&
         (emptyAction ? (
           <div className={cx("canvas-empty", covered && "covered-right")} role="status" aria-label={`${c.levelDef.name}: no modules`}>
             <button type="button" className="canvas-empty-add" data-add-part="" onClick={emptyAction.onClick}>
