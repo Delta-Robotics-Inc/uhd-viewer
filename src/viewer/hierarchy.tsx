@@ -182,8 +182,9 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
       }),
     [c.system, c.scenario, c.options.nodeMarks, c.diagnostics, c.hostDiagnostics],
   );
-  // the structure first; harnesses, cables and fastener stacks folded into one group at the bottom
-  const shown = useMemo(() => groupWiring(tree), [tree]);
+  const level = c.drill.join("/");
+  // the structure first; the level's own harnesses, cables and fastener stacks folded into one group at the bottom
+  const shown = useMemo(() => groupWiring(tree, level), [tree, level]);
   const index = useMemo(() => hierarchyIndex(shown), [shown]);
   const wiring = useMemo(() => new Set(index.get(WIRING_PATH)?.children.map((n) => n.path) ?? []), [index]);
   const legend = useMemo(() => markLegend(tree), [tree]);
@@ -195,7 +196,6 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const open = useMemo(() => (filter.trim() ? new Set([...expanded, ...[...filtered.expanded].filter((p) => !shut.has(p))]) : expanded), [expanded, filter, filtered, shut]);
   const rows = useMemo(() => visibleRows(filtered.nodes, open), [filtered, open]);
 
-  const level = c.drill.join("/");
   // the selection of the view on screen: the diagram's, or the 3D view's (a body, a part on a board)
   const selected = c.view === "3d" ? (c.cadSelection?.kind === "node" && !c.cadSelection.id.includes("#") ? c.cadSelection.id : undefined) : selectedRow(c.drill, c.vm, c.selection);
   // modules selected together on the diagram (a box, Shift-click): every row of them is highlighted

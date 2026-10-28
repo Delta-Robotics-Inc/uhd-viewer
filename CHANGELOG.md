@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **A long description is cut to five lines**, with More and Less (`ClampedText`).
 - **A parent's Artifacts section shows its own artifacts only**: no row of its parts to pick from, and its count is its own.
 - **The hierarchy's group of harnesses, cables and fastener stacks is called "Harnesses & links"** (it was "Wiring & hardware").
+- **"Harnesses & links" shows the level on screen only.** The group lists the harnesses, cables and fastener stacks of the level the diagram shows, not those of the modules inside it, and its count is theirs; a click on one frames it on that level. Drilling into a module shows its own. `groupWiring` takes the level (`groupWiring(tree, level)`); without it, it groups every harness as before.
 
 ### Deprecated
 
