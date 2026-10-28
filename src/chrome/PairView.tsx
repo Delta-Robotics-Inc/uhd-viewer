@@ -167,7 +167,7 @@ export function PairPreview({ vm, link, mode, onOpen }: { vm: ViewModel; link: V
         <span className="min-w-0 flex-1 truncate font-label text-[10px] tracking-[0.08em] text-fg-muted">
           {nodeA.label.toUpperCase()} <span className="text-fg-faint">↔</span> {nodeB.label.toUpperCase()}
         </span>
-        <IconButton icon="git-compare-arrows" size="sm" label="Open the pair view: every link between these two modules" onClick={onOpen} />
+        <IconButton icon="git-compare-arrows" size="sm" label="Pair view" onClick={onOpen} />
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] items-start font-code text-[10px]">
         <div className="min-w-0">

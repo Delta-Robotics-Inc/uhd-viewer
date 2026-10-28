@@ -534,31 +534,37 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const onNodeContext = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
   const onPaneContext = useCallback((x: number, y: number) => setMenu({ x, y }), []);
   const menuNode = menu?.id ? vm.nodes.find((n) => n.id === menu.id) : undefined;
+  /** What a module's menu offers about it: inspect, open, its source, copy its path. */
+  const nodeItems = (node: (typeof vm.nodes)[number]): NodeMenuItem[] => {
+    const items: NodeMenuItem[] = [];
+    if (node.sheetPort) return items;
+    // the host's inspector when it has one, else the viewer's own panel (the module is selected by the right-click)
+    const path = fullId(drill, node.tapOf ?? node.id);
+    const { defId } = node;
+    items.push({ label: "Inspect", icon: "scan-search", run: () => (hostActions.inspect ? hostActions.inspect(path, defId) : setPanel("hierarchy")) });
+    if (openAction(node, Boolean(hostActions.openModule)) === "open") {
+      const at = fullId(drill, node.id);
+      items.push({ label: "Open in new tab", icon: "square-arrow-out-up-right", run: () => hostActions.openModule!(at) });
+    }
+    if (defId && hostActions.openSource) items.push({ label: "Open source", icon: "file-code", run: () => hostActions.openSource!(defId, fullId(drill, node.id)) });
+    if (typeof navigator !== "undefined" && navigator.clipboard) items.push({ label: "Copy path", icon: "copy", run: () => void navigator.clipboard.writeText(path).catch(() => undefined) });
+    return items;
+  };
   const menuItems: NodeMenuItem[] = [];
   if (menu && !menu.id) {
-    // the empty canvas
-    menuItems.push({ label: "FIT VIEW", run: () => viewDo("fit") });
-    if (drawn.nodes.length > 1) menuItems.push({ label: "SELECT ALL", run: onSelectAll });
-    menuItems.push(interaction.tool === "pan" ? { label: "SELECT TOOL", run: () => setTool("select") } : { label: "PAN TOOL", run: () => setTool("pan") });
-    if (isolated.size) menuItems.push({ label: "SHOW EVERYTHING", run: clearIsolated });
+    // the empty canvas: the view, then what is selected
+    menuItems.push({ label: "Fit view", icon: "maximize", shortcut: "F", run: () => viewDo("fit") });
+    if (drawn.nodes.length > 1) menuItems.push({ label: "Select all", icon: "square-dashed", shortcut: "Ctrl+A", run: onSelectAll });
+    menuItems.push(interaction.tool === "pan" ? { label: "Select tool", icon: "mouse-pointer-2", shortcut: "V", run: () => setTool("select") } : { label: "Pan tool", icon: "hand", shortcut: "H", run: () => setTool("pan") });
+    if (isolated.size) menuItems.push({ label: "Show all", icon: "eye", shortcut: "Esc", run: clearIsolated });
+    const chosen = selection?.kind === "node" && group.length <= 1 ? vm.nodes.find((n) => n.id === selection.id) : undefined;
+    const about = chosen ? nodeItems(chosen) : [];
+    about.forEach((it, i) => menuItems.push(i === 0 ? { ...it, separator: true } : it));
   }
-  if (menuNode && !menuNode.sheetPort) {
-    // the host's inspector when it has one, else the viewer's own panel (the module is selected by the right-click)
-    const path = fullId(drill, menuNode.tapOf ?? menuNode.id);
-    const { defId } = menuNode;
-    menuItems.push({ label: "INSPECT", run: () => (hostActions.inspect ? hostActions.inspect(path, defId) : setPanel("hierarchy")) });
-  }
-  if (menuNode && openAction(menuNode, Boolean(hostActions.openModule)) === "open") {
-    const path = fullId(drill, menuNode.id);
-    menuItems.push({ label: "OPEN IN NEW TAB", run: () => hostActions.openModule!(path) });
-  }
-  if (menuNode?.defId && hostActions.openSource) {
-    const { defId } = menuNode;
-    menuItems.push({ label: "OPEN SOURCE", run: () => hostActions.openSource!(defId, fullId(drill, menuNode.id)) });
-  }
+  if (menuNode) menuItems.push(...nodeItems(menuNode));
   if (menuNode?.childCount) {
-    menuItems.push({ label: menuNode.expanded ? "COLLAPSE" : "EXPAND IN PLACE", run: () => onToggleExpand(menuNode.id) });
-    menuItems.push({ label: "OPEN AS CANVAS", run: () => onDrill(menuNode.id) });
+    menuItems.push({ label: menuNode.expanded ? "Collapse" : "Expand in place", icon: menuNode.expanded ? "chevrons-down-up" : "chevrons-up-down", separator: true, run: () => onToggleExpand(menuNode.id) });
+    menuItems.push({ label: "Open as canvas", icon: "layers", run: () => onDrill(menuNode.id) });
   }
   const closeMenu = useCallback(() => setMenu(null), []);
 

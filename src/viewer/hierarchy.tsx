@@ -339,21 +339,21 @@ export function ViewerHierarchy({ state: given, onStateChange, onOpenChange, com
   const menuItems: NodeMenuItem[] = [];
   if (menuNode && !menuNode.group) {
     const node = menuNode;
-    menuItems.push({ label: "SELECT", run: () => select(node.path) });
-    if (node.drillable) menuItems.push({ label: "OPEN AS CANVAS", run: () => drill(node) });
-    if (node.drillable && node.path && c.hostActions.openModule) menuItems.push({ label: "OPEN IN NEW TAB", run: () => c.hostActions.openModule!(node.path) });
-    if (c.hostActions.openSource) menuItems.push({ label: "OPEN SOURCE", run: () => c.hostActions.openSource!(node.defId, node.path || undefined) });
-    if (node.path && c.hostActions.inspect) menuItems.push({ label: "INSPECT", run: () => c.hostActions.inspect!(node.path, node.defId) });
+    menuItems.push({ label: "Select", icon: "mouse-pointer-2", run: () => select(node.path) });
+    if (node.drillable) menuItems.push({ label: "Open as canvas", icon: "layers", run: () => drill(node) });
+    if (node.drillable && node.path && c.hostActions.openModule) menuItems.push({ label: "Open in new tab", icon: "square-arrow-out-up-right", run: () => c.hostActions.openModule!(node.path) });
+    if (c.hostActions.openSource) menuItems.push({ label: "Open source", icon: "file-code", run: () => c.hostActions.openSource!(node.defId, node.path || undefined) });
+    if (node.path && c.hostActions.inspect) menuItems.push({ label: "Inspect", icon: "scan-search", run: () => c.hostActions.inspect!(node.path, node.defId) });
     if (node.children.length) {
       const below = [...hierarchyIndex([node]).values()].filter((n) => n.children.length).map((n) => n.path);
       const allOpen = below.every((p) => expanded.has(p));
       menuItems.push(
         allOpen
-          ? { label: "COLLAPSE ALL BELOW", run: () => setExpanded(new Set([...expanded].filter((p) => !below.includes(p)))) }
-          : { label: "EXPAND ALL BELOW", run: () => setExpanded(new Set([...expanded, ...below])) },
+          ? { label: "Collapse all below", icon: "chevrons-down-up", separator: true, run: () => setExpanded(new Set([...expanded].filter((p) => !below.includes(p)))) }
+          : { label: "Expand all below", icon: "chevrons-up-down", separator: true, run: () => setExpanded(new Set([...expanded, ...below])) },
       );
     }
-    if (typeof navigator !== "undefined" && navigator.clipboard) menuItems.push({ label: "COPY PATH", run: () => void navigator.clipboard.writeText(node.path || node.defId).catch(() => undefined) });
+    if (typeof navigator !== "undefined" && navigator.clipboard) menuItems.push({ label: "Copy path", icon: "copy", run: () => void navigator.clipboard.writeText(node.path || node.defId).catch(() => undefined) });
   }
   const onRowContext = (e: React.MouseEvent, node: HierarchyNode) => {
     if (node.group) return e.preventDefault();

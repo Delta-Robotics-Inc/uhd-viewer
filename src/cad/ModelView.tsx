@@ -261,7 +261,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
           ))}
           <ToolbarSeparator />
           <IconButton icon="grid-3x3" label="Wireframe" tooltipSide="top" pressed={wire} onClick={() => setWire(!wire)} />
-          <IconButton icon="scan-eye" label="X-ray: see through the model" tooltipSide="top" pressed={xray} onClick={() => setXray(!xray)} />
+          <IconButton icon="scan-eye" label="X-ray" tooltipSide="top" pressed={xray} onClick={() => setXray(!xray)} />
           <IconButton icon="grid-2x2" label="Ground grid" tooltipSide="top" pressed={grid} onClick={() => setGrid(!grid)} />
           <IconButton icon="orbit" label="Turn the model" tooltipSide="top" pressed={spin} onClick={() => setSpin(!spin)} />
           {(name || info) && (

@@ -179,3 +179,18 @@ describe("toggleIsolated (a click on a legend entry)", () => {
     expect([...held]).toEqual(["power"]);
   });
 });
+
+describe("the legend's entries read as a name and what it stands for", () => {
+  const all = (mode: Classification) => legendFor(mode, new Set(["spi", "analog", "digital", "can", "other", "software"]));
+  it.each(["domain", "drc", "signal"] as const)("%s: every entry has a short meaning, and a name in title case", (mode) => {
+    for (const e of all(mode)) {
+      expect(e.meaning.length, `${e.key}: ${e.meaning}`).toBeGreaterThan(2);
+      // a few words, no sentence: it is the second line of a 230 px card
+      expect(e.meaning.length, `${e.key}: ${e.meaning}`).toBeLessThanOrEqual(24);
+      expect(e.meaning).not.toMatch(/\.$/);
+      // not shouting: the name's first letter is a capital and it is not all capitals (acronyms aside)
+      expect(e.label[0]).toBe(e.label[0].toUpperCase());
+      if (e.label.length > 4 && !/\//.test(e.label)) expect(e.label, e.key).not.toBe(e.label.toUpperCase());
+    }
+  });
+});

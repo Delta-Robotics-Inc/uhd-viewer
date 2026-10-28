@@ -72,7 +72,10 @@ export function isFaded(item: Colorable, mode: Classification): boolean {
 /** One entry of a classification's legend. `key` is what `classKey` gives the items it stands for. */
 export interface LegendEntry {
   key: string;
+  /** Its name, as the legend shows it. */
   label: string;
+  /** What it stands for, in a few words (the legend's second line). */
+  meaning: string;
   color: string;
 }
 
@@ -84,44 +87,44 @@ export function classKey(item: Colorable, mode: Classification): string {
 }
 
 const DRC_LEGEND: LegendEntry[] = [
-  { key: "configured", label: "CONFIGURED", color: DRC_COLORS.configured },
-  { key: "partial", label: "PARTIAL", color: DRC_COLORS.partial },
-  { key: "incompatible", label: "INCOMPATIBLE", color: DRC_COLORS.incompatible },
-  { key: "unconfigured", label: "NOT CONFIGURED", color: DRC_COLORS.unconfigured },
+  { key: "configured", label: "Configured", meaning: "No findings", color: DRC_COLORS.configured },
+  { key: "partial", label: "Partial", meaning: "Warnings", color: DRC_COLORS.partial },
+  { key: "incompatible", label: "Incompatible", meaning: "Errors", color: DRC_COLORS.incompatible },
+  { key: "unconfigured", label: "Not configured", meaning: "Nothing linked", color: DRC_COLORS.unconfigured },
 ];
 
 const SIGNAL_LEGEND: LegendEntry[] = [
-  { key: "power", label: "POWER", color: SIGNAL_COLORS.power },
-  { key: "ground", label: "GROUND", color: SIGNAL_COLORS.ground },
-  { key: "phase", label: "MOTOR PHASE", color: SIGNAL_COLORS.bldc_3phase },
-  { key: "pwm", label: "DSHOT / ESC", color: SIGNAL_COLORS.dshot },
-  { key: "uart", label: "UART / CRSF", color: SIGNAL_COLORS.uart },
-  { key: "i2c", label: "I2C", color: SIGNAL_COLORS.i2c },
-  { key: "rf", label: "RF", color: SIGNAL_COLORS.rf },
-  { key: "other-domains", label: "OTHER DOMAINS", color: "var(--uhd-domain-other)" },
+  { key: "power", label: "Power", meaning: "Supply rails", color: SIGNAL_COLORS.power },
+  { key: "ground", label: "Ground", meaning: "Return paths", color: SIGNAL_COLORS.ground },
+  { key: "phase", label: "Motor phase", meaning: "ESC to motor windings", color: SIGNAL_COLORS.bldc_3phase },
+  { key: "pwm", label: "DShot / ESC", meaning: "Motor control", color: SIGNAL_COLORS.dshot },
+  { key: "uart", label: "UART / CRSF", meaning: "Serial links", color: SIGNAL_COLORS.uart },
+  { key: "i2c", label: "I2C", meaning: "Sensor bus", color: SIGNAL_COLORS.i2c },
+  { key: "rf", label: "RF", meaning: "Antenna feeds", color: SIGNAL_COLORS.rf },
+  { key: "other-domains", label: "Other domains", meaning: "Not electrical", color: "var(--uhd-domain-other)" },
 ];
 
 /** Signal types the legend lists only where the level has them. */
 const SIGNAL_EXTRA: LegendEntry[] = [
-  { key: "spi", label: "SPI", color: SIGNAL_COLORS.spi },
-  { key: "analog", label: "ANALOG", color: SIGNAL_COLORS.analog },
-  { key: "digital", label: "DIGITAL", color: SIGNAL_COLORS.digital },
-  { key: "can", label: "CAN", color: SIGNAL_COLORS.can },
-  { key: "other", label: "OTHER SIGNALS", color: "var(--uhd-signal-other)" },
+  { key: "spi", label: "SPI", meaning: "Peripheral bus", color: SIGNAL_COLORS.spi },
+  { key: "analog", label: "Analog", meaning: "Analog signals", color: SIGNAL_COLORS.analog },
+  { key: "digital", label: "Digital", meaning: "Logic I/O", color: SIGNAL_COLORS.digital },
+  { key: "can", label: "CAN", meaning: "Field bus", color: SIGNAL_COLORS.can },
+  { key: "other", label: "Other signals", meaning: "Unclassified protocols", color: "var(--uhd-signal-other)" },
 ];
 
 const DOMAIN_LEGEND: LegendEntry[] = [
-  { key: "electrical", label: "ELECTRICAL", color: DOMAIN_COLORS.electrical },
-  { key: "mechanical", label: "MECHANICAL", color: DOMAIN_COLORS.mechanical },
-  { key: "pneumatic", label: "PNEUMATIC", color: DOMAIN_COLORS.pneumatic },
-  { key: "hydraulic", label: "HYDRAULIC", color: DOMAIN_COLORS.hydraulic },
-  { key: "thermal", label: "THERMAL", color: DOMAIN_COLORS.thermal },
-  { key: "network", label: "NETWORK", color: DOMAIN_COLORS.network },
+  { key: "electrical", label: "Electrical", meaning: "Power and signals", color: DOMAIN_COLORS.electrical },
+  { key: "mechanical", label: "Mechanical", meaning: "Mounts and fasteners", color: DOMAIN_COLORS.mechanical },
+  { key: "pneumatic", label: "Pneumatic", meaning: "Air lines", color: DOMAIN_COLORS.pneumatic },
+  { key: "hydraulic", label: "Hydraulic", meaning: "Fluid lines", color: DOMAIN_COLORS.hydraulic },
+  { key: "thermal", label: "Thermal", meaning: "Heat paths", color: DOMAIN_COLORS.thermal },
+  { key: "network", label: "Network", meaning: "Data links", color: DOMAIN_COLORS.network },
 ];
 
 const DOMAIN_EXTRA: LegendEntry[] = [
-  { key: "software", label: "SOFTWARE", color: DOMAIN_COLORS.software },
-  { key: "other", label: "OTHER", color: "var(--uhd-signal-other)" },
+  { key: "software", label: "Software", meaning: "Software interfaces", color: DOMAIN_COLORS.software },
+  { key: "other", label: "Other", meaning: "Other domains", color: "var(--uhd-signal-other)" },
 ];
 
 /**

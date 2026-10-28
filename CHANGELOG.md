@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An empty level can offer a way to add a part.** `DiagramCanvas` takes `emptyAction` (`{ label, onClick }`): a level with no modules then shows a 192 px dashed box with a large plus and the label under it, a button (a host's parts library, for instance). Without it the level says it has no modules, as before.
+- **The legend folds to a tab at the right edge**: a chevron and a dot per colour on the level (`LegendTab`). `FittedLegend` folds and opens it (`open`, `onOpenChange` and `defaultOpen`; `LegendFold` is the fold button for a legend's header), and folds it by itself on a canvas under 500 px tall until it is opened there (`legendFolded`, `LEGEND_SHORT`).
+- **Each legend entry says what it stands for** in a second line ("Electrical, Power and signals"): `LegendEntry.meaning`, `LegendItem`'s `meaning`.
+
 ### Changed
+
+- **The legend sits at the bottom right**, left of a floating inspector when one is open; the bottom left is the hierarchy's. It still gives way to the toolbar as the canvas narrows (compact, then the toolbar's button). Its names are in title case.
+- **The context menu reads like a menu**: 12 px title case, a 14 px icon per item and its key at the right (Fit view F, Select all Ctrl+A, Pan tool H). A module's menu has Copy path; the empty canvas's menu adds Inspect, Open in new tab, Open source and Copy path for the module selected (`NodeMenuItem` takes `icon`, `shortcut` and `separator`).
+- **Tooltips are labels** ("Select", "Pan", "Reset layout", "Isolate"), and open after 250 ms.
 
 - **The hierarchy panel floats.** `ViewerHierarchy` is a card like a host's header: 4 px from the view's edges and below the header, with the panel radius, a border all round and the panel shadow. The canvas starts beside it. It slides open and folded in 200 ms (none with reduced motion), and the 36 px folded rail with its vertical label is gone.
 - **The hierarchy folds from inside the panel.** Its header has a Hide hierarchy button. Folded, it leaves one icon-only button floating at the card's top left, below the header, that opens it again (Show hierarchy): a small card with the panel's border, radius and shadow, and no text. The button takes none of the view's width (`RAIL_WIDTH` is 0), and the keyboard moves between the two buttons as the panel folds and opens. A host's `open`, `close` and `toggle` commands work as before.
