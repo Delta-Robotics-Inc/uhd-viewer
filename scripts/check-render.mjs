@@ -535,6 +535,10 @@ async function checkMessages(bundleFile, out) {
     await send({ type: "uhd-viewer:select", ids: ["arm_fl/motor"] });
     const cadSelected = await selected("arm_fl/motor");
     expect("select in the 3D view selects the body and reports it", cadSelected && (await lastSelection())?.defId, await lastSelection());
+    // a harness named by its path is its own body in 3D (the diagram selects the line it is drawn along)
+    await send({ type: "uhd-viewer:select", ids: ["rx_wire"] });
+    const harnessBody = await selected("rx_wire");
+    expect("select of a harness in the 3D view selects its body", harnessBody && (await lastSelection())?.kind === "node", await lastSelection());
     await send({ type: "uhd-viewer:setView", view: "diagram" });
     await frame.waitForFunction(() => !document.querySelector(".cad-view") && document.querySelectorAll(".react-flow__node").length > 5, { timeout: 15000 }).catch(() => undefined);
     expect("setView returns to the diagram", (await state()).view === "diagram", await state());

@@ -457,9 +457,10 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
           const named = run !== undefined && m.ids.some((id) => [run, fullId(d, run)].includes(id.replace(/^node:/, "")));
           if (sel && named && m.reveal !== false && shownView !== "3d") setCentre({ id: run, seq: ++seq.current, lines: harnessLines(v, run).map((l) => l.id) });
           else if (sel && m.reveal !== false && shownView !== "3d") setReveal({ selection: sel, seq: ++seq.current });
-          // the 3D view selects too (a module's body or a mate), without moving the camera
+          // the 3D view selects too (a module's body or a mate), without moving the camera; a harness named by its
+          // path is its own body there, not the line the diagram draws it along
           if (shownView === "3d") {
-            const t = cadSelectTarget(sys, lookup, d, sel, m.ids);
+            const t = named ? { kind: "node" as const, path: fullId(d, run) } : cadSelectTarget(sys, lookup, d, sel, m.ids);
             if (t) setCadFocus({ ...t, seq: ++seq.current, look: false });
           }
           return;

@@ -1304,6 +1304,12 @@ export function CadView({
       if (model.assembly.mates.some((m) => m.linkId === key)) setSel({ mate: key });
       return;
     }
+    // a routed wire harness: selected as itself (a hierarchy row, a host's focus or select on it)
+    if (model.assembly.harnesses.some((hp) => hp.key === key)) {
+      setSel({ harness: key });
+      look.current = focusOn.look !== false;
+      return;
+    }
     const has = (k: string) => model.bodies.some((b) => b.key === k);
     const holder = model.within.get(key);
     const parts = key.split("/");
