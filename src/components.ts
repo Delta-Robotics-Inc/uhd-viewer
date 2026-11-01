@@ -113,3 +113,5 @@ export { defaultDark, defaultLight, defaultTheme, DRC_TOKENS, DARK_DATA_TOKENS, 
 export { staticTheme, defaultThemeAdapter, vscodeThemeAdapter, vscodeTheme, vscodeScheme, pickTheme, type ThemeAdapter } from "./theme/adapters";
 export { ThemeProvider, useTheme, tokenColor, type ThemeProviderProps, type ThemeState } from "./theme/ThemeProvider";
 export { resolveTheme, completeTheme } from "./theme/resolve";
+// the G-code viewer tab (PB-1192, W4-B)
+export { GcodeView, type GcodeViewProps, type GcodeViewInfo } from "./cad/GcodeView";

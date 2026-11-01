@@ -30,6 +30,21 @@ import { placeLabels, screenBox, type PlaceItem } from "./place";
 import { surfacePoint, towardCamera, worldPerPx, type PartHit } from "./resolve";
 import { DRC_COLOURS, REVEAL_MS, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg } from "./style";
 
+/**
+ * A constant SVG string (./style.ts markerSvg) as DOM nodes, parsed as XML by DOMParser (no HTML parsing into the
+ * page, no script runs; W4-D: the textContent rule). An unparsable string gives an empty span.
+ */
+export function svgNode(svg: string): Node {
+  try {
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    const root = doc.documentElement;
+    if (root && root.nodeName === "svg" && !doc.getElementsByTagName("parsererror").length) return document.importNode(root, true);
+  } catch {
+    /* no DOMParser */
+  }
+  return document.createElement("span");
+}
+
 export interface AnnotHost {
   /** The part a ref names (null: nothing drawn holds it: the record is an orphan). */
   resolve(ref: string): PartHit | null;
@@ -479,9 +494,15 @@ export class AnnotLayer {
       for (const o of l.own) o.traverse((x) => set.add(x));
       return set;
     };
+    // the cap first (W4-D, wave 3 carry-forward): labels in priority order, and no occlusion test is spent on a
+    // callout once MAX_OPEN_CALLOUTS visible ones are known (the rest collapse to pins anyway); it keeps its last result
+    open.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+    let openCallouts = 0;
     for (const l of open) {
+      if (l.kind === "callout" && openCallouts >= MAX_OPEN_CALLOUTS) continue;
       const fresh = !this.occluded.has(l.id);
       if (!fresh && !budget.has(l.id)) {
+        if (l.kind === "callout" && !this.occluded.get(l.id)) openCallouts++;
         if (cameraMoved) pendingTest = true;
         continue;
       }
@@ -532,6 +553,7 @@ export class AnnotLayer {
         const h = this.host.firstHit(new THREE.Ray(camPos.clone(), l.anchor.clone().sub(camPos).normalize()), d - Math.max(0.5, d * 0.01), own);
         this.occluded.set(l.id, !!h);
       }
+      if (l.kind === "callout" && !this.occluded.get(l.id)) openCallouts++;
     }
     if (all) this.fullKey = camKey;
     // a ring around a part whose label found no visible point: only its ghost shows (the part is hidden)
@@ -782,7 +804,7 @@ export class AnnotLayer {
       el.replaceChildren();
       const title = doc.createElement("div");
       title.className = "annot-title";
-      if (l.severity) title.insertAdjacentHTML("afterbegin", markerSvg(l.severity, 12));
+      if (l.severity) title.prepend(svgNode(markerSvg(l.severity, 12)));
       title.append(doc.createTextNode(l.title));
       el.appendChild(title);
       if (l.rows.length) {

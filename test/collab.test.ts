@@ -83,7 +83,9 @@ describe("leases with fencing tokens (D6)", () => {
     expect(store.presence().leases).toEqual([]);
     const stale = store.applyBatch({ batchId: "l8", label: "move the label a bit", ops: [{ op: "highlight", paths: ["stack/fc/u3"] }], leaseToken: lease.token }, A);
     expect(stale).toMatchObject({ status: "refused", reason: "lease-revoked", lease: { reason: "revoked" } });
-    expect((stale as { message: string }).message).toMatch(/person changed stack\/fc\/u3/);
+    // W4-D (deliberate change, D12): the message carries owner-made facts only; what the person changed is in the lease
+    expect((stale as { message: string }).message).toMatch(/revoked by the person/);
+    expect((stale as { lease: { detail: string } }).lease.detail).toMatch(/person changed stack\/fc\/u3/);
     // without a token, inside the subtree it held: still refused until it claims again
     expect(store.applyBatch({ batchId: "l9", label: "move the label a bit", ops: [{ op: "highlight", paths: ["stack/fc/u3"] }] }, A)).toMatchObject({ status: "refused", reason: "lease-revoked" });
     const again = ok(store.applyBatch({ batchId: "l10", label: "claim the flight controller board", ops: [{ op: "claim", roots: ["stack/fc"], purpose: "labelling U3 again" }] }, A));
@@ -334,12 +336,16 @@ describe("display-side placements (W3-D's request, PB-1187)", () => {
 
 describe("gate 3 fixes: author stamping, prototype keys, undo fencing, stale interaction, lease capacity", () => {
   it("stamps an agent's author on records it writes with `set`, so a record never reads as the person's", () => {
+    // W4-D (deliberate change): agents may no longer bring in record ids of their own through `set` (D2), so the
+    // records here are made by `annotate` first and then rewritten with `set`
     const store = createViewStore({}, { epoch: "g3" });
-    const rec = { id: "x1", kind: "callout", ref: "battery", author: "user", title: "Battery" };
-    ok(store.applyBatch({ batchId: "s1", label: "write a label by hand", ops: [{ op: "set", path: ["annotations", "x1"], value: rec }] }, A));
-    expect(store.get().annotations[0]).toMatchObject({ id: "x1", author: "agent:claude" });
-    ok(store.applyBatch({ batchId: "s2", label: "write the whole label list", ops: [{ op: "set", path: ["annotations"], value: [{ ...rec, id: "x2", author: "agent:someone-else" }] }] }, B));
-    expect(store.get().annotations).toEqual([expect.objectContaining({ id: "x2", author: "agent:codex" })]);
+    const made = ok(store.applyBatch({ batchId: "s0", label: "make a battery label first", ops: [{ op: "annotate", handle: "h", kind: "callout", ref: "battery", title: "Battery" }] }, A));
+    const x1 = made.ids!.h;
+    const rec = { id: x1, kind: "callout", ref: "battery", author: "user", title: "Battery" };
+    ok(store.applyBatch({ batchId: "s1", label: "write a label by hand", ops: [{ op: "set", path: ["annotations", x1], value: rec }] }, A));
+    expect(store.get().annotations[0]).toMatchObject({ id: x1, author: "agent:claude" });
+    ok(store.applyBatch({ batchId: "s2", label: "write the whole label list", ops: [{ op: "set", path: ["annotations"], value: [{ ...rec, author: "agent:someone-else", title: "Pack" }] }] }, B));
+    expect(store.get().annotations).toEqual([expect.objectContaining({ id: x1, author: "agent:codex" })]);
     // the person's own writes keep what they say
     store.dispatch([{ op: "set", path: ["annotations", "x3"], value: { ...rec, id: "x3" } }], { actor: HUMAN, label: "a label of mine" });
     expect(store.get().annotations.find((r) => (r as { id: string }).id === "x3")).toMatchObject({ author: "user" });

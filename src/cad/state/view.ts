@@ -119,3 +119,16 @@ export function assemblyRoot(system: ModuleDef, lookup: (id: string) => ModuleDe
   }
   return best ? { path: [best.id], rule: "most-frames" } : { path: [], rule: "none" };
 }
+
+/** A record id within the schema's 128 characters: a longer one keeps its head and an FNV-1a hash of the whole (DEFAULT). */
+export function shortRecordId(id: string, max = 128): string {
+  if (id.length <= max) return id;
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < id.length; i++) {
+    a = Math.imul(a ^ id.charCodeAt(i), 0x01000193) >>> 0;
+    b = Math.imul(b ^ id.charCodeAt(id.length - 1 - i), 0x01000193) >>> 0;
+  }
+  const hash = `${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
+  return `${id.slice(0, max - hash.length - 1)}~${hash}`;
+}

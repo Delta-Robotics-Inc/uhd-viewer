@@ -39,7 +39,10 @@ export function themeFromUrl(search: string | undefined = typeof location === "u
  * - a theme object: that theme (missing tokens from the default);
  * - an adapter (`{ current, subscribe? }`): the host's own.
  */
-export function resolveTheme(option: ViewerThemeOption | undefined, url: ThemePreference | undefined = themeFromUrl()): ThemeAdapter {
+export function resolveTheme(option: ViewerThemeOption | undefined, url: ThemePreference | null | undefined = themeFromUrl()): ThemeAdapter {
+  // null: no URL preference at all. The view state's adapter (W4-D, viewer/mount.tsx) already weighs the URL
+  // itself, under a view-state write, so the URL is not applied again over it (wave 4 gate)
+  if (option && typeof option === "object" && "current" in option && option.id === "view-state") url = null;
   if (url === "dark") return staticTheme(defaultDark);
   if (url === "light") return staticTheme(defaultLight);
   if (url === "system") return defaultThemeAdapter("system");

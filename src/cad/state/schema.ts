@@ -99,6 +99,10 @@ export function checkPlacement(v: unknown): string | undefined {
   if (Math.abs(det - 1) > RIGID_TOLERANCE) return "placement.matrix must not mirror (determinant +1)";
   if (Math.abs(m[12] as number) > RIGID_TOLERANCE || Math.abs(m[13] as number) > RIGID_TOLERANCE || Math.abs(m[14] as number) > RIGID_TOLERANCE || Math.abs((m[15] as number) - 1) > RIGID_TOLERANCE) return "placement.matrix's last row must be 0 0 0 1";
   if (typeof v.by !== "string" || !v.by || v.by.length > 120 || /[\u0000-\u001f]/.test(v.by)) return "placement.by must say who placed it (at most 120 characters)";
+  // W4-D: `frame` names the scope a placement was made in when the root frame was unknown (DEFAULT); `method` says
+  // which face primitive made it
+  if (v.frame !== undefined && !isPath(v.frame)) return "placement.frame must be an instance path (the scope it was made in)";
+  if (v.method !== undefined && (typeof v.method !== "string" || v.method.length > 40)) return "placement.method must be a short name";
   if (v.faces !== undefined) {
     const f = v.faces;
     if (!isObj(f) || !isPath(f.part) || !isPath(f.target) || !Number.isInteger(f.face) || !Number.isInteger(f.targetFace)) return "placement.faces must be { part, face, target, targetFace }";
