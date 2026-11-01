@@ -33,6 +33,13 @@ function meshesOf(objects: THREE.Object3D[], skip: Set<THREE.Object3D>): THREE.M
   return out;
 }
 
+/** A raycaster that sees every layer: the meshes the batcher draws for them sit on a layer the camera skips (PB-1175). */
+function sampler(): THREE.Raycaster {
+  const ray = new THREE.Raycaster();
+  ray.layers.enableAll();
+  return ray;
+}
+
 /** Cast against meshes from both sides of every face (a mesh's back faces are surfaces too). */
 function cast(ray: THREE.Raycaster, meshes: THREE.Mesh[]): THREE.Intersection | undefined {
   const sides = meshes.map((m) => {
@@ -67,7 +74,7 @@ export function sampleStackPart(key: string, objects: THREE.Object3D[], skip: Se
   const top = new Float64Array(n * n).fill(NaN);
   const bottom = new Float64Array(n * n).fill(NaN);
   const grid: HeightGrid = { u0, v0, du, dv, nu: n, nv: n, top, bottom };
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   const span = hi - lo + 2;
   const down = axis.clone().negate();
   for (let k = 0; k < n * n; k++) {
@@ -92,7 +99,7 @@ export function surrounded(holder: SampledPart, part: SampledPart, axis: THREE.V
   const [U, V] = acrossAxis(axis);
   const origin = U.clone().multiplyScalar(part.centre[0]).addScaledVector(V, part.centre[1]).addScaledVector(axis, part.mid);
   const reach = Math.hypot(holder.outline[1] - holder.outline[0], holder.outline[3] - holder.outline[2]) + 1;
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   ray.far = reach;
   let hits = 0;
   for (const d of [U, V, U.clone().negate(), V.clone().negate()]) {
@@ -109,7 +116,7 @@ export function surrounded(holder: SampledPart, part: SampledPart, axis: THREE.V
  */
 export function exitByRays(holder: SampledPart, part: SampledPart, axis: THREE.Vector3, eps = 0.05): "up" | "down" | undefined {
   const [U, V] = acrossAxis(axis);
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   const down = axis.clone().negate();
   const span = Math.max(holder.hi, part.hi) - Math.min(holder.lo, part.lo) + 4;
   const g = part.grid;

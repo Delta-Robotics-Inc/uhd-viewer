@@ -38,6 +38,39 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
   }
 }
 
+/**
+ * Local telemetry (PB-1181, src/telemetry/): the viewer's session record, as
+ * a window event of this type (`detail`: the record) and, in a frame, as a
+ * message `{ type: TELEMETRY_EVENT, record }` posted to the parent over the
+ * host channel. The host that writes it (the VS Code extension host,
+ * `protoboard dev`) sanitises it again; this check is only the envelope.
+ */
+export const TELEMETRY_EVENT = "uhd-viewer:telemetry";
+
+/** A telemetry message from the viewer: a record of a known schema, small enough to carry. */
+export interface TelemetryMessage {
+  type: typeof TELEMETRY_EVENT;
+  record: { schema: "pb.render-session/v0" | "pb.crash/v0"; [key: string]: unknown };
+}
+
+/** Records larger than this (as JSON) are not relayed. */
+export const MAX_TELEMETRY_BYTES = 64 * 1024;
+
+/** The record when `data` is a telemetry message (or a bare record, as the window event's detail carries it); undefined otherwise. */
+export function parseTelemetryMessage(data: unknown): TelemetryMessage | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const m = data as Record<string, unknown>;
+  const record = (m.type === TELEMETRY_EVENT ? m.record : m) as Record<string, unknown> | undefined;
+  if (!record || typeof record !== "object" || Array.isArray(record)) return undefined;
+  if (record.schema !== "pb.render-session/v0" && record.schema !== "pb.crash/v0") return undefined;
+  try {
+    if (JSON.stringify(record).length > MAX_TELEMETRY_BYTES) return undefined;
+  } catch {
+    return undefined;
+  }
+  return { type: TELEMETRY_EVENT, record: record as TelemetryMessage["record"] };
+}
+
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
   Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect"].includes((data as { type?: string }).type ?? "");

@@ -19,6 +19,7 @@ import {
   DIRECTIONS,
   defAt,
   explodeParts,
+  glbFor,
   interfaceRows,
   loadManifests,
   type BindingStatus,
@@ -28,7 +29,12 @@ import {
   type InterfaceRow,
 } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
-import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, loadGlb, materialFor, proceduralGeometry, toMatrix4, type SceneHandle } from "./scene";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, materialFor, proceduralGeometry, toMatrix4, type AntialiasMode, type LoadedModel, type SceneHandle } from "./scene";
+import { buildAll, bvhStats, pick } from "./render/pick";
+import { setMeshLook } from "./render/looks";
+import { instancePathIn } from "./render/ids";
+import { observeScene, type CadObservation, type LoadState } from "./render/observe";
+import { attachSceneTelemetry } from "../telemetry";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
 import { planStack } from "./explode";
 import { exitByRays, sampleStackPart, surrounded, type SampledPart } from "./explodeSample";
@@ -97,8 +103,16 @@ function cableSummary(hp: HarnessPlacement, m?: RouteManifest): string {
  * (conductor_*, *_housing, *_joint_*, *_tip_*) and gives it a base colour;
  * the viewer only sets how each kind of surface reflects light.
  */
+const harnessLooks = new WeakMap<THREE.Material, Map<string, THREE.MeshStandardMaterial>>();
 function harnessMaterial(src: THREE.MeshStandardMaterial, name: string): THREE.MeshStandardMaterial {
+  // one per (GLB material, kind of surface), shared by every conductor of that colour (PB-1175)
+  const kind = /^conductor_/.test(name) ? "conductor" : /_joint_|_tip_/.test(name) ? "metal" : /_housing/.test(name) ? "housing" : "other";
+  let byKind = harnessLooks.get(src);
+  if (!byKind) harnessLooks.set(src, (byKind = new Map()));
+  const have = byKind.get(kind);
+  if (have) return have;
   const m = new THREE.MeshStandardMaterial({ color: src.color.clone(), metalness: src.metalness, roughness: src.roughness });
+  byKind.set(kind, m);
   if (/^conductor_/.test(name) && src.metalness < 0.5) {
     // silicone insulation: soft satin
     m.roughness = 0.48;
@@ -142,7 +156,10 @@ interface BodyRec {
    * mm) one must go along `cadDir` before it is out of the fixed body's box.
    */
   parts: { obj: THREE.Object3D; base: THREE.Vector3; cadDir: THREE.Vector3; cadBox: THREE.Box3; clear: number; volume: number; travel: THREE.Vector3; toLocal?: THREE.Matrix3 }[];
-  materials: THREE.MeshStandardMaterial[];
+  /** Content hash of the model drawn (PB-1175: a hot swap keeps a body whose hash and look are unchanged). */
+  hash: string;
+  /** Definition, GLB and appearance hints it was drawn with. */
+  look: string;
 }
 
 /**
@@ -178,6 +195,7 @@ export function CadView({
   inspector = true,
   scope,
   emptyHint,
+  onLoadState,
 }: {
   /** The root system: every path a host gives or hears is from it. */
   system: ModuleDef;
@@ -203,6 +221,11 @@ export function CadView({
   scope?: string[];
   /** What a host adds where a module has nothing to draw (how its model is made). */
   emptyHint?: ReactNode;
+  /**
+   * The model loads' progress (PB-1175; the loading screen is wave 2's): called as each model arrives, and
+   * once more with `phase: "ready"`. The same state is `window.__cad.loading()`.
+   */
+  onLoadState?: (state: LoadState) => void;
 }) {
   const display = source.display.spatial ?? {};
   const resolve = source.resolveArtifact;
@@ -256,7 +279,14 @@ export function CadView({
     harness: params.get("harness") ?? undefined,
     component: params.get("component") ?? undefined,
   });
+  const selRef = useRef(sel);
+  selRef.current = sel;
   const [notes, setNotes] = useState<string[]>([]);
+  const loadState = useRef<LoadState>({ phase: "loading", total: 0, done: 0, failed: 0, bytes: 0, swapped: 0, kept: 0, started: 0, ms: 0 });
+  const loadListener = useRef(onLoadState);
+  loadListener.current = onLoadState;
+  /** `__cad.refresh()`: load every model again (the cache checks each one's content and keeps what is unchanged). */
+  const [reload, setReload] = useState(0);
   const [caption, setCaption] = useState<[string, string] | null>(null);
 
   const allDefs = useMemo(() => {
@@ -309,12 +339,21 @@ export function CadView({
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
     if (!host.current) return;
-    const h = createScene(host.current);
+    // knobs for measuring (PB-1175): ?aa=msaa|native|none, ?samples=<n>, ?batch=0
+    const aa = params.get("aa");
+    const h = createScene(host.current, {
+      ...(aa === "msaa" || aa === "native" || aa === "none" ? { antialias: aa as AntialiasMode } : {}),
+      ...(params.get("samples") ? { samples: Number(params.get("samples")) } : {}),
+      ...(params.get("batch") === "0" ? { batching: false } : {}),
+    });
     handle.current = h;
+    // local crash and performance records (PB-1181, W1-E): frames, loads, context loss of this scene
+    const stopTelemetry = attachSceneTelemetry(h);
     h.scene.add(harnessGroup.current);
     labelsRef.current = new LabelLayer(host.current);
     return () => {
       labelsRef.current?.dispose();
+      stopTelemetry();
       h.dispose();
       handle.current = null;
     };
@@ -341,126 +380,242 @@ export function CadView({
   /** The name of the module whose assembly places the shown one's parts (PB-1040). */
   const placedByName = (from: string) => (from ? (defAt(system, lookup, from.split("/"))?.name ?? from) : system.name);
 
+  /** A body's objects from its loaded model (in CAD coordinates, at `base`), not yet in the scene. */
+  const buildBody = (body: CadBody, base: THREE.Matrix4, loadedModel: LoadedModel): BodyRec => {
+    const obj = new THREE.Group();
+    obj.matrixAutoUpdate = false;
+    obj.userData.key = body.key;
+    obj.matrix.copy(base);
+    const rec: BodyRec = { body, obj, base, centre: new THREE.Vector3(), top: new THREE.Vector3(), offset: new THREE.Vector3(), box: new THREE.Box3(), parts: [], hash: loadedModel.hash, look: "" };
+    const gltf = loadedModel.gltf;
+    const scene = gltf.scene.clone(true);
+    const manifest = model!.manifests.get(`${body.def.id}:${body.bodyArtifact}`);
+    const featureNames = new Set(Object.keys(manifest?.features ?? {}));
+    // a board's manifest names its components by instance path: those are bodies, not feature pads
+    const components = new Set((body.def.children ?? []).map((c) => c.id));
+    // vendor models, and outputs that come with their own colours (a board), keep their materials
+    // (a view sidecar always has materials of its own: what counts is whether the original GLB had any)
+    const ownColours = (loadedModel.sidecar?.sourceMaterials ?? gltf.parser.json.materials?.length ?? 0) > 0 && !appearanceOf(body.def.id);
+    const vendorModel = body.glb!.id.startsWith("cad_vendor");
+    const vendor = vendorModel || ownColours;
+    const top = scene.children.length === 1 ? scene.children[0] : scene;
+    for (const part of top.children) {
+      // feature pads show only while their interface is selected
+      if (!vendorModel && featureNames.has(part.name) && !components.has(part.name)) {
+        part.userData.feature = part.name;
+        part.visible = false;
+        continue;
+      }
+      const partId = (part.userData.protoboard as { partInstanceId?: unknown } | undefined)?.partInstanceId;
+      part.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        // shared materials (PB-1175): the GLB's own (one per glTF material, shared by every clone) or one per look
+        if (!vendor) mesh.material = materialFor(body.def, part.name, appearanceOf(body.def.id));
+        mesh.userData.bodyKey = body.key;
+        if (components.has(part.name)) mesh.userData.component = part.name;
+        else if (typeof partId === "string" && partId) mesh.userData.component = partId;
+      });
+    }
+    // every mesh belongs to the body, also a GLB that is one mesh node (a merged view sidecar, a lone STL-like body):
+    // it is picked, selected and x-rayed like the rest (its material stays its own, as before)
+    scene.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.userData.bodyKey === undefined && !o.userData.feature) o.userData.bodyKey = body.key;
+    });
+    const w = cadWrapper(scene);
+    w.name = "cad";
+    // local bounds for label anchors (before parenting, so world = CAD coordinates)
+    w.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(w);
+    // a cad standard output's named bodies come apart when exploded: each moves away from the largest
+    const parts = explodeParts(body.def, body.glb, manifest);
+    const node = (n: string) => top.children.find((c) => c.name === n);
+    if (parts && node(parts.fixed)) {
+      const centreOf = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+      const c0 = centreOf(node(parts.fixed)!);
+      const fixedBox = new THREE.Box3().setFromObject(node(parts.fixed)!);
+      /** The extent of a box along a direction: [lowest, highest] projection of its corners. */
+      const along = (b: THREE.Box3, d: THREE.Vector3) => {
+        const xs = [b.min.x, b.max.x].map((x) => x * d.x);
+        const ys = [b.min.y, b.max.y].map((y) => y * d.y);
+        const zs = [b.min.z, b.max.z].map((z) => z * d.z);
+        return [Math.min(...xs) + Math.min(...ys) + Math.min(...zs), Math.max(...xs) + Math.max(...ys) + Math.max(...zs)];
+      };
+      for (const n of parts.moving) {
+        const part = node(n);
+        if (!part) continue;
+        const d = centreOf(part).sub(c0).normalize();
+        const cadBox = new THREE.Box3().setFromObject(part);
+        const sz = cadBox.getSize(new THREE.Vector3());
+        const clear = Math.max(0, along(fixedBox, d)[1] - along(cadBox, d)[0]);
+        rec.parts.push({ obj: part, base: part.position.clone(), cadDir: d, cadBox, clear, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
+      }
+    }
+    obj.add(w);
+    rec.box.copy(box);
+    rec.centre.copy(box.getCenter(new THREE.Vector3()));
+    rec.top.set(rec.centre.x, rec.centre.y, box.max.z);
+    return rec;
+  };
+
   // ---- bodies and hardware ---------------------------------------------------
+  // Loads go through the content-hash cache (PB-1175). The first load shows each body as it arrives. A later
+  // model (a rebuilt bundle, `__cad.refresh()`) is a hot swap by instance path: a body whose content hash,
+  // definition and look are unchanged keeps its objects; a changed one is built beside the old, its programs
+  // compiled (compileAsync), then swapped in. Camera, selection, sections and explode state are untouched:
+  // they are React state and refs keyed by instance path, and the explode is applied again to what changed.
   useEffect(() => {
     const h = handle.current;
     if (!h || !model) return;
-    h.root.clear();
-    bodies.current.clear();
-    hardware.current = [];
+    glbCache.beginGeneration();
     let cancelled = false;
     let count = 0;
     const loads: Promise<unknown>[] = [];
+    const prev = new Map(bodies.current);
+    const first = prev.size === 0;
     setSettled(false);
     stackPlan.current = null;
+    const state = loadState.current;
+    Object.assign(state, { phase: "loading", total: 0, done: 0, failed: 0, bytes: 0, swapped: 0, kept: 0, started: performance.now(), ms: 0 });
+    const changed = () => {
+      state.ms = performance.now() - state.started;
+      loadListener.current?.({ ...state });
+    };
     const bump = () => {
       stackPlan.current = null;
       count++;
+      state.done++;
+      changed();
+      h.invalidate();
       if (!cancelled) setLoaded(count);
     };
-    for (const body of nothing ? [] : model.bodies) {
-      const obj = new THREE.Group();
-      obj.matrixAutoUpdate = false;
-      obj.userData.key = body.key;
+    const shownBodies = nothing ? [] : model.bodies;
+    const keys = new Set(shownBodies.map((b) => b.key));
+    // what the new model no longer has goes now; what it still has stays on screen until its replacement is ready
+    for (const [key, rec] of prev)
+      if (!keys.has(key)) {
+        h.root.remove(rec.obj);
+        bodies.current.delete(key);
+      }
+    /** A body's look: its definition, its GLB and its appearance hints (a change means new materials). */
+    const lookKey = (body: CadBody) => `${body.def.id}|${body.glb?.id ?? ""}|${JSON.stringify(appearanceOf(body.def.id) ?? null)}`;
+    for (const body of shownBodies) {
+      const old = prev.get(body.key);
       const base = toMatrix4(body.matrix);
-      obj.matrix.copy(base);
-      h.root.add(obj);
-      const rec: BodyRec = { body, obj, base, centre: new THREE.Vector3(), top: new THREE.Vector3(), offset: new THREE.Vector3(), box: new THREE.Box3(), parts: [], materials: [] };
-      bodies.current.set(body.key, rec);
-      if (!body.glb?.filePath) continue;
-      const url = resolve(body.def.id, body.glb.filePath);
-      if (!url) continue;
-      loads.push(loadGlb(url).then((gltf) => {
-        if (cancelled || !gltf) return;
-        const scene = gltf.scene.clone(true);
-        const manifest = model.manifests.get(`${body.def.id}:${body.bodyArtifact}`);
-        const featureNames = new Set(Object.keys(manifest?.features ?? {}));
-        // a board's manifest names its components by instance path: those are bodies, not feature pads
-        const components = new Set((body.def.children ?? []).map((c) => c.id));
-        // vendor models, and outputs that come with their own colours (a board), keep their materials
-        const ownColours = (gltf.parser.json.materials?.length ?? 0) > 0 && !appearanceOf(body.def.id);
-        const vendorModel = body.glb!.id.startsWith("cad_vendor");
-        const vendor = vendorModel || ownColours;
-        const top = scene.children.length === 1 ? scene.children[0] : scene;
-        for (const part of top.children) {
-          // feature pads show only while their interface is selected
-          if (!vendorModel && featureNames.has(part.name) && !components.has(part.name)) {
-            part.userData.feature = part.name;
-            part.visible = false;
-            continue;
+      const url = body.glb?.filePath ? resolve(body.def.id, body.glb.filePath) : undefined;
+      if (!url) {
+        // nothing to load: an empty placeholder group (labels and findings anchor to it)
+        if (old) h.root.remove(old.obj);
+        const obj = new THREE.Group();
+        obj.matrixAutoUpdate = false;
+        obj.userData.key = body.key;
+        obj.matrix.copy(base);
+        h.root.add(obj);
+        bodies.current.set(body.key, { body, obj, base, centre: new THREE.Vector3(), top: new THREE.Vector3(), offset: new THREE.Vector3(), box: new THREE.Box3(), parts: [], hash: "", look: lookKey(body) });
+        continue;
+      }
+      state.total++;
+      loads.push(
+        loadModel(url)
+          .then((m) => {
+            // the view sidecar merges a body's nodes; the viewer still needs the ones its manifest names (feature pads
+            // shown on selection, named bodies that come apart): without them, the original GLB (handoff to W1-A)
+            if (!m || m.source !== "sidecar") return m;
+            // a sidecar that keeps the original's named nodes lacks only names the original lacks too (the M9N's
+            // `mount` and `component_side` features are face sets, not nodes): nothing to gain from X.glb
+            if (m.sidecar?.keepsNamedNodes) return m;
+            const manifest = model.manifests.get(`${body.def.id}:${body.bodyArtifact}`);
+            const parts = explodeParts(body.def, body.glb, manifest);
+            const needed = [...Object.keys(manifest?.features ?? {}), ...(parts ? [parts.fixed, ...parts.moving] : [])];
+            const missing = needed.filter((n) => !m.gltf.scene.getObjectByName(n));
+            if (!missing.length) return m;
+            console.info(`[cad] ${url}: the view sidecar lacks node(s) ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "…" : ""}: using the GLB`);
+            return loadModel(url, { sidecar: false });
+          })
+          .then(async (loadedModel) => {
+          if (cancelled) return;
+          if (!loadedModel) {
+            state.failed++;
+            changed();
+            return;
           }
-          part.traverse((o) => {
-            const mesh = o as THREE.Mesh;
-            if (!mesh.isMesh) return;
-            mesh.material = vendor ? (mesh.material as THREE.Material).clone() : materialFor(body.def, part.name, appearanceOf(body.def.id));
-            rec.materials.push(mesh.material as THREE.MeshStandardMaterial);
-            mesh.userData.bodyKey = body.key;
-            if (components.has(part.name)) mesh.userData.component = part.name;
-          });
-        }
-        const w = cadWrapper(scene);
-        w.name = "cad";
-        // local bounds for label anchors (before parenting, so world = CAD coordinates)
-        w.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(w);
-        // a cad standard output's named bodies come apart when exploded: each moves away from the largest
-        const parts = explodeParts(body.def, body.glb, manifest);
-        const node = (n: string) => top.children.find((c) => c.name === n);
-        if (parts && node(parts.fixed)) {
-          const centreOf = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
-          const c0 = centreOf(node(parts.fixed)!);
-          const fixedBox = new THREE.Box3().setFromObject(node(parts.fixed)!);
-          /** The extent of a box along a direction: [lowest, highest] projection of its corners. */
-          const along = (b: THREE.Box3, d: THREE.Vector3) => {
-            const xs = [b.min.x, b.max.x].map((x) => x * d.x);
-            const ys = [b.min.y, b.max.y].map((y) => y * d.y);
-            const zs = [b.min.z, b.max.z].map((z) => z * d.z);
-            return [Math.min(...xs) + Math.min(...ys) + Math.min(...zs), Math.max(...xs) + Math.max(...ys) + Math.max(...zs)];
-          };
-          for (const n of parts.moving) {
-            const part = node(n);
-            if (!part) continue;
-            const d = centreOf(part).sub(c0).normalize();
-            const cadBox = new THREE.Box3().setFromObject(part);
-            const sz = cadBox.getSize(new THREE.Vector3());
-            const clear = Math.max(0, along(fixedBox, d)[1] - along(cadBox, d)[0]);
-            rec.parts.push({ obj: part, base: part.position.clone(), cadDir: d, cadBox, clear, volume: sz.x * sz.y * sz.z, travel: new THREE.Vector3() });
+          state.bytes += loadedModel.bytes;
+          // unchanged content and look: the same objects, moved to where the new model places them
+          if (old && old.hash === loadedModel.hash && old.look === lookKey(body)) {
+            old.body = body;
+            old.base.copy(base);
+            old.obj.matrix.copy(base);
+            old.obj.matrixWorldNeedsUpdate = true;
+            bodies.current.set(body.key, old);
+            state.kept++;
+            bump();
+            return;
           }
-        }
-        obj.add(w);
-        rec.box.copy(box);
-        rec.centre.copy(box.getCenter(new THREE.Vector3()));
-        rec.top.set(rec.centre.x, rec.centre.y, box.max.z);
-        bump();
-      }));
+          const rec = buildBody(body, base, loadedModel);
+          rec.look = lookKey(body);
+          // programs before the swap: the next frame does not stall on a shader compile
+          await h.compile([rec.obj]);
+          if (cancelled) return;
+          if (old) {
+            h.root.remove(old.obj);
+            state.swapped++;
+          }
+          h.root.add(rec.obj);
+          bodies.current.set(body.key, rec);
+          bump();
+        }),
+      );
     }
-    // routed wire harnesses: each harness's own GLB, placed by the part its first end lands on
-    harnessGroup.current.clear();
-    harnessObjs.current.clear();
-    harnessMaterials.current = [];
+    // routed wire harnesses and mounting hardware: built aside, then swapped in together (on a first load, as they arrive)
+    const harnessNext = new THREE.Group();
+    const harnessObjsNext = new Map<string, THREE.Group>();
+    const harnessMaterialsNext: THREE.MeshStandardMaterial[] = [];
+    if (first) {
+      harnessGroup.current.clear();
+      harnessObjs.current.clear();
+      harnessMaterials.current = [];
+    }
+    const harnessHolder = first ? harnessGroup.current : harnessNext;
+    const harnessMap = first ? harnessObjs.current : harnessObjsNext;
+    const harnessMats = first ? harnessMaterials.current : harnessMaterialsNext;
     for (const hp of nothing ? [] : model.assembly.harnesses) {
       const obj = new THREE.Group();
       obj.matrixAutoUpdate = false;
       obj.matrix.copy(toMatrix4(hp.matrix));
       obj.userData.harness = hp.key;
-      harnessGroup.current.add(obj);
-      harnessObjs.current.set(hp.key, obj);
-      const glb = hp.def.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
+      harnessHolder.add(obj);
+      harnessMap.set(hp.key, obj);
+      const glb = glbFor(hp.def)?.filePath; // one body rule with the stack resolver (model.ts glbFor)
       const url = glb && resolve(hp.def.id, glb);
       if (!url) continue;
-      loads.push(loadGlb(url).then((gltf) => {
-        if (cancelled || !gltf) return;
-        const s = gltf.scene.clone(true);
-        s.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          mesh.material = harnessMaterial(mesh.material as THREE.MeshStandardMaterial, o.name);
-          harnessMaterials.current.push(mesh.material as THREE.MeshStandardMaterial);
-          mesh.userData.harness = hp.key;
-        });
-        obj.add(cadWrapper(s));
-        bump();
-      }));
+      state.total++;
+      loads.push(
+        loadGlb(url).then((gltf) => {
+          if (cancelled || !gltf) {
+            if (!gltf) state.failed++;
+            return;
+          }
+          const s = gltf.scene.clone(true);
+          s.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            mesh.material = harnessMaterial(mesh.material as THREE.MeshStandardMaterial, o.name);
+            harnessMats.push(mesh.material as THREE.MeshStandardMaterial);
+            mesh.userData.harness = hp.key;
+            // cables fade as the model comes apart: their materials change every frame of the tween, so they are drawn as themselves
+            mesh.userData.noBatch = true;
+          });
+          obj.add(cadWrapper(s));
+          bump();
+        }),
+      );
+    }
+    const hardwareNext: HardwareRec[] = [];
+    const hardwareHolder = new THREE.Group();
+    hardwareHolder.name = "hardware";
+    if (first) {
+      for (const hw of hardware.current) hw.obj.parent?.remove(hw.obj);
+      hardware.current = hardwareNext;
     }
     for (const hw of nothing ? [] : model.assembly.hardware) {
       const obj = new THREE.Group();
@@ -468,36 +623,66 @@ export function CadView({
       const base = toMatrix4(hw.matrix);
       obj.matrix.copy(base);
       obj.userData.harness = hw.harness;
-      h.root.add(obj);
+      if (first) h.root.add(obj);
+      else hardwareHolder.add(obj);
       const zCol = new THREE.Vector3().setFromMatrixColumn(base, 2).normalize().multiplyScalar(hw.direction);
-      hardware.current.push({ obj, base, harness: hw.harness, structure: hw.structure, mounted: hw.mounted, normal: zCol, atMm: hw.atMm, direction: hw.direction, offset: new THREE.Vector3() });
-      const file = hw.def.artifacts?.find((a) => a.role === "body" && a.format === "glb")?.filePath;
+      hardwareNext.push({ obj, base, harness: hw.harness, structure: hw.structure, mounted: hw.mounted, normal: zCol, atMm: hw.atMm, direction: hw.direction, offset: new THREE.Vector3() });
+      const file = glbFor(hw.def)?.filePath;
       const url = file && resolve(hw.def.id, file);
       if (!url) continue;
-      loads.push(loadGlb(url).then((gltf) => {
-        if (cancelled || !gltf) return;
-        const s = gltf.scene.clone(true);
-        s.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          if (mesh.isMesh) {
-            mesh.material = materialFor(hw.def, "", appearanceOf(hw.def.id));
-            mesh.userData.bodyKey = hw.harness;
+      state.total++;
+      loads.push(
+        // the original GLB: a fastener's thread and bore are nodes of their own, hidden here, which a sidecar would merge
+        loadModel(url, { sidecar: false }).then((m) => {
+          const gltf = m?.gltf;
+          if (cancelled || !gltf) {
+            if (!gltf) state.failed++;
+            return;
           }
-          if (o.name === "thread" || o.name === "bore") o.visible = false;
-        });
-        obj.add(cadWrapper(s));
-      }));
+          const s = gltf.scene.clone(true);
+          s.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (mesh.isMesh) {
+              mesh.material = materialFor(hw.def, "", appearanceOf(hw.def.id));
+              mesh.userData.bodyKey = hw.harness;
+            }
+            if (o.name === "thread" || o.name === "bore") o.visible = false;
+          });
+          obj.add(cadWrapper(s));
+          state.done++;
+          changed();
+          h.invalidate();
+        }),
+      );
     }
+    changed();
     // every model has loaded (or failed): what nothing places is laid out beside the rest, then the camera fits the whole once
-    void Promise.allSettled(loads).then(() => {
+    void Promise.allSettled(loads).then(async () => {
       if (cancelled) return;
+      if (!first) {
+        // the new harnesses and hardware, compiled, then in place of the old in one step
+        await h.compile([harnessNext, hardwareHolder]);
+        if (cancelled) return;
+        harnessGroup.current.clear();
+        for (const c of [...harnessNext.children]) harnessGroup.current.add(c);
+        harnessObjs.current = harnessObjsNext;
+        harnessMaterials.current = harnessMaterialsNext;
+        for (const hw of hardware.current) hw.obj.parent?.remove(hw.obj);
+        for (const hw of hardwareNext) h.root.add(hw.obj);
+        hardware.current = hardwareNext;
+      }
       layOutRow([...bodies.current.values()]);
+      // parsed models nothing shows any more are dropped (and their GPU buffers freed)
+      glbCache.prune();
+      state.phase = "ready";
+      changed();
+      h.invalidate();
       setSettled(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [model, nothing]);
+  }, [model, nothing, reload]);
 
   // ---- explode: each body up the stack, or along the mate that placed it ------
   useEffect(() => {
@@ -651,7 +836,11 @@ export function CadView({
     if (!h) return;
     const f = (dt: number) => {
       const ex = explode.current;
+      let moving = false;
       if (ex.value !== ex.target) {
+        moving = true;
+        // the parts move: the batches follow them this frame
+        h.invalidate();
         const step = dt / 1.4; // 1.4 s full travel
         ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
         const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
@@ -668,18 +857,21 @@ export function CadView({
         }
       }
       const size = h.renderer.getSize(new THREE.Vector2());
-      labelsRef.current?.update(h.camera, size.x, size.y, dt);
+      const easing = labelsRef.current?.update(h.camera, size.x, size.y, dt) ?? false;
+      // still moving: the next frame is drawn too; otherwise the view goes idle
+      return moving || ex.value !== ex.target || easing;
     };
-    h.onFrame.add(f);
+    h.beforeRender.add(f);
     return () => {
-      h.onFrame.delete(f);
+      h.beforeRender.delete(f);
     };
   }, [applyExplode]);
   useEffect(() => {
     const ex = explode.current;
     const eased = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
     applyExplode(eased);
-  }, [applyExplode, loaded, showWires]);
+    handle.current?.invalidate();
+  }, [applyExplode, loaded, showWires, settled]);
 
   useEffect(() => {
     harnessGroup.current.visible = showWires && explode.current.value < 0.35;
@@ -687,7 +879,7 @@ export function CadView({
 
   useEffect(() => {
     for (const hw of hardware.current) hw.obj.visible = showHardware;
-  }, [showHardware, loaded]);
+  }, [showHardware, loaded, settled]);
 
   // ---- labels ------------------------------------------------------------------
   useEffect(() => {
@@ -881,17 +1073,14 @@ export function CadView({
     for (const r of recs) {
       const shell = recs.some((o) => o !== r && world.get(r)!.containsPoint(world.get(o)!.getCenter(new THREE.Vector3())));
       if (shell) count++;
-      for (const m of r.materials) {
-        const base = (m.userData.base ??= { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite }) as { transparent: boolean; opacity: number; depthWrite: boolean };
-        const see = xray && shell;
-        m.transparent = see || base.transparent;
-        m.opacity = see ? 0.22 : base.opacity;
-        m.depthWrite = see ? false : base.depthWrite;
-        m.needsUpdate = true;
-      }
+      // a shared see-through variant of each mesh's own material (./render/looks.ts), never an edit of a shared one
+      const see = xray && shell;
+      r.obj.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh && o.userData.bodyKey !== undefined) setMeshLook(o as THREE.Mesh, { xray: see });
+      });
     }
     setShells(count);
-    handle.current?.renderOnce();
+    handle.current?.invalidate();
   }, [xray, loaded, model, settled]);
 
   // ---- selection overlays: interface geometry per direction, frames ----------
@@ -903,10 +1092,11 @@ export function CadView({
     const objOf = (key: string) => bodies.current.get(key)?.obj;
 
     for (const [key, rec] of bodies.current) {
+      // an assembly with no body of its own is selected as its parts
+      const lit = sel.body !== undefined && (key === sel.body || (sel.body !== "" && key.startsWith(`${sel.body}/`)));
       rec.obj.traverse((o) => {
-        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        // an assembly with no body of its own is selected as its parts
-        if (m && "emissive" in m) m.emissive.setHex(sel.body !== undefined && (key === sel.body || (sel.body !== "" && key.startsWith(`${sel.body}/`))) ? h.colors.glow : 0x000000);
+        // a highlight is a shared variant of the mesh's material: under the batcher, an instance attribute
+        if ((o as THREE.Mesh).isMesh && o.userData.bodyKey !== undefined) setMeshLook(o as THREE.Mesh, { emissive: lit ? h.colors.glow : undefined });
       });
     }
     const addInBody = (key: string, obj: THREE.Object3D) => {
@@ -1040,8 +1230,11 @@ export function CadView({
       // a component inside the body (a board's part): its node, named by its id in the body, glows
       const holder = selBody.key.split("#")[0];
       const node = holder && sel.component.startsWith(`${holder}/`) ? sel.component.slice(holder.length + 1) : sel.component;
+      const partId = (o: THREE.Object3D) => (o.userData.protoboard as { partInstanceId?: unknown } | undefined)?.partInstanceId;
       objOf(selBody.key)?.traverse((o) => {
-        if (o.name !== node) return;
+        // by the node's name (its id in the body), or by the instance path its extras carry (PB-1175 ids)
+        const id = partId(o);
+        if (o.name !== node && !(typeof id === "string" && (id === node || id === sel.component))) return;
         o.traverse((x) => {
           const mesh = x as THREE.Mesh;
           if (!mesh.isMesh) return;
@@ -1054,11 +1247,9 @@ export function CadView({
     if (sel.harness) {
       const obj = harnessObjs.current.get(sel.harness);
       obj?.traverse((o) => {
-        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-        if (!m || !("emissive" in m)) return;
-        const was = m.emissive.getHex();
-        m.emissive.setHex(h.colors.glowStrong);
-        restore.push(() => m.emissive.setHex(was));
+        if (!(o as THREE.Mesh).isMesh) return;
+        setMeshLook(o as THREE.Mesh, { emissive: h.colors.glowStrong });
+        restore.push(() => setMeshLook(o as THREE.Mesh, { emissive: undefined }));
       });
     }
     if (showFrames) {
@@ -1074,10 +1265,33 @@ export function CadView({
       }
     }
     setNotes([...new Set(newNotes)]);
-    return () => restore.forEach((f) => f());
+    h.invalidate();
+    return () => {
+      restore.forEach((f) => f());
+      handle.current?.invalidate();
+    };
   }, [model, sel, direction, showFrames, loaded, themed]);
 
   // ---- picking ---------------------------------------------------------------
+  /**
+   * The nearest drawn body or harness under a world ray (three-mesh-bvh, ./render/pick.ts): hidden things and
+   * what a section cuts away are skipped; the hit carries the GLB's instance path and face id where it has them.
+   */
+  const pickAt = (ray: THREE.Ray) => {
+    const h = handle.current;
+    if (!h) return undefined;
+    h.scene.updateMatrixWorld();
+    return pick(ray, [h.root, harnessGroup.current], {
+      clippingPlanes: h.renderer.clippingPlanes,
+      filter: (m) => Boolean(m.userData.bodyKey || m.userData.harness),
+      // ids stop at the body's own group (the parts above it belong to the assembly)
+      stop: (m) => {
+        let o: THREE.Object3D | null = m;
+        while (o && o.userData.key === undefined && o.userData.harness === undefined) o = o.parent;
+        return o ?? undefined;
+      },
+    });
+  };
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
@@ -1089,16 +1303,18 @@ export function CadView({
       const r = el.getBoundingClientRect();
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
-      const hit = ray.intersectObjects([h.root, harnessGroup.current], true).find((x) => x.object.visible && harnessGroup.current.visible !== false && (x.object.userData.bodyKey || x.object.userData.harness));
+      // three-mesh-bvh, nearest first, skipping what is hidden or cut away by the section (PB-1175)
+      const hit = pickAt(ray.ray);
       if (!hit) setSel({});
       else if (hit.object.userData.harness) setSel({ harness: hit.object.userData.harness });
       else {
         const k = hit.object.userData.bodyKey as string;
         const hwMate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
-        const child = hit.object.userData.component as string | undefined;
+        // the node's id in the body, else the instance path the GLB's extras (or the sidecar's feature ids) give
+        const child = (hit.object.userData.component as string | undefined) ?? hit.partInstanceId;
         // a component is named by its instance path in the model (the body's path, then its id in the body), as a host's focus names it
         const holder = k.split("#")[0];
-        const component = child === undefined ? undefined : holder ? `${holder}/${child}` : child;
+        const component = child === undefined ? undefined : instancePathIn(holder, child);
         setSel(hwMate ? { mate: hwMate } : component ? { body: k, component } : { body: k });
       }
     };
@@ -1131,6 +1347,7 @@ export function CadView({
     h.controls.target.copy(target);
     h.camera.position.copy(target).addScaledVector(viewDir(azimuthDeg, elevationDeg), distance);
     h.camera.lookAt(target);
+    h.invalidate("view");
   };
   /**
    * Fit the camera to a box from a direction: the nearest distance at which
@@ -1228,6 +1445,7 @@ export function CadView({
     const dir = n.clone().multiplyScalar(0.75).add(new THREE.Vector3(0.55, -0.75, 0).normalize().multiplyScalar(0.66)).normalize();
     h.controls.target.copy(target);
     h.camera.position.copy(target.clone().add(dir.multiplyScalar(160)));
+    h.invalidate("view");
   };
   useEffect(() => {
     const h = handle.current;
@@ -1243,6 +1461,7 @@ export function CadView({
           explode.current.value = explode.current.target = s.explode;
           const e = s.explode;
           applyExplode(e < 0.5 ? 4 * e ** 3 : 1 - (-2 * e + 2) ** 3 / 2);
+          h.invalidate();
         }
         if (s.labels !== undefined && labelsRef.current) {
           labelsRef.current.target = s.labels ? 1 : 0;
@@ -1255,6 +1474,52 @@ export function CadView({
         if (s.azimuth !== undefined) orbit(s.azimuth, s.elevation ?? 28, s.distance ?? 520, s.target ? new THREE.Vector3(...s.target) : undefined);
         h.renderOnce();
       },
+      /**
+       * What is drawn, as data (PB-1175): every body (and the parts a GLB names by instance path, and every
+       * routed harness) with its bounds as drawn now, the selection, the camera and the last frame's counts.
+       * `seq` changes whenever a frame was drawn.
+       */
+      observe: (opts: { components?: boolean } = {}): CadObservation => {
+        const st = h.stats();
+        return observeScene({
+          seq: st.frames,
+          bodies: [...bodies.current.values()].map((r) => ({ key: r.body.key, obj: r.obj, hasModel: r.hash !== "" })),
+          harnesses: harnessObjs.current,
+          selection: { ...selRef.current },
+          camera: h.camera,
+          target: h.controls.target,
+          counts: { draws: st.last.draws, triangles: st.last.triangles, frames: st.frames, ...(st.batch ? { instances: st.batch.instances, batches: st.batch.groups, materials: st.batch.materials } : {}) },
+          loading: loadState.current,
+          ...(opts.components === false ? { components: false } : {}),
+        });
+      },
+      /** The loads' progress (also `onLoadState`). */
+      loading: (): LoadState => ({ ...loadState.current }),
+      /** Check every model's content again and hot-swap what changed (a GLB re-exported to the same path). */
+      refresh: () => setReload((n) => n + 1),
+      /** Renderer and batcher counts, frames drawn so far, BVH builds. */
+      stats: () => ({ ...h.stats(), bvh: bvhStats(), cachedModels: glbCache.size }),
+      /** Pick at a point of the view (fractions of its width and height from the top left). */
+      pick: (fx: number, fy: number) => {
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(fx * 2 - 1, -(fy * 2 - 1)), h.camera);
+        const hit = pickAt(ray.ray);
+        if (!hit) return null;
+        const body = hit.object.userData.bodyKey as string | undefined;
+        const child = (hit.object.userData.component as string | undefined) ?? hit.partInstanceId;
+        return {
+          body,
+          harness: hit.object.userData.harness as string | undefined,
+          instancePath: body !== undefined && child !== undefined ? instancePathIn(body.split("#")[0], child) : (body?.split("#")[0] ?? hit.object.userData.harness),
+          face: hit.face,
+          feature: hit.feature,
+          triangle: hit.triangle,
+          point: hit.point.toArray().map((n) => Math.round(n * 1000) / 1000),
+          distance: Math.round(hit.distance * 1000) / 1000,
+        };
+      },
+      /** Build every BVH now and say how long it took (the GPU id-buffer fallback is due above 2 s). */
+      bvh: () => buildAll([h.root, harnessGroup.current]),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applyExplode, loaded, settled]);
@@ -1341,6 +1606,12 @@ export function CadView({
     const out = (p: string | undefined) => (p === undefined ? undefined : p.includes("#") ? `${outOfScope(p.split("#")[0], at)}#${p.split("#")[1]}` : outOfScope(p, at));
     selectHandler.current?.({ ...sel, ...(sel.body !== undefined ? { body: out(sel.body) } : {}), ...(sel.component !== undefined ? { component: out(sel.component) } : {}), ...(sel.harness !== undefined ? { harness: out(sel.harness) } : {}), ...(sel.mate !== undefined ? { mate: out(sel.mate) } : {}) });
   }, [sel, at]);
+
+  // render on demand (PB-1175): whatever React state changed (selection, visibility, explode, sections, labels,
+  // a load) asks for one frame after the effects above have changed the scene. Nothing changes: no frame.
+  useEffect(() => {
+    handle.current?.invalidate();
+  });
 
   const toggleKind = (k: LabelKind) =>
     setLabelKinds((s) => {

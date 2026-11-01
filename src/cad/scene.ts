@@ -8,10 +8,19 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { GeometryFrame, InterfaceDef, ModuleDef } from "@uhd/types/index.js";
 import type { Mat4 } from "@uhd/system/geometry.js";
 import { param, traitParam } from "./model";
 import type { Appearance } from "../source/source";
+import { createGlbCache, type LoadedModel, type LoadOptions } from "./render/glbCache";
+import { createFrameLoop, type Invalidation } from "./render/loop";
+import { Batcher, isBatchable, lookOf, LOGICAL_LAYER, type SyncStats } from "./render/batch";
+import { emitContextLost, emitFrame, frameListeners, type FrameEvent } from "./render/events";
+
+export { onGlbLoad, onFrame, onContextLost, type GlbLoadEvent, type FrameEvent, type ContextLostEvent } from "./render/events";
+export { LOGICAL_LAYER } from "./render/batch";
+export type { LoadedModel } from "./render/glbCache";
 
 /** The theme's colours for the scene, as `#rrggbb` (ThemeProvider's tokenColor). */
 export interface SceneTheme {
@@ -66,20 +75,26 @@ export function relativeLuminance(c: THREE.Color): number {
 }
 
 const loader = new GLTFLoader();
-const cache = new Map<string, Promise<GLTF | null>>();
+// the view sidecars are meshopt-compressed (W1-A); the decoder is three's own copy (MIT, meshoptimizer).
+// It instantiates WebAssembly at import: where a CSP forbids that, a sidecar fails to parse and the plain GLB is used.
+loader.setMeshoptDecoder(MeshoptDecoder);
+void Promise.resolve(MeshoptDecoder.ready).catch(() => undefined);
 
-/** Load a GLB by URL (artifact URLs come from the viewer source's resolver). */
+/**
+ * The GLB cache shared by every view, keyed by content hash (./render/glbCache.ts):
+ * `X.view.glb` when its sidecar is there, else `X.glb`; a re-export to the same
+ * path is seen at the next generation (a new bundle, `__cad.refresh()`).
+ */
+export const glbCache = createGlbCache({ parse: (data, path) => loader.parseAsync(data, path) });
+
+/** Load a GLB by URL (artifact URLs come from the viewer source's resolver), with its hash and sidecar. */
+export function loadModel(url: string, options?: LoadOptions): Promise<LoadedModel | null> {
+  return glbCache.load(url, options);
+}
+
+/** Load a GLB by URL: the parsed glTF only (callers clone `gltf.scene`). */
 export function loadGlb(url: string): Promise<GLTF | null> {
-  if (!cache.has(url)) {
-    cache.set(
-      url,
-      loader.loadAsync(url).catch((e) => {
-        console.warn(`[cad] ${url}: ${e}`);
-        return null;
-      }),
-    );
-  }
-  return cache.get(url)!;
+  return glbCache.load(url).then((m) => m?.gltf ?? null);
 }
 
 /** glTF (m, Y-up) back to CAD coordinates (mm, Z-up). */
@@ -110,13 +125,21 @@ export function materialFor(def: ModuleDef, bodyPart: string, appearance?: Appea
   const base = fallbackAppearance(def, bodyPart);
   const a = { ...base, ...hint };
   const transparent = a.opacity !== undefined && a.opacity < 1;
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(a.color ?? "#8b8b8b"),
-    roughness: a.roughness ?? 0.55,
-    metalness: a.metalness ?? 0.1,
-    ...(transparent ? { transparent: true, opacity: a.opacity, side: THREE.DoubleSide, depthWrite: false } : {}),
-  });
+  // one material per look, shared (PB-1175): highlight and x-ray are per mesh (userData), never edits of this material
+  const key = `${a.color ?? "#8b8b8b"}|${a.roughness ?? 0.55}|${a.metalness ?? 0.1}|${transparent ? a.opacity : 1}`;
+  let m = looks.get(key);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(a.color ?? "#8b8b8b"),
+      roughness: a.roughness ?? 0.55,
+      metalness: a.metalness ?? 0.1,
+      ...(transparent ? { transparent: true, opacity: a.opacity, side: THREE.DoubleSide, depthWrite: false } : {}),
+    });
+    looks.set(key, m);
+  }
+  return m;
 }
+const looks = new Map<string, THREE.MeshStandardMaterial>();
 
 /** Declared material first (UHD `domains[mechanical].material`), then what the part is. */
 function fallbackAppearance(def: ModuleDef, bodyPart: string): Omit<Appearance, "parts"> {
@@ -135,16 +158,24 @@ function fallbackAppearance(def: ModuleDef, bodyPart: string): Omit<Appearance, 
   return { color: "#8b8b8b" };
 }
 
-export const focusMaterial = (color: number) =>
-  new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: 0.6,
-    roughness: 0.4,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
+const focusMaterials = new Map<number, THREE.MeshStandardMaterial>();
+/** The highlight surface for a colour (one shared material per colour). */
+export const focusMaterial = (color: number) => {
+  let m = focusMaterials.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.6,
+      roughness: 0.4,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    focusMaterials.set(color, m);
+  }
+  return m;
+};
 
 // ---------------------------------------------------------------------------
 // Frames and procedural geometry (D3), in a module's CAD coordinates
@@ -257,7 +288,45 @@ export function proceduralGeometry(iface: InterfaceDef, generator: string, frame
 // Scene
 // ---------------------------------------------------------------------------
 
+/**
+ * How the frame is antialiased (PB-1175):
+ * - "msaa": the scene is drawn into a multisampled render target
+ *   (`WebGLRenderTarget.samples`, so the sample count is a knob), then tone
+ *   mapped and composited over the background onto the canvas;
+ * - "native": the WebGL context's own antialiasing (fixed for the context's life);
+ * - "none".
+ */
+export type AntialiasMode = "msaa" | "native" | "none";
+
+export interface SceneOptions {
+  /**
+   * DEFAULT "native" (PB-1175): the multisampled target path cost more than the 1 ms the brief allows on the
+   * drone (Intel UHD, d3d11: +1.5 to +4.5 ms per frame over native AA, phase-1/progress.md W1-C), so the
+   * context antialiases; "msaa" (with `samples`) stays available as the knob wave 2 tunes.
+   */
+  antialias?: AntialiasMode;
+  /** Samples for "msaa" (0 turns it off without changing the pipeline). */
+  samples?: number;
+  /** Draw through shared materials and instancing (./render/batch.ts). Default true. */
+  batching?: boolean;
+}
+
+export interface SceneStats {
+  /** Frames drawn since the scene was created (only on change: idle adds none). */
+  frames: number;
+  /** The last frame: CPU ms, draw calls and triangles of the scene pass. */
+  last: { ms: number; draws: number; triangles: number };
+  /** The batcher's last sync (instances, instanced groups, shared materials, meshes drawn as themselves). */
+  batch?: SyncStats;
+  antialias: AntialiasMode;
+  samples: number;
+  geometries: number;
+  programs: number;
+}
+
 export interface SceneHandle {
+  /** One number per scene, for telemetry (several views can be open). */
+  id: number;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
@@ -277,25 +346,93 @@ export interface SceneHandle {
   colors: SceneColors;
   /** The theme's background, grid and focus colours. */
   setTheme: (theme: SceneTheme) => void;
-  /** Called every frame before rendering, with the frame time in seconds. */
-  onFrame: Set<(dt: number) => void>;
-  /** When set, the render loop is driven externally (video capture). */
+  /**
+   * Ask for a frame: "view" when only the camera moved, "scene" (default)
+   * when anything else changed. Frames are drawn only when asked for.
+   */
+  invalidate: (what?: Invalidation) => void;
+  /**
+   * Called before each drawn frame with the frame time in seconds. Return
+   * true while an animation runs (the next frame is drawn too); call
+   * `invalidate()` from it when it changed the scene.
+   */
+  beforeRender: Set<(dt: number) => boolean | void>;
+  /** This scene's frames ({ms, draws, triangles}); the module-wide `onFrame` hears every scene. */
+  onFrame: (cb: (e: FrameEvent) => void) => () => void;
+  /** This scene's WebGL context was lost. */
+  onContextLost: (cb: () => void) => () => void;
+  /** When set, scheduled frames are skipped and the caller draws with `renderOnce` (video capture). */
   manual: { on: boolean };
+  /** Draw a frame now, synchronously (a capture reads the canvas in the same task). */
   renderOnce: () => void;
+  /**
+   * Compile the programs `objects` will need, without blocking (`compileAsync`),
+   * before they are added to the scene: no frame stalls on a shader compile.
+   */
+  compile: (objects: THREE.Object3D[]) => Promise<void>;
+  /** Draw counts and what the batcher did. */
+  stats: () => SceneStats;
+  /** The trees the batcher draws (the scene's children but its own and the camera). */
+  logicalRoots: () => THREE.Object3D[];
 }
 
-export function createScene(container: HTMLElement): SceneHandle {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+let nextSceneId = 1;
+
+/** Composites the multisampled scene target onto the canvas: tone mapping and output colour space, then over the background. */
+function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial } {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2));
+  const material = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, background: { value: new THREE.Vector3() } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    // the target holds linear colour, premultiplied by coverage where nothing opaque was drawn; the background
+    // is added after tone mapping, in the output colour space, as the canvas's own clear colour would be
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tDiffuse;
+      uniform vec3 background;
+      varying vec2 vUv;
+      void main() {
+        vec4 c = texture2D(tDiffuse, vUv);
+        float a = clamp(c.a, 0.0, 1.0);
+        vec3 rgb = a > 0.0001 ? c.rgb / a : vec3(0.0);
+        #ifdef TONE_MAPPING
+          rgb = toneMapping(rgb);
+        #endif
+        rgb = linearToOutputTexel(vec4(rgb, 1.0)).rgb;
+        gl_FragColor = vec4(mix(background, rgb, a), 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  return { mesh, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), material };
+}
+
+export function createScene(container: HTMLElement, options: SceneOptions = {}): SceneHandle {
+  const id = nextSceneId++;
+  const created = performance.now();
+  const aa: AntialiasMode = options.antialias ?? "native";
+  const samples = aa === "msaa" ? Math.max(0, options.samples ?? 4) : 0;
+  // preserveDrawingBuffer false (PB-1175): a capture draws and reads in one task (renderOnce)
+  const renderer = new THREE.WebGLRenderer({ antialias: aa === "native", preserveDrawingBuffer: false });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // counts are read per frame (scene pass only), so they are not reset by each render call
+  renderer.info.autoReset = false;
   container.appendChild(renderer.domElement);
 
   const colors = sceneColors();
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1a);
+  // world matrices are brought up to date once per frame, before the batcher reads them
+  scene.matrixWorldAutoUpdate = false;
   const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 1, 5000);
   camera.up.set(0, 0, 1);
   camera.position.set(260, -330, 250);
@@ -347,6 +484,7 @@ export function createScene(container: HTMLElement): SceneHandle {
     next.position.copy(grid.position);
     next.quaternion.copy(grid.quaternion);
     next.scale.copy(grid.scale);
+    next.visible = grid.visible;
     scene.remove(grid);
     grid.geometry.dispose();
     (grid.material as THREE.Material).dispose();
@@ -357,30 +495,144 @@ export function createScene(container: HTMLElement): SceneHandle {
   const root = new THREE.Group();
   const overlay = new THREE.Group();
   scene.add(root, overlay);
+  const batcher = options.batching === false ? null : new Batcher();
+  if (batcher) scene.add(batcher.root);
+  const logicalRoots = () => scene.children.filter((c) => c !== batcher?.root && c !== camera);
 
-  let raf = 0;
-  const onFrame = new Set<(dt: number) => void>();
-  const manual = { on: false };
-  let last = performance.now();
-  const renderOnce = (dt = 1 / 60) => {
-    controls.update();
-    for (const f of onFrame) f(dt);
+  // ---- the multisampled target and the output pass (aa "msaa") ----
+  let target: THREE.WebGLRenderTarget | null = null;
+  const quad = aa === "msaa" ? outputQuad() : null;
+  const drawingSize = new THREE.Vector2();
+  const ensureTarget = () => {
+    renderer.getDrawingBufferSize(drawingSize);
+    const w = Math.max(1, drawingSize.x);
+    const h = Math.max(1, drawingSize.y);
+    if (!target) {
+      // half float keeps colour above 1 for the tone mapping (where the context can render to it)
+      const half = renderer.extensions.has("EXT_color_buffer_float") || renderer.extensions.has("EXT_color_buffer_half_float");
+      target = new THREE.WebGLRenderTarget(w, h, { samples, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true });
+    } else if (target.width !== w || target.height !== h) target.setSize(w, h);
+    if (target.samples !== samples) {
+      target.samples = samples;
+      target.dispose();
+    }
+    return target;
+  };
+  const bg = new THREE.Color();
+  const clear = new THREE.Color();
+
+  // ---- frames, drawn on demand ----
+  const beforeRender = new Set<(dt: number) => boolean | void>();
+  const frameSubs = new Set<(e: FrameEvent) => void>();
+  const lostSubs = new Set<() => void>();
+  let sceneDirty = true;
+  let inFrame = false;
+  let lost = false;
+  const last = { ms: 0, draws: 0, triangles: 0 };
+
+  const drawScene = () => {
+    renderer.info.reset();
+    if (!quad) {
+      renderer.render(scene, camera);
+      last.draws = renderer.info.render.calls;
+      last.triangles = renderer.info.render.triangles;
+      return;
+    }
+    const rt = ensureTarget();
+    const background = scene.background;
+    const clearAlpha = renderer.getClearAlpha();
+    renderer.getClearColor(clear);
+    // the background is composited after tone mapping (as a canvas clear colour is), not drawn into the target
+    if (background instanceof THREE.Color) bg.copy(background);
+    else bg.setRGB(0, 0, 0);
+    scene.background = null;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(rt);
     renderer.render(scene, camera);
+    last.draws = renderer.info.render.calls;
+    last.triangles = renderer.info.render.triangles;
+    renderer.setRenderTarget(null);
+    scene.background = background;
+    renderer.setClearColor(clear, clearAlpha);
+    const u = quad.material.uniforms;
+    u.tDiffuse.value = rt.texture;
+    const out = bg.getRGB(new THREE.Color(), renderer.outputColorSpace);
+    (u.background.value as THREE.Vector3).set(out.r, out.g, out.b);
+    renderer.render(quad.mesh, quad.camera);
   };
-  const tick = () => {
-    const now = performance.now();
-    const dt = Math.min(0.1, (now - last) / 1000);
-    last = now;
-    if (!manual.on) renderOnce(dt);
-    raf = requestAnimationFrame(tick);
+
+  const loop = createFrameLoop({
+    frame: ({ dt, scene: changed }) => {
+      if (lost) return false;
+      inFrame = true;
+      const t0 = performance.now();
+      let again = false;
+      try {
+        // damping and auto-rotate move the camera here; OrbitControls says whether it did
+        if (controls.update(dt)) again = true;
+        if (controls.autoRotate) again = true;
+        for (const f of beforeRender) if (f(dt) === true) again = true;
+        const sync = changed || sceneDirty;
+        sceneDirty = false;
+        // a camera move needs the camera's matrices only; anything else, the whole tree (then the batches follow it)
+        if (sync) scene.updateMatrixWorld();
+        else camera.updateMatrixWorld(true);
+        if (batcher && sync) batcher.sync(logicalRoots());
+        // subtrees the batches draw entirely are not walked by the renderer at all (ClientX: 140k nodes)
+        const skip = batcher?.pure ?? [];
+        const was = skip.map((o) => o.visible);
+        for (const o of skip) o.visible = false;
+        try {
+          drawScene();
+        } finally {
+          skip.forEach((o, i) => (o.visible = was[i]));
+        }
+      } finally {
+        inFrame = false;
+      }
+      last.ms = performance.now() - t0;
+      if (frameSubs.size || frameListeners()) {
+        const e: FrameEvent = { scene: id, ms: last.ms, draws: last.draws, triangles: last.triangles };
+        for (const cb of frameSubs) cb(e);
+        emitFrame(e);
+      }
+      return again;
+    },
+  });
+  /** Ask for a frame; inside a frame callback a scene change is picked up by this frame's batcher sync. */
+  const invalidate = (what: Invalidation = "scene") => {
+    if (what === "scene") sceneDirty = true;
+    if (!inFrame) loop.invalidate(what);
   };
-  tick();
+  controls.addEventListener("change", () => invalidate("view"));
+  // a host that adds a model to the root (an artifact preview) needs no call of its own
+  root.addEventListener("childadded", () => invalidate());
+  root.addEventListener("childremoved", () => invalidate());
+
   const ro = new ResizeObserver(() => {
     renderer.setSize(container.clientWidth, container.clientHeight);
     camera.aspect = container.clientWidth / Math.max(1, container.clientHeight);
     camera.updateProjectionMatrix();
+    invalidate("view");
   });
   ro.observe(container);
+
+  const canvas = renderer.domElement;
+  const onLost = (e: Event) => {
+    // keep the chance of a restore; nothing is drawn until then
+    e.preventDefault();
+    lost = true;
+    for (const cb of lostSubs) cb();
+    emitContextLost({ scene: id, at: performance.now() - created });
+  };
+  const onRestored = () => {
+    lost = false;
+    target?.dispose();
+    target = null;
+    invalidate();
+  };
+  canvas.addEventListener("webglcontextlost", onLost);
+  canvas.addEventListener("webglcontextrestored", onRestored);
 
   const upAxis = new THREE.Vector3(0, 0, 1);
   const lights: [THREE.Object3D, THREE.Vector3][] = [
@@ -399,6 +651,7 @@ export function createScene(container: HTMLElement): SceneHandle {
     for (const [light, base] of lights) light.position.copy(base).applyQuaternion(q);
     grid.quaternion.copy(q).multiply(gridBase);
     grid.position.copy(upAxis).multiplyScalar(-0.5);
+    invalidate();
   };
   const setGround = (box: THREE.Box3) => {
     if (box.isEmpty()) return;
@@ -407,6 +660,7 @@ export function createScene(container: HTMLElement): SceneHandle {
     const low = Math.min(...corners.map((c) => c.dot(upAxis)));
     const c = box.getCenter(new THREE.Vector3());
     grid.position.copy(c.sub(upAxis.clone().multiplyScalar(c.dot(upAxis) - low + 0.5)));
+    invalidate();
   };
 
   const frameAll = (box?: THREE.Box3) => {
@@ -417,9 +671,40 @@ export function createScene(container: HTMLElement): SceneHandle {
     const dir = camera.position.clone().sub(controls.target).normalize();
     controls.target.copy(c);
     camera.position.copy(c.clone().add(dir.multiplyScalar(r / Math.sin((camera.fov * Math.PI) / 360))));
+    invalidate("view");
+  };
+
+  /** Programs for the objects' looks (instanced, shared) and for what is drawn as itself, compiled off the main path. */
+  const compile = async (objects: THREE.Object3D[]) => {
+    const tmp = new THREE.Scene();
+    const looks = new Set<THREE.Material>();
+    const own: THREE.Object3D[] = [];
+    const stub = new THREE.BufferGeometry();
+    stub.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0], 3));
+    stub.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+    stub.setAttribute("instanceEmissive", new THREE.InstancedBufferAttribute(new Float32Array(3), 3));
+    for (const obj of objects)
+      obj.traverse((o) => {
+        if (batcher && isBatchable(o)) {
+          const m = batcher.materials.get(lookOf(o, o.material as THREE.MeshStandardMaterial));
+          if (looks.has(m)) return;
+          looks.add(m);
+          const inst = new THREE.InstancedMesh(stub, m, 1);
+          inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3), 3);
+          tmp.add(inst);
+        } else if ((o as THREE.Mesh).isMesh || (o as THREE.Line).isLine) own.push(o);
+      });
+    try {
+      if (tmp.children.length) await renderer.compileAsync(tmp, camera, scene);
+      for (const o of own) await renderer.compileAsync(o, camera, scene);
+    } catch (e) {
+      console.warn("[cad] compileAsync:", e);
+    }
+    stub.dispose();
   };
 
   return {
+    id,
     scene,
     camera,
     controls,
@@ -429,21 +714,56 @@ export function createScene(container: HTMLElement): SceneHandle {
     frameAll,
     setUp,
     setGround,
-    onFrame,
-    manual,
-    renderOnce: () => renderOnce(1 / 30),
+    invalidate,
+    beforeRender,
+    onFrame: (cb) => {
+      frameSubs.add(cb);
+      return () => void frameSubs.delete(cb);
+    },
+    onContextLost: (cb) => {
+      lostSubs.add(cb);
+      return () => void lostSubs.delete(cb);
+    },
+    manual: {
+      get on() {
+        return loop.paused;
+      },
+      set on(v: boolean) {
+        loop.paused = v;
+        if (!v) invalidate();
+      },
+    },
+    // what changed was said through invalidate(): a camera-only frame skips the batcher's sync
+    renderOnce: () => loop.flush(1 / 30),
+    compile,
+    stats: () => ({
+      frames: loop.frames,
+      last: { ...last },
+      ...(batcher ? { batch: { ...batcher.last } } : {}),
+      antialias: aa,
+      samples,
+      geometries: renderer.info.memory.geometries,
+      programs: renderer.info.programs?.length ?? 0,
+    }),
+    logicalRoots,
     colors,
     setTheme: (theme) => {
       scene.background = new THREE.Color(theme.background);
       lightFor(scene.background as THREE.Color);
       setGridColors(theme.grid, theme.gridMinor);
       Object.assign(colors, sceneColors(theme));
-      renderOnce(1 / 30);
+      invalidate();
     },
     dispose: () => {
-      cancelAnimationFrame(raf);
+      loop.dispose();
       ro.disconnect();
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
       controls.dispose();
+      batcher?.dispose();
+      target?.dispose();
+      quad?.material.dispose();
+      quad?.mesh.geometry.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },
