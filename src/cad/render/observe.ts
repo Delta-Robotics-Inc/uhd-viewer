@@ -20,7 +20,10 @@ export interface ObservedNode {
 }
 
 export interface CadObservation {
-  /** Changes whenever what is drawn changes (frames are drawn only on change). */
+  /**
+   * The view state's version (PB-1178): rises with every committed write (camera, selection, explode, ...).
+   * Model loads and hot swaps do not raise it; to wait for a redraw, watch `counts.frames` (`frame`).
+   */
   seq: number;
   nodes: ObservedNode[];
   selection: Record<string, string | undefined>;

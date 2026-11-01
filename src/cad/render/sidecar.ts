@@ -68,6 +68,13 @@ export interface ViewSidecar {
    * the original too (a feature that is a face set or a frame, not a node), so it is no reason to load `X.glb`.
    */
   keepsNamedNodes?: boolean;
+  /**
+   * The coarse tier (PB-1176, the quality curve's far-part detail knob): `tiers.coarse` when it is a file of its
+   * own (`X.view.coarse.glb`, same nodes and ids as the fine tier, fewer triangles), a bare file name beside
+   * `X.view.glb`. Absent when the coarse tier is the fine file itself (`method: "same-as-fine"`: simplification
+   * saved under 10 %) or the name is not a plain file name (containment: no folders, no `..`).
+   */
+  coarse?: { file: string; sha256?: string; triangles?: number; fineTriangles?: number };
 }
 
 /** Size caps (security basics: a parsed file never exceeds these). */
@@ -179,7 +186,13 @@ export function normaliseSidecar(raw: unknown): ViewSidecar | undefined {
   const src = (o.source ?? o.input) as Record<string, unknown> | undefined;
   const source = src && typeof src === "object" ? { ...(typeof src.sha256 === "string" ? { sha256: src.sha256 } : {}), ...(isInt(src.bytes) ? { bytes: src.bytes } : {}) } : undefined;
   const before = (o.counts as { before?: { materials?: unknown } } | undefined)?.before?.materials;
-  return { ...(typeof o.schema === "string" ? { schema: o.schema } : {}), hash, ...(source ? { source } : {}), nodes, features, ...(isInt(before) ? { sourceMaterials: before } : {}), ...(o.root && typeof o.root === "object" ? { keepsNamedNodes: true } : {}) };
+  const tiers = o.tiers as { fine?: { file?: unknown; triangles?: unknown }; coarse?: { file?: unknown; sha256?: unknown; triangles?: unknown; method?: unknown } } | undefined;
+  const ct = tiers?.coarse;
+  const coarse =
+    ct && typeof ct.file === "string" && ct.file && ct.file !== tiers?.fine?.file && ct.method !== "same-as-fine" && /^[^\\/:]+\.glb$/i.test(ct.file) && !/^\.\.?$/.test(ct.file)
+      ? { file: ct.file, ...(typeof ct.sha256 === "string" ? { sha256: ct.sha256 } : {}), ...(isInt(ct.triangles) ? { triangles: ct.triangles } : {}), ...(isInt(tiers?.fine?.triangles) ? { fineTriangles: tiers!.fine!.triangles as number } : {}) }
+      : undefined;
+  return { ...(typeof o.schema === "string" ? { schema: o.schema } : {}), hash, ...(coarse ? { coarse } : {}), ...(source ? { source } : {}), nodes, features, ...(isInt(before) ? { sourceMaterials: before } : {}), ...(o.root && typeof o.root === "object" ? { keepsNamedNodes: true } : {}) };
 }
 
 /** The face a triangle came from: binary search in sorted ranges. */

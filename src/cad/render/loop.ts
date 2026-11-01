@@ -10,14 +10,24 @@
  * so it runs (and is tested) without a browser.
  */
 
-/** What changed: only the camera ("view"), or anything in the scene ("scene"). */
-export type Invalidation = "view" | "scene";
+/**
+ * What changed: only the camera ("view"); only the placement of objects already drawn, nothing shown, hidden
+ * or recoloured ("pose": an explode tween, a sequence playing; PB-1176, the batcher then rewrites matrices
+ * only); or anything in the scene ("scene").
+ */
+export type Invalidation = "view" | "pose" | "scene";
 
 export interface FrameInfo {
   /** Seconds since the previous frame (1/60 for the first frame after idle, capped at 0.1). */
   dt: number;
   /** Something other than the camera changed since the last frame. */
   scene: boolean;
+  /** Only placements changed since the last frame (`invalidate("pose")`, and no "scene"). */
+  pose?: boolean;
+  /** Drawn by `flush` (a capture), not by the scheduler (PB-1176: the quality curve does not measure these). */
+  flush?: boolean;
+  /** ms since the previous scheduled frame, when it was under 100 ms ago (frames of one motion); undefined otherwise. */
+  interval?: number;
 }
 
 export interface FrameLoopOptions {
@@ -48,15 +58,20 @@ export function createFrameLoop(options: FrameLoopOptions): FrameLoop {
   const now = options.now ?? (() => performance.now());
   let id: number | null = null;
   let sceneDirty = true;
+  let poseDirty = false;
   let last: number | null = null;
+  /** The previous scheduled frame's clock (for `interval`). */
+  let prevFrame: number | null = null;
   let frames = 0;
   let disposed = false;
 
-  const draw = (dt: number) => {
+  const draw = (dt: number, extra: { flush?: boolean; interval?: number } = {}) => {
     const scene = sceneDirty;
+    const pose = poseDirty && !scene;
     sceneDirty = false;
+    poseDirty = false;
     frames++;
-    return options.frame({ dt, scene }) === true;
+    return options.frame({ dt, scene, ...(pose ? { pose } : {}), ...extra }) === true;
   };
 
   const schedule = () => {
@@ -72,7 +87,9 @@ export function createFrameLoop(options: FrameLoopOptions): FrameLoop {
     const t = now();
     // after idle the clock has jumped: an animation that starts now steps one ordinary frame, not 0.1 s
     const dt = last === null ? 1 / 60 : Math.min(0.1, Math.max(0, (t - last) / 1000));
-    const again = draw(dt);
+    const gap = prevFrame === null ? undefined : t - prevFrame;
+    prevFrame = t;
+    const again = draw(dt, gap !== undefined && gap < 100 ? { interval: gap } : {});
     if (again) {
       last = t;
       schedule();
@@ -82,10 +99,11 @@ export function createFrameLoop(options: FrameLoopOptions): FrameLoop {
   const loop: FrameLoop = {
     invalidate: (what = "scene") => {
       if (what === "scene") sceneDirty = true;
+      else if (what === "pose") poseDirty = true;
       schedule();
     },
     flush: (dt = 1 / 30) => {
-      if (!disposed) draw(dt);
+      if (!disposed) draw(dt, { flush: true });
     },
     paused: false,
     get frames() {

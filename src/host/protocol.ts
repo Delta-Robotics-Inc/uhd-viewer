@@ -3,7 +3,10 @@
  * over `postMessage`, and which origins a frame's parent may have. Nothing
  * here names a host.
  */
-import type { ViewerEvent, ViewerHostMessage } from "../api";
+import type { ViewState } from "../cad/state/schema";
+import type { ViewerEvent, ViewerHostMessage, ViewerSnapshotMessage } from "../api";
+import { BRIDGE_REQUEST, parseBridgeRequest } from "../cad/state/bridge";
+import { parseViewerStateFile } from "../cad/state/serialize";
 
 /** Every protocol message's type starts with this. */
 export const PREFIX = "uhd-viewer:";
@@ -33,6 +36,30 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
     }
     case "uhd-viewer:setView":
       return m.view === "diagram" || m.view === "3d" ? { type: m.type, view: m.view } : undefined;
+    // the 3D view's state (PB-1178): its values are checked when the store applies them
+    case "uhd-viewer:setViewState":
+      return m.state && typeof m.state === "object" && !Array.isArray(m.state) ? { type: m.type, state: m.state as Partial<ViewState> } : undefined;
+    case "uhd-viewer:restoreViewState": {
+      const file = parseViewerStateFile(m.file);
+      return file ? { type: m.type, file } : undefined;
+    }
+    case BRIDGE_REQUEST:
+      return parseBridgeRequest(m);
+    // the assembly sequence player (W2-C, PB-1183): the player checks the command itself
+    case "uhd-viewer:sequence": {
+      const c = m.command as Record<string, unknown> | undefined;
+      return c && typeof c === "object" && !Array.isArray(c) && typeof c.action === "string" ? { type: m.type, command: c as { action: string } } : undefined;
+    }
+    // the quality curve's settings (PB-1176): numbers and switches only
+    case "uhd-viewer:quality": {
+      const c = m.config as Record<string, unknown> | undefined;
+      if (!c || typeof c !== "object" || Array.isArray(c)) return undefined;
+      const ok = Object.values(c).every((v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)));
+      return ok ? { type: m.type, config: c } : undefined;
+    }
+    // the host's last snapshot of the tab (PB-1180): an image to paint and the camera it was drawn with
+    case "uhd-viewer:snapshot":
+      return parseSnapshotMessage(m);
     default:
       return undefined;
   }
@@ -73,7 +100,7 @@ export function parseTelemetryMessage(data: unknown): TelemetryMessage | undefin
 
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
-  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect"].includes((data as { type?: string }).type ?? "");
+  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState"].includes((data as { type?: string }).type ?? "");
 
 /**
  * `origin` is one of `allowed`: an exact origin, `scheme://*` (any origin
@@ -95,3 +122,16 @@ export const originList = (value: string | null | undefined): string[] =>
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+/** Image URLs a snapshot may name: the host's server, a data or blob URL, a webview resource, or a relative path. */
+const SNAPSHOT_URL = /^(https?:|data:image\/png;base64,|blob:|vscode-webview-resource:|vscode-resource:|\.\/|\/(?!\/))/i;
+
+/** A `uhd-viewer:snapshot` message (PB-1180), checked; undefined for anything else. */
+export function parseSnapshotMessage(m: Record<string, unknown>): ViewerSnapshotMessage | undefined {
+  if (m.schema !== "protoboard.snapshot/v0" || typeof m.imageUrl !== "string" || typeof m.level !== "string" || typeof m.view !== "string") return undefined;
+  if (!SNAPSHOT_URL.test(m.imageUrl)) return undefined;
+  const cam = m.camera as Record<string, unknown> | undefined;
+  const vec = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
+  if (cam !== undefined && !(cam && vec(cam.position) && vec(cam.target) && vec(cam.up))) return undefined;
+  return { ...(m as object), type: "uhd-viewer:snapshot" } as ViewerSnapshotMessage;
+}

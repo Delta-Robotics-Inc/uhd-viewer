@@ -632,6 +632,7 @@ export function Scene3D({ inspector, scope, emptyHint }: Scene3DProps) {
       inspector={inspector ?? Boolean(c.panel)}
       scope={shown}
       emptyHint={emptyHint}
+      onOpenModule={c.hostActions.openModule}
     />
   );
 }

@@ -4,7 +4,8 @@
  * rays across the axis say whether one part surrounds another.
  */
 import * as THREE from "three";
-import { cellCentre, exitFrom, type ExitLine, type HeightGrid, type StackPart } from "./explode";
+import { cellCentre, exitFrom, planStack, type ExitLine, type HeightGrid, type StackPart } from "./explode";
+import { bvhOf } from "./render/pick";
 
 /** A sampled part, with the meshes it was sampled from (for the surround test). */
 export interface SampledPart extends StackPart {
@@ -40,20 +41,39 @@ function sampler(): THREE.Raycaster {
   return ray;
 }
 
-/** Cast against meshes from both sides of every face (a mesh's back faces are surfaces too). */
-function cast(ray: THREE.Raycaster, meshes: THREE.Mesh[]): THREE.Intersection | undefined {
-  const sides = meshes.map((m) => {
-    const mat = m.material as THREE.Material | THREE.Material[];
-    const list = Array.isArray(mat) ? mat : [mat];
-    const before = list.map((x) => x.side);
-    for (const x of list) x.side = THREE.DoubleSide;
-    return () => list.forEach((x, i) => (x.side = before[i]));
-  });
-  try {
-    return ray.intersectObjects(meshes, false)[0];
-  } finally {
-    for (const restore of sides) restore();
+const _inv = new THREE.Matrix4();
+const _local = new THREE.Ray();
+const _im = new THREE.Matrix4();
+const _world = new THREE.Matrix4();
+const _p = new THREE.Vector3();
+
+/**
+ * The nearest hit of the ray on the meshes, from both sides of every face (a mesh's back faces are surfaces too),
+ * within `ray.far`. Ray against each geometry's BVH (three-mesh-bvh, the picking BVH of ./render/pick.ts, built
+ * once per geometry and shared), so sampling a heavy board is milliseconds, not seconds; instanced meshes test
+ * each instance.
+ */
+function cast(ray: THREE.Raycaster, meshes: THREE.Mesh[]): { distance: number } | undefined {
+  let best: number | undefined;
+  const test = (mesh: THREE.Mesh, world: THREE.Matrix4) => {
+    _inv.copy(world).invert();
+    _local.copy(ray.ray).applyMatrix4(_inv);
+    const hit = bvhOf(mesh.geometry).raycastFirst(_local, THREE.DoubleSide);
+    if (!hit) return;
+    const d = _p.copy(hit.point).applyMatrix4(world).distanceTo(ray.ray.origin);
+    if (d >= ray.near && d <= ray.far && (best === undefined || d < best)) best = d;
+  };
+  for (const mesh of meshes) {
+    if (!mesh.geometry?.getAttribute("position")) continue;
+    const inst = mesh as THREE.InstancedMesh;
+    if (inst.isInstancedMesh) {
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, _im);
+        test(mesh, _world.multiplyMatrices(mesh.matrixWorld, _im));
+      }
+    } else test(mesh, mesh.matrixWorld);
   }
+  return best === undefined ? undefined : { distance: best };
 }
 
 /** The part's top and bottom over a grid on its outline (world space, the assembled pose). */
@@ -138,4 +158,20 @@ export function exitByRays(holder: SampledPart, part: SampledPart, axis: THREE.V
     lines.push({ partTop: g.top[k], partBottom: g.bottom[k], above: holderTop > g.top[k] + eps, below: holderBottom < g.bottom[k] - eps, holderTop, holderBottom });
   }
   return exitFrom(lines, eps);
+}
+
+/**
+ * The stack plan over sampled elements (moved here from CadView's `planStacks`, PB-1183): each element's rise
+ * along `axis` when fully exploded, by key. The scene must be at the assembled pose with world matrices current.
+ * Used only for what no mate places (display-hint parts, a bare multi-body GLB, named bodies along up); mated
+ * parts follow the assembly sequence.
+ */
+export function planStackRises(elements: readonly { key: string; objects: THREE.Object3D[]; skip: Set<THREE.Object3D> }[], axis: THREE.Vector3, gap: number): Map<string, number> {
+  const parts = elements.map((e) => sampleStackPart(e.key, e.objects, e.skip, axis)).filter((p): p is SampledPart => Boolean(p));
+  const byKey = new Map(parts.map((p) => [p.key, p]));
+  return planStack(parts, {
+    gap,
+    surrounds: (holder, part) => surrounded(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+    exit: (holder, part) => exitByRays(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+  });
 }
