@@ -265,6 +265,12 @@ export class LabelLayer {
     return fading || easing;
   }
 
+  /** The cards drawn now, with their page rectangles (W3-D's critic reads them through `__cad.labels()`). */
+  boxes(): { id: string; rect: DOMRect }[] {
+    if (this.opacity < 0.01) return [];
+    return [...this.cards].filter(([, c]) => c.el.style.display !== "none").map(([id, c]) => ({ id, rect: c.el.getBoundingClientRect() }));
+  }
+
   dispose() {
     this.root.remove();
   }

@@ -71,6 +71,10 @@ export class SequencePlayer {
   private extraJoints: ResolvedJoint[] = [];
   /** Playback speed multiplier. */
   speed = 1;
+  private stepListeners = new Set<(step: string | null, t: number) => void>();
+  private lastStep: string | null | undefined = undefined;
+  /** The step a goto asked for, while t stays where the goto put it (a step boundary belongs to two windows). */
+  private held: { step: string; t: number } | undefined;
 
   constructor(public resolved: ResolvedSequence) {}
 
@@ -99,6 +103,7 @@ export class SequencePlayer {
       this.mode = undefined;
     }
     for (const [id, v] of Object.entries(s.joints ?? {})) this.driveJoint(id, v);
+    this.notifyStep();
     return ok;
   }
 
@@ -108,6 +113,8 @@ export class SequencePlayer {
     this.t = this.target = t;
     this.mode = undefined;
     this.looping = false;
+    this.held = { step, t };
+    this.notifyStep();
     return true;
   }
 
@@ -195,6 +202,7 @@ export class SequencePlayer {
         } else this.mode = undefined;
       }
     }
+    this.notifyStep();
     return moving;
   }
 
@@ -225,8 +233,47 @@ export class SequencePlayer {
     };
   }
 
+  /**
+   * The step id the view state's `explode.step` holds (the gate's one type: a string step id, or null): the
+   * isolated step, else the step in progress (or just finished) at t.
+   */
+  currentStep(): string | null {
+    if (this.isolated) return this.isolated;
+    if (this.held && this.held.t === this.t) return this.held.step;
+    return stepAt(this.resolved, this.t)?.id ?? null;
+  }
+
+  /**
+   * Called when `currentStep()` changes (after goto, set, isolate, a play's ticks, any command), so the view can
+   * write the step back into the view state (`{ op: "explode", t, step }`; the gate's item, wired by CadView's
+   * owner). Returns the unsubscribe function.
+   */
+  onStepChange(cb: (step: string | null, t: number) => void): () => void {
+    this.stepListeners.add(cb);
+    return () => void this.stepListeners.delete(cb);
+  }
+
+  private notifyStep() {
+    const s = this.currentStep();
+    if (s === this.lastStep) return;
+    this.lastStep = s;
+    for (const cb of this.stepListeners) {
+      try {
+        cb(s, this.t);
+      } catch (e) {
+        console.error("sequence step listener", e);
+      }
+    }
+  }
+
   /** Carry out a host or agent command; `error` says why it could not. */
   run(cmd: SequenceCommand): { ok: boolean; error?: string } {
+    const r = this.runCommand(cmd);
+    this.notifyStep();
+    return r;
+  }
+
+  private runCommand(cmd: SequenceCommand): { ok: boolean; error?: string } {
     const unknownStep = (id: string) => ({ ok: false, error: `no step "${id}" (steps: ${this.resolved.steps.slice(0, 8).map((s) => s.id).join(", ")}${this.resolved.steps.length > 8 ? ", …" : ""})` });
     switch (cmd.action) {
       case "goto":

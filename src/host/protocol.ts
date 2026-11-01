@@ -50,13 +50,14 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
       const c = m.command as Record<string, unknown> | undefined;
       return c && typeof c === "object" && !Array.isArray(c) && typeof c.action === "string" ? { type: m.type, command: c as { action: string } } : undefined;
     }
-    // the quality curve's settings (PB-1176): numbers and switches only
+    // the quality curve's settings (PB-1176): only the known keys, each in its range (wave 2 gate item 7)
     case "uhd-viewer:quality": {
-      const c = m.config as Record<string, unknown> | undefined;
-      if (!c || typeof c !== "object" || Array.isArray(c)) return undefined;
-      const ok = Object.values(c).every((v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)));
-      return ok ? { type: m.type, config: c } : undefined;
+      const config = parseQualityConfig(m.config);
+      return config ? { type: m.type, config } : undefined;
     }
+    // the person takes everything back from the agents (PB-1196, D9)
+    case "uhd-viewer:takeOver":
+      return { type: m.type };
     // the host's last snapshot of the tab (PB-1180): an image to paint and the camera it was drawn with
     case "uhd-viewer:snapshot":
       return parseSnapshotMessage(m);
@@ -100,7 +101,7 @@ export function parseTelemetryMessage(data: unknown): TelemetryMessage | undefin
 
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
-  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState"].includes((data as { type?: string }).type ?? "");
+  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState", "uhd-viewer:presence"].includes((data as { type?: string }).type ?? "");
 
 /**
  * `origin` is one of `allowed`: an exact origin, `scheme://*` (any origin
@@ -123,13 +124,69 @@ export const originList = (value: string | null | undefined): string[] =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-/** Image URLs a snapshot may name: the host's server, a data or blob URL, a webview resource, or a relative path. */
-const SNAPSHOT_URL = /^(https?:|data:image\/png;base64,|blob:|vscode-webview-resource:|vscode-resource:|\.\/|\/(?!\/))/i;
+/**
+ * The quality curve's settings a host may send (PB-1176; wave 2 gate item 7), each in its range (DEFAULT ranges):
+ * `enabled` true or false; `tauMs` (recovery time constant) 10 to 5000 ms; `budgetMs` (frame budget) 1 to 100 ms.
+ * Anything else, or a value out of range, refuses the message.
+ */
+export const QUALITY_RANGES = { tauMs: [10, 5000], budgetMs: [1, 100] } as const;
+
+export function parseQualityConfig(c: unknown): Record<string, unknown> | undefined {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(c as Record<string, unknown>)) {
+    if (k === "enabled") {
+      if (typeof v !== "boolean") return undefined;
+      out.enabled = v;
+    } else if (k === "tauMs" || k === "budgetMs") {
+      const [lo, hi] = QUALITY_RANGES[k];
+      if (typeof v !== "number" || !Number.isFinite(v) || v < lo || v > hi) return undefined;
+      out[k] = v;
+    } else return undefined;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** DEFAULT: a snapshot sent inline as a data URL is at most this many characters (about 6 MB of PNG). */
+export const MAX_SNAPSHOT_DATA_URL = 8 * 1024 * 1024;
+
+/** Hosts of VS Code webview resources (`asWebviewUri`): `https://file+.vscode-resource.vscode-cdn.net/...`. */
+const WEBVIEW_HOST = /(^|\.)vscode-cdn\.net$|(^|\.)vscode-resource\.vscode-cdn\.net$/i;
+
+/**
+ * Image URLs a snapshot may name (wave 2 gate): a path on the page's own origin (relative, `/x`, or an absolute
+ * URL whose origin is the page's), a `blob:` of the page, a VS Code webview resource (`vscode-webview-resource:`,
+ * `vscode-resource:`, `https://*.vscode-cdn.net`), or a PNG data URL of at most `MAX_SNAPSHOT_DATA_URL` characters.
+ * Never another site (the view would fetch it), never `//host` (protocol-relative).
+ */
+export function snapshotUrlAllowed(url: string, pageOrigin: string | undefined = typeof location === "undefined" ? undefined : location.origin): boolean {
+  // browsers drop tabs and newlines (and trim control characters) before parsing a URL: `/<tab>/host` is `//host`
+  // (gate 3). Nothing we serve has one, so any control character or space refuses the URL.
+  if (/[\u0000- \u007f]/.test(url)) return false;
+  if (/^data:/i.test(url)) return /^data:image\/png;base64,[A-Za-z0-9+/=]*$/.test(url) && url.length <= MAX_SNAPSHOT_DATA_URL;
+  // a path on the page's origin; never `//host` nor `/\host` (browsers read a backslash as a slash: gate 3)
+  if (/^(\.\/|\/(?![/\\]))/.test(url)) return !url.includes("\\");
+  if (/^(vscode-webview-resource|vscode-resource):/i.test(url)) return true;
+  if (/^blob:/i.test(url)) {
+    try {
+      return !!pageOrigin && new URL(url.slice(5)).origin === pageOrigin;
+    } catch {
+      return false;
+    }
+  }
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    const u = new URL(url);
+    return (!!pageOrigin && pageOrigin !== "null" && u.origin === pageOrigin) || (u.protocol === "https:" && WEBVIEW_HOST.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
 
 /** A `uhd-viewer:snapshot` message (PB-1180), checked; undefined for anything else. */
-export function parseSnapshotMessage(m: Record<string, unknown>): ViewerSnapshotMessage | undefined {
+export function parseSnapshotMessage(m: Record<string, unknown>, pageOrigin?: string): ViewerSnapshotMessage | undefined {
   if (m.schema !== "protoboard.snapshot/v0" || typeof m.imageUrl !== "string" || typeof m.level !== "string" || typeof m.view !== "string") return undefined;
-  if (!SNAPSHOT_URL.test(m.imageUrl)) return undefined;
+  if (!snapshotUrlAllowed(m.imageUrl, pageOrigin ?? (typeof location === "undefined" ? undefined : location.origin))) return undefined;
   const cam = m.camera as Record<string, unknown> | undefined;
   const vec = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
   if (cam !== undefined && !(cam && vec(cam.position) && vec(cam.target) && vec(cam.up))) return undefined;

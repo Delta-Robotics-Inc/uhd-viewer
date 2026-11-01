@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { instancePathIn, isPlaceholder } from "./ids";
 import { shown } from "./pick";
+import { sectionsByCamera, type SectionsReport } from "../sections";
 
 export interface ObservedNode {
   /** Selection key: a body's key (instance path, `#artifact` for a second body of one module), a component's or a harness's instance path. */
@@ -30,6 +31,11 @@ export interface CadObservation {
   camera: { position: [number, number, number]; target: [number, number, number]; up: [number, number, number]; fov: number; distance: number };
   counts: { draws: number; triangles: number; frames: number; instances?: number; batches?: number; materials?: number };
   loading: LoadState;
+  /**
+   * Section planes in force (PB-1186): planes (world mm), scope, the live caps' last pass, and once the view has
+   * been quiet for a moment the exact cut per plane: per part, polylines in world mm (absent: no section).
+   */
+  sections?: SectionsReport;
 }
 
 export interface LoadState {
@@ -65,6 +71,8 @@ export interface ObserveInput {
   loading: LoadState;
   /** Include the parts drawn inside bodies (a board's components) that the GLB names by instance path. Default true. */
   components?: boolean;
+  /** The scene's sections report; absent: the one the scene registered for `camera` (scene.ts). */
+  sections?: SectionsReport;
 }
 
 export function observeScene(input: ObserveInput): CadObservation {
@@ -98,6 +106,7 @@ export function observeScene(input: ObserveInput): CadObservation {
     nodes.push({ id: key, instancePath: key, kind: "harness", bounds: boundsOf(obj), visible: shown(obj), placeholder: false });
   }
   const c = input.camera;
+  const sections = input.sections ?? sectionsByCamera.get(c)?.();
   return {
     seq: input.seq,
     nodes,
@@ -105,5 +114,6 @@ export function observeScene(input: ObserveInput): CadObservation {
     camera: { position: v3(c.position), target: v3(input.target), up: v3(c.up), fov: c.fov, distance: round(c.position.distanceTo(input.target)) },
     counts: input.counts,
     loading: { ...input.loading },
+    ...(sections ? { sections } : {}),
   };
 }

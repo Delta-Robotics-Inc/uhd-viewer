@@ -110,9 +110,17 @@ export function pickBundleUrl(search: string, injected?: string | null, fallback
 /**
  * URL prefix for an artifact base (`UhdBundle.artifactBases`: an absolute
  * path or a URL prefix), or undefined when it cannot be fetched over HTTP.
- * Absolute filesystem paths only resolve in development, through /@fs.
+ * Absolute filesystem paths only resolve in development, through /@fs. A
+ * Windows path (`C:\...` or `C:/...`, as a stack bundle writes its bases on
+ * Windows) is one too: `/@fs/C:/...` with forward slashes (gate 3, W3-D's
+ * bullet; before, `npm run dev` asked the browser for `C:\...` and no model
+ * loaded).
  */
 export function baseToUrl(base: string, options: Pick<SourceOptions, "fsRoute"> = {}): string | undefined {
+  if (/^[A-Za-z]:[\\/]/.test(base)) {
+    if (import.meta.env.DEV && options.fsRoute) return `/@fs/${base.replace(/\\/g, "/")}`.replace(/\/$/, "");
+    return undefined;
+  }
   if (!base.startsWith("/")) return base.replace(/\/$/, "");
   // compiled out of production builds
   if (import.meta.env.DEV && options.fsRoute) return (base.startsWith("/@fs/") ? base : `/@fs${base}`).replace(/\/$/, "");

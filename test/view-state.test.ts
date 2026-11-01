@@ -72,7 +72,7 @@ describe("view state: schema and verbs", () => {
     expect(s.schema).toBe(VIEW_STATE_SCHEMA);
     expect(s.scope).toBe("stack");
     expect(s.camera).toBeNull();
-    expect([...LIVE_KEYS].sort()).toEqual(["camera", "direction", "explode", "highlight", "isolation", "sections", "selection", "visibility"]);
+    expect([...LIVE_KEYS].sort()).toEqual(["camera", "direction", "explode", "highlight", "isolation", "placements", "sections", "selection", "theme", "visibility"]); // placements: W3-D, PB-1187; theme: gate 3 (W3-C)
     expect([...PRESENTATION_KEYS]).toEqual(["namedViews", "annotations"]);
   });
 
@@ -152,7 +152,8 @@ describe("view state: the store, its op log and preconditions", () => {
   });
 
   it("applies a batch, answers a resent batchId from memory, and refuses a stale expectSeq with the missed range", () => {
-    const store = createViewStore();
+    // dragMs 0: the person's camera gesture below is over at once (otherwise the agent's batch answers busy, PB-1179)
+    const store = createViewStore({}, { dragMs: 0 });
     const r = store.applyBatch({ batchId: "b1", label: "select the battery pack", ops: [{ op: "select", selection: { body: "battery" } }], expectSeq: 0 }, AGENT);
     expect(r.status).toBe("applied");
     expect(r.seq).toBe(1);
@@ -422,7 +423,8 @@ describe("PB-1137 and the placeholder count", () => {
 
 describe("wave 2 handoffs: snapshot, sequence, quality and document mode messages", () => {
   it("accepts a host snapshot with a safe image URL and a camera, and refuses others", () => {
-    const ok = { type: "uhd-viewer:snapshot", schema: "protoboard.snapshot/v0", level: "", view: "3d", imageUrl: "http://127.0.0.1:5180/__protoboard/snapshot.png?level=&view=3d", camera: cam() };
+    // a path on the page's own origin (wave 3: absolute URLs only on the page's origin or a webview resource host; collab.test.ts)
+    const ok = { type: "uhd-viewer:snapshot", schema: "protoboard.snapshot/v0", level: "", view: "3d", imageUrl: "/__protoboard/snapshot.png?level=&view=3d", camera: cam() };
     expect(parseHostMessage(ok)).toMatchObject({ type: "uhd-viewer:snapshot", level: "", view: "3d" });
     expect(parseHostMessage({ ...ok, imageUrl: "javascript:alert(1)" })).toBeUndefined();
     expect(parseHostMessage({ ...ok, schema: "x" })).toBeUndefined();

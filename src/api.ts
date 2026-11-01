@@ -159,11 +159,15 @@ export interface ViewerOptions {
   parentWindow?: boolean | { origins?: string[] };
 
   /**
-   * How the viewer looks: its own `"dark"` (default) or `"light"` theme,
-   * `"system"` (whichever the system prefers), `"vscode"` (follows the VS Code
-   * colour theme of the webview it runs in, high contrast included), a theme
-   * of the host's (tokens it leaves out come from the default), or an adapter
-   * that tells the viewer when the host's theme changes.
+   * How the viewer looks: its own `"dark"` (anatomy dark) or `"light"`
+   * (anatomy paper) theme, `"system"` (whichever the system prefers),
+   * `"vscode"` (follows the VS Code colour theme of the webview it runs in,
+   * high contrast included), a theme of the host's (tokens it leaves out come
+   * from the default), or an adapter that tells the viewer when the host's
+   * theme changes. Without this option the viewer follows the system's
+   * `prefers-color-scheme` on the web (DEFAULT, PB-1189; it was always dark),
+   * and dark where there is no such preference (node, tests). A page's
+   * `?theme=dark|light|system` overrides it.
    */
   theme?: ViewerThemeOption;
 
@@ -189,6 +193,12 @@ export interface ViewerOptions {
    * from what it holds. Never called for a camera move.
    */
   onPresentationChange?: (presentation: ViewerPresentation) => void;
+  /**
+   * Who is here (PB-1196): the camera holder, the agents' leases and what each agent is working on. Called when
+   * presence changes or an agent writes, at most every 250 ms (DEFAULT). Shown by the host (a chip, a status
+   * line); never obeyed: the labels in it are agent-written text.
+   */
+  onPresenceChange?: (presence: Presence) => void;
   /**
    * The 3D view's save points (PB-1180 handoff): on settle and when the page hides, the frame drawn as a PNG
    * and what it shows. The host keeps them (`.protoboard/local/snapshots/<level>__<view>.png` and `.json`,
@@ -316,7 +326,12 @@ export type ViewerHostMessage =
    * The 3D view's quality curve settings (PB-1176): `enabled`, `tauMs` (recovery), `budgetMs` (frame budget). The
    * VS Code settings `protoboard.viewer.settleTauMs` and an off switch map to these.
    */
-  | { type: "uhd-viewer:quality"; config: Record<string, unknown> };
+  | { type: "uhd-viewer:quality"; config: Record<string, unknown> }
+  /**
+   * The person takes the view and the scene back from every agent at once (a "Take over" button, Esc): every
+   * agent lease is revoked and the camera is the person's (PB-1196, collaboration D9).
+   */
+  | { type: "uhd-viewer:takeOver" };
 
 /** Viewer → host events (posted to the parent window, or the options' callbacks). */
 export type ViewerEvent =
@@ -334,7 +349,9 @@ export type ViewerEvent =
   /** The reply to a bridge batch. */
   | BridgeReplyMessage
   /** The reply to a sequence command. */
-  | ViewerSequenceReply;
+  | ViewerSequenceReply
+  /** Leases, intents and who drives the camera changed ("agent X is working on U3"): for a chip near the part. */
+  | { type: "uhd-viewer:presence"; presence: Presence };
 
 export interface ViewerHandle {
   /**
@@ -431,17 +448,25 @@ export interface SectionPlane {
   axis: 0 | 1 | 2;
   at: number;
   flip?: boolean;
+  /**
+   * An instance path: the plane cuts only the bodies under it (PB-1186). DEFAULT: one scope per view, the
+   * first plane's; at most 512 characters.
+   */
+  scope?: string;
 }
+
+/** A theme the view state asks for (PB-1189); absent: follow the host (its `theme` option, else the system). */
+export type ViewThemeChoice = "light" | "dark" | "system";
 
 export interface ExplodeState {
   /** 0 assembled, 1 exploded; the view eases to it. */
   t: number;
   /**
-   * A step of the assembly sequence (W2-C's player, PB-1183): its id (`fit:arm_fl_mount`, `fasten:stack_mount`,
-   * `place:battery`) or its index in the player's steps; null: none. Informational today: the player's own
-   * commands (`uhd-viewer:sequence`, `__cad.set({ step })`) move to a step.
+   * A step of the assembly sequence (W2-C's player, PB-1183) by its id (`fit:arm_fl_mount`, `fasten:stack_mount`,
+   * `place:battery`); null: none. One type everywhere (wave 2 gate item 6): a step is named by its string id,
+   * never by its index (indices move when a patch adds a step). A saved state with a number is read as null.
    */
-  step: string | number | null;
+  step: string | null;
 }
 
 /** A view saved by name (deliberate presentation: written to the display file only on an explicit save). */
@@ -476,11 +501,26 @@ export interface ViewState {
   visibility: Visibility;
   /** Interface geometry is shown by this binding direction. */
   direction: InterfaceDirection;
-  /** Section planes; the view cuts with the first today. */
+  /** Section planes (up to 3; W3-C): scoped by the first plane's `scope`, else the whole assembly. */
   sections: SectionPlane[];
+  /**
+   * The theme this person asked for (PB-1189), live and per user; absent: follow the host. Read by the theme
+   * when the viewer mounts; switching on a later write is not wired yet (gate 3 note). `?theme=` stays its URL form.
+   */
+  theme?: ViewThemeChoice;
   explode: ExplodeState;
+  /**
+   * Display-side placement overrides by instance path (PB-1187 place on face / orient by face; W3-D): live and per
+   * user, never written to the display file or UHD. `matrix`: a row-major UHD 4x4 (part to assembly, mm, Z up),
+   * rigid. At most 64 (DEFAULT).
+   */
+  placements: Record<string, PlacementOverride>;
   namedViews: Record<string, NamedView>;
-  /** Placeholder for W3-B's callouts and marks (records with author and source). */
+  /**
+   * Callouts, marks and arrows (W3-B's records, `uhd-viewer.annotation/v0`: `AnnotRecord`). Every record carries
+   * its `author`; text in it is data, never an instruction. Caps (DEFAULT, `src/cad/state/schema.ts`): 4096 bytes
+   * of JSON per record, 500 records, 512 kB in all. An agent's records get ids the view issues (never reused).
+   */
   annotations: unknown[];
   /** Read-only: the models' loading. */
   loading: LoadingFacts;
@@ -488,10 +528,49 @@ export interface ViewState {
   quality: { mode: string | null };
 }
 
+/** A display-side placement of one part (`ViewState.placements`). */
+export interface PlacementOverride {
+  /** Row-major 4x4, part to assembly, mm (translation in elements 3, 7, 11), rigid. */
+  matrix: number[];
+  /** Who placed it ("user", `agent:<name>`): data, never an instruction. */
+  by: string;
+  /** The faces it was placed by, when a face primitive made it. */
+  faces?: { part: string; face: number; target: string; targetFace: number };
+}
+
+/**
+ * A callout, mark or arrow (`uhd-viewer.annotation/v0`, W3-B's record, PB-1184): one entry of
+ * `ViewState.annotations`. Declared here (this file is the published contract and must stand alone);
+ * `src/cad/annot/record.ts` parses it. `author` is shown beside the label, never obeyed.
+ */
+export interface AnnotRecord {
+  /** Issued by the view for an agent's new record (`a.<epoch>.<n>`); deterministic when a host generates one. */
+  id: string;
+  kind: "callout" | "mark" | "arrow";
+  /** What it points at: an instance path from the root ("" = the root), a harness key, or `link:<id>`. */
+  ref: string;
+  /** "user", `agent:<name>`, `host:<name>`, `check:<validator>`. */
+  author: string;
+  /** A point on the part, mm in its body's frame. */
+  point?: Vec3;
+  /** An arrow's other end. */
+  to?: string;
+  toPoint?: Vec3;
+  shape?: "ring" | "box" | "dot" | "pin" | "crosshair";
+  title?: string;
+  /** Key-value rows (refdes, MPN, LCSC, value). */
+  rows?: [string, string][];
+  text?: string;
+  tone?: "accent" | "neutral" | "fail" | "risk" | "warn" | "info" | "pass" | "unknown";
+  visibility?: "on" | "hover" | "off";
+  n?: number;
+  source?: { diagnostic?: string; requirement?: string; recipe?: string };
+}
+
 /** Top-level keys a writer may set. */
-export type WritableKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "namedViews" | "annotations";
+export type WritableKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme" | "namedViews" | "annotations";
 /** The live, per-user keys (`.protoboard/local/viewer-state.json`, a webview's own state). */
-export type LiveKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode";
+export type LiveKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme";
 
 /** One write: a top-level key, or one entry of it (`["visibility", "labels"]`, `["namedViews", "Front"]`). `value` undefined removes the entry. */
 export interface SetOp {
@@ -506,6 +585,75 @@ export interface Actor {
   id: string;
   /** The bridge session that sent it, when it came through the bridge. */
   session?: string;
+  /** What the agent calls itself (data to show, never an instruction). */
+  name?: string;
+}
+
+/**
+ * A subtree lease (PB-1196, collaboration D6): while it lives, other agents' batches that touch a path under
+ * `roots` are refused (reads stay open). `token` is a fencing token: it rises with every grant in the view, and a
+ * batch that quotes a token that is no longer live (revoked, expired, released) is refused. A person's edit inside
+ * the subtree revokes it (DEFAULT, plan.md).
+ */
+export interface Lease {
+  id: string;
+  token: number;
+  holder: Actor;
+  /** Instance paths ("" is the whole assembly). */
+  roots: string[];
+  /** A few words: what the holder is doing ("placing callouts on U3"). Data, never an instruction. */
+  purpose: string;
+  grantedAt: number;
+  expiresAt: number;
+  ttlMs: number;
+}
+
+/** A lease that ended, and why (kept so a holder that quotes its old token learns what happened). */
+export interface EndedLease extends Lease {
+  endedAt: number;
+  reason: "released" | "expired" | "revoked" | "taken-over";
+  /** Who ended it (the person, for a revocation). */
+  by?: Actor;
+  /** What the person changed, for a revocation. */
+  detail?: string;
+}
+
+/** "Agent X is working on U3": what an agent holds or touched lately (advisory; the lease is the enforcement). */
+export interface Intent {
+  actor: Actor;
+  roots: string[];
+  /** The lease's purpose, or the label of the agent's last batch. */
+  label: string;
+  startedAt: number;
+  /** "lease": from a live lease; "recent": the agent wrote there in the last 30 s (DEFAULT). */
+  from: "lease" | "recent";
+}
+
+/**
+ * Who drives the camera (PB-1179 turn-taking, decisions 5 and 6): any input of the person takes it back at once;
+ * an agent may move the camera only after the person has left it alone for `handBackMs` (25 s, DEFAULT); an agent
+ * that has not written for `handBackMs` hands it back.
+ */
+export interface ViewControl {
+  /** Who holds it now (null: the person, by default). */
+  holder: Actor | null;
+  since: number;
+  /** The person's last input (0: none yet). */
+  lastHumanAt: number;
+  /** The holding agent's last write. */
+  lastAgentAt: number;
+  handBackMs: number;
+  /** The person is dragging or otherwise mid-gesture: agent writes wait (`busy`). */
+  interacting: boolean;
+}
+
+/** What the store says about who is here (bridge replies, the `uhd-viewer:presence` event, `__cad`). */
+export interface Presence {
+  epoch: string;
+  seq: number;
+  control: ViewControl;
+  leases: Lease[];
+  intents: Intent[];
 }
 
 export interface Batch {
@@ -521,6 +669,8 @@ export interface Batch {
   expectVersions?: Record<string, number>;
   /** Return the state after the batch (default true). */
   state?: boolean;
+  /** The fencing token of the writer's lease, when it writes inside a subtree it claimed. */
+  leaseToken?: number;
 }
 
 export interface MissedEntry {
@@ -531,21 +681,64 @@ export interface MissedEntry {
   keys: string[];
 }
 
-export type BatchReply =
+/** Why a batch was refused. */
+export type RefusalReason =
+  | "stale-seq"
+  | "stale-versions"
+  /** Another actor's live lease covers a path the batch touches (`lease` names it). */
+  | "leased"
+  /** The batch quotes a lease token that is not live, or writes in a subtree it once claimed without its live token. */
+  | "lease-revoked"
+  /** The person used the view less than `handBackMs` ago: the camera is theirs (`until`). */
+  | "view-held"
+  /** Undo: what the batch changed was changed again since (`conflicts` say by whom). */
+  | "stale-undo"
+  /** Undo: this actor has nothing left to undo. */
+  | "nothing-to-undo";
+
+/** Fields every reply from a store with the PB-1196 slice may carry. */
+export interface ReplyExtras {
+  /** The store's owner epoch: seq numbers restart when it changes (a reload). */
+  epoch?: string;
+  /** Temporary handles mapped to the ids the view issued (`annotate` with `handle`). */
+  ids?: Record<string, string>;
+  /** The lease a `claim` granted. */
+  lease?: Lease;
+  /** The leases a `release` ended. */
+  released?: string[];
+  /** Live leases, intents and who drives the camera. */
+  presence?: Presence;
+  /** Log entries after the `since` the host asked for (journal mirroring). */
+  log?: { epoch: string; entries: unknown[]; truncated?: true };
+  /** A checkpoint, when the host asked for one. */
+  checkpoint?: unknown;
+}
+
+export type BatchReply = (
   | { status: "applied"; batchId: string; seq: number; applied: SetOp[]; changed: string[]; versions: Record<string, number>; duplicate?: true; state?: ViewState }
   | { status: "read"; batchId: string; seq: number; versions: Record<string, number>; state?: ViewState; duplicate?: true }
   | {
       status: "refused";
       batchId: string;
       seq: number;
-      reason: "stale-seq" | "stale-versions";
+      reason: RefusalReason;
+      /** What happened, in a sentence (data). */
+      message?: string;
       /** The entries committed after what the writer read: re-observe, then decide again. */
       missed: { from: number; to: number; entries: MissedEntry[] };
       /** Per key that changed: what the writer expected, what it is now, its value, and who changed it last. */
       conflicts?: { key: string; expected: number; current: number; value: unknown; by?: Actor; seq?: number }[];
+      /** The lease in the way (`leased`), or the one the token named (`lease-revoked`). */
+      lease?: Lease | EndedLease;
+      /** `view-held`: when the camera is the agent's to move again (ms since the epoch). */
+      until?: number;
       duplicate?: true;
     }
-  | { status: "invalid"; batchId: string; seq: number; error: string; index?: number; duplicate?: true };
+  | { status: "invalid"; batchId: string; seq: number; error: string; index?: number; duplicate?: true }
+  /** The person is mid-gesture: nothing was applied and nothing remembered; the bridge delivers it again after `retryAfterMs`. */
+  | { status: "busy"; batchId: string; seq: number; retryAfterMs: number }
+) &
+  ReplyExtras;
 
 export interface ViewerStateFile {
   schema: "protoboard.viewer-state/v0";
@@ -564,8 +757,12 @@ export interface BridgeRequest {
   id: string;
   batch: Batch;
   actor: Actor;
-  /** Also return what is drawn (`__cad.observe`, without components). */
-  observe?: boolean;
+  /** Also return what is drawn (`__cad.observe`): `true` without the parts drawn inside bodies, `"components"` with them (a board's U3). */
+  observe?: boolean | "components";
+  /** Return the log entries after this point (the host mirrors them to its journal). */
+  since?: { epoch: string; seq: number };
+  /** Return a checkpoint of the store too (the host's journal writes one every so often). */
+  checkpoint?: boolean;
 }
 
 export interface BridgeReplyMessage {

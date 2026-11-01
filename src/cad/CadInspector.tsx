@@ -78,6 +78,7 @@ export function CadInspector({
   direction,
   findings,
   resolve,
+  callout,
 }: {
   model: CadModel;
   sel: CadSelection;
@@ -85,6 +86,11 @@ export function CadInspector({
   direction: Direction;
   findings: FindingAnchor[];
   resolve: LoadedSource["resolveArtifact"];
+  /**
+   * "Callout" (PB-1184): ring and label the selected part (refdes, MPN, LCSC from the model), as records in the
+   * view state written by the person; `on` when this part already has one (the button then removes it).
+   */
+  callout?: { on: boolean; toggle: () => void; what: string };
 }) {
   const body = model.bodies.find((b) => b.key === sel.body);
   // a board's nets are its conductors, drawn by its body and shown in the diagram: not interface geometry
@@ -106,6 +112,11 @@ export function CadInspector({
     <aside className="inspector cad-inspector" data-chrome="inspector">
       <div className="inspector-header">
         <span className="section-title">{body ? "MODULE" : harness ? "HARNESS" : mate || route ? "LINK" : "ASSEMBLY"}</span>
+        {callout && (
+          <button className="mini" aria-pressed={callout.on} title={callout.on ? `Remove the callout on ${callout.what}` : `Ring and label ${callout.what} (MPN, LCSC)`} onClick={callout.toggle}>
+            CALLOUT
+          </button>
+        )}
         {(body || mate || route || harness) && (
           <button className="mini" onClick={() => onSel({})}>
             ASSEMBLY

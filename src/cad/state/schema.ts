@@ -17,21 +17,22 @@
  *   view itself, refused when a writer names them.
  */
 
-import type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, Visibility, WritableKey } from "../../api";
+import type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, ViewThemeChoice, Visibility, WritableKey } from "../../api";
+import { parseRecord } from "../annot/record";
 
-export type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, Visibility, WritableKey };
+export type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, ViewThemeChoice, Visibility, WritableKey };
 
 export const VIEW_STATE_SCHEMA = "uhd-viewer.view-state/v1" satisfies ViewState["schema"];
 /** Bumped when a field changes meaning; `parseViewState` migrates older ones. */
 export const VIEW_STATE_VERSION = 1;
 
 /** Top-level keys a writer may set. */
-export const WRITABLE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "namedViews", "annotations"] as const satisfies readonly WritableKey[];
+export const WRITABLE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme", "namedViews", "annotations"] as const satisfies readonly WritableKey[];
 /** Top-level keys only the view sets. */
 export const READ_ONLY_KEYS = ["schema", "scope", "loading", "quality"] as const;
 
 /** The live, per-user part (`.protoboard/local/viewer-state.json`, the webview's own state). */
-export const LIVE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode"] as const satisfies readonly LiveKey[];
+export const LIVE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme"] as const satisfies readonly LiveKey[];
 /** The deliberate part (the display file, on an explicit save). */
 export const PRESENTATION_KEYS = ["namedViews", "annotations"] as const;
 
@@ -49,6 +50,7 @@ export function defaultViewState(scope = ""): ViewState {
     direction: "feature",
     sections: [],
     explode: { t: 0, step: null },
+    placements: {},
     namedViews: {},
     annotations: [],
     loading: { phase: "loading", total: 0, done: 0, failed: 0 },
@@ -64,10 +66,45 @@ const isVec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && 
 const isPath = (v: unknown): v is string => typeof v === "string" && v.length <= 512 && !/[\u0000-\u001f]/.test(v);
 const LABEL_KINDS: LabelKind[] = ["module", "harness", "interface", "finding"];
 const DIRECTIONS: InterfaceDirection[] = ["feature", "artifact", "procedural"];
-/** Lists of paths are capped: a batch stays small (collaboration D14). */
+/** Lists of paths are capped: a batch stays small (collaboration D14). DEFAULT. */
 export const MAX_PATHS = 2000;
+/** DEFAULT. */
 export const MAX_NAMED_VIEWS = 100;
+/** DEFAULT. */
 export const MAX_NAME = 80;
+/**
+ * Annotation caps (wave 2 gate; DEFAULT, the same as W3-B's renderer limits in `../annot/record.ts`): one record
+ * at most 4096 bytes of JSON, at most 500 records, and 512 kB for the whole list.
+ */
+export const MAX_ANNOTATION_BYTES = 4096;
+export const MAX_ANNOTATIONS = 500;
+export const MAX_ANNOTATIONS_BYTES = 512 * 1024;
+/** DEFAULT (W3-D's request, PB-1187): display-side placements one view keeps; a matrix is rigid within this. */
+export const MAX_PLACEMENTS = 64;
+export const RIGID_TOLERANCE = 1e-6;
+
+/** A placement override: a rigid row-major 4x4 (rotation orthonormal with det +1, last row 0 0 0 1), who placed it, the faces. */
+export function checkPlacement(v: unknown): string | undefined {
+  if (!isObj(v)) return "a placement must be an object { matrix, by, faces? }";
+  const m = v.matrix;
+  if (!Array.isArray(m) || m.length !== 16 || !m.every(finite)) return "placement.matrix must be 16 finite numbers (row-major)";
+  const r = (i: number, j: number) => m[i * 4 + j] as number;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++) {
+      let dot = 0;
+      for (let k = 0; k < 3; k++) dot += r(i, k) * r(j, k);
+      if (Math.abs(dot - (i === j ? 1 : 0)) > RIGID_TOLERANCE) return "placement.matrix must be rigid (an orthonormal rotation)";
+    }
+  const det = r(0, 0) * (r(1, 1) * r(2, 2) - r(1, 2) * r(2, 1)) - r(0, 1) * (r(1, 0) * r(2, 2) - r(1, 2) * r(2, 0)) + r(0, 2) * (r(1, 0) * r(2, 1) - r(1, 1) * r(2, 0));
+  if (Math.abs(det - 1) > RIGID_TOLERANCE) return "placement.matrix must not mirror (determinant +1)";
+  if (Math.abs(m[12] as number) > RIGID_TOLERANCE || Math.abs(m[13] as number) > RIGID_TOLERANCE || Math.abs(m[14] as number) > RIGID_TOLERANCE || Math.abs((m[15] as number) - 1) > RIGID_TOLERANCE) return "placement.matrix's last row must be 0 0 0 1";
+  if (typeof v.by !== "string" || !v.by || v.by.length > 120 || /[\u0000-\u001f]/.test(v.by)) return "placement.by must say who placed it (at most 120 characters)";
+  if (v.faces !== undefined) {
+    const f = v.faces;
+    if (!isObj(f) || !isPath(f.part) || !isPath(f.target) || !Number.isInteger(f.face) || !Number.isInteger(f.targetFace)) return "placement.faces must be { part, face, target, targetFace }";
+  }
+  return undefined;
+}
 
 export function checkCamera(v: unknown): string | undefined {
   if (v === null) return undefined;
@@ -102,6 +139,8 @@ export function checkSection(v: unknown): string | undefined {
   if (v.axis !== 0 && v.axis !== 1 && v.axis !== 2) return "section.axis must be 0, 1 or 2";
   if (!finite(v.at) || v.at < 0 || v.at > 1) return "section.at must be between 0 and 1";
   if (v.flip !== undefined && typeof v.flip !== "boolean") return "section.flip must be true or false";
+  // an instance path (W3-C, PB-1186): at most 512 characters, no control characters (NUL included)
+  if (v.scope !== undefined && !isPath(v.scope)) return "section.scope must be an instance path of at most 512 characters";
   return undefined;
 }
 
@@ -109,7 +148,35 @@ export function checkExplode(v: unknown): string | undefined {
   if (!isObj(v)) return "explode must be an object";
   if (!finite(v.t) || v.t < 0 || v.t > 1) return "explode.t must be between 0 and 1";
   const step = v.step;
-  if (step !== null && step !== undefined && !(Number.isInteger(step) && (step as number) >= 0) && !(typeof step === "string" && step.length > 0 && step.length <= 200)) return "explode.step must be a step id, a step number or null";
+  // one type everywhere (wave 2 gate item 6): a step is its string id, never an index
+  if (step !== null && step !== undefined && !(typeof step === "string" && step.length > 0 && step.length <= 200 && !/[\u0000-\u001f]/.test(step))) return "explode.step must be a step id (a string such as \"fit:arm_fl_mount\") or null";
+  return undefined;
+}
+
+/**
+ * The annotations list: each entry a record W3-B's renderer accepts (`parseRecord`: id, kind, ref, author),
+ * within the caps; ids unique.
+ */
+export function checkAnnotations(v: unknown): string | undefined {
+  if (!Array.isArray(v)) return "annotations must be a list of records";
+  if (v.length > MAX_ANNOTATIONS) return `at most ${MAX_ANNOTATIONS} annotations`;
+  let total = 0;
+  const ids = new Set<string>();
+  for (const [i, a] of v.entries()) {
+    let size: number;
+    try {
+      size = JSON.stringify(a).length;
+    } catch {
+      return `annotations[${i}] is not plain JSON`;
+    }
+    if (size > MAX_ANNOTATION_BYTES) return `annotations[${i}] is ${size} bytes of JSON; one record is at most ${MAX_ANNOTATION_BYTES}`;
+    total += size;
+    const p = parseRecord(a);
+    if ("error" in p) return `annotations[${i}]: ${p.error}`;
+    if (ids.has(p.record.id)) return `annotations: the id "${p.record.id}" is used twice`;
+    ids.add(p.record.id);
+  }
+  if (total > MAX_ANNOTATIONS_BYTES) return `annotations are ${total} bytes of JSON in all; at most ${MAX_ANNOTATIONS_BYTES}`;
   return undefined;
 }
 
@@ -158,6 +225,16 @@ export function checkValue(key: WritableKey, v: unknown): string | undefined {
       return v.map(checkSection).find(Boolean);
     case "explode":
       return checkExplode(v);
+    case "placements": {
+      if (!isObj(v)) return "placements must be an object by instance path";
+      if (Object.keys(v).length > MAX_PLACEMENTS) return `at most ${MAX_PLACEMENTS} placements`;
+      for (const [p, x] of Object.entries(v)) {
+        if (!isPath(p) || !validName(p.split("/").pop() ?? p)) return `placement "${p.slice(0, 40)}" needs an instance path`;
+        const e = checkPlacement(x);
+        if (e) return `placement "${p}": ${e}`;
+      }
+      return undefined;
+    }
     case "namedViews": {
       if (!isObj(v)) return "namedViews must be an object";
       if (Object.keys(v).length > MAX_NAMED_VIEWS) return `at most ${MAX_NAMED_VIEWS} named views`;
@@ -169,9 +246,14 @@ export function checkValue(key: WritableKey, v: unknown): string | undefined {
       return undefined;
     }
     case "annotations":
-      return Array.isArray(v) && v.length <= 500 ? undefined : "annotations must be a list (at most 500)";
+      return checkAnnotations(v);
+    case "theme":
+      // absent (undefined) follows the host
+      return v === undefined || THEMES.includes(v as ViewThemeChoice) ? undefined : `theme must be ${THEMES.join(", ")}, or removed to follow the host`;
   }
 }
+
+const THEMES: ViewThemeChoice[] = ["light", "dark", "system"];
 
 /** A deep copy of plain data (state values are JSON). */
 export const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));

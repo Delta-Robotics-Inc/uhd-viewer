@@ -16,6 +16,14 @@ describe("artifact bases", () => {
     expect(baseToUrl("/home/me/project")).toBeUndefined();
   });
 
+  it("serves Windows absolute bases through /@fs with forward slashes, in development only", () => {
+    expect(baseToUrl("C:\\Users\\me\\project\\", { fsRoute: true })).toBe("/@fs/C:/Users/me/project");
+    expect(baseToUrl("d:/work/project", { fsRoute: true })).toBe("/@fs/d:/work/project");
+    expect(baseToUrl("C:\\Users\\me\\project")).toBeUndefined();
+    // a relative or URL base is not a drive path
+    expect(baseToUrl("C:project", { fsRoute: true })).toBe("C:project");
+  });
+
   it("uses URL bases as they are", () => {
     expect(baseToUrl("https://cdn.example/p/")).toBe("https://cdn.example/p");
     expect(baseToUrl("/@fs/x", { fsRoute: true })).toBe("/@fs/x");

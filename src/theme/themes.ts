@@ -71,9 +71,79 @@ export const LIGHT_DATA_TOKENS = {
 
 const FACES = { fontUi: FONT_UI, fontLabel: FONT_LABEL, fontMono: FONT_MONO } satisfies Partial<ThemeTokens>;
 
+/**
+ * The model's look on paper (PB-1189, the anatomy baseline; docs/style-guide.md): a near-white ground, three
+ * close matte bands, thin dark ink, a flat cut fill; the DRC set darkened until each is at least 4.5:1 on the
+ * paper ground and on a callout card (test/theme-tokens.test.ts computes it). The bands are wider apart than the
+ * round-2 proposal (#e5e5e2 / #ededea / #f4f4f1): those read as one flat tone at the viewer's size (DEFAULT, look test).
+ */
+export const PAPER_SCENE_TOKENS = {
+  sceneBackground: "#fbfbfa",
+  sceneGrid: "#e0e0dc",
+  sceneGridMinor: "#eeeeeb",
+  modelToneLit: "#f4f4f1",
+  modelToneMid: "#e0e0dc",
+  modelToneShade: "#c8c8c3",
+  inkSilhouette: "#26262a",
+  inkCrease: "#8a8a8f",
+  inkFaint: "#b4b4b8",
+  inkWidth: "1px",
+  sectionCap: "#dcd7cd",
+  sectionLine: "#26262a",
+  drcError: "#b91c1c",
+  drcWarning: "#7a5c00",
+  drcInfo: "#1d4ed8",
+  drcRisk: "#b4400a",
+  drcPass: "#157a3b",
+  drcUnknown: "#57606a",
+  calloutSurface: "#ffffff",
+  calloutBorder: "#e2e0de",
+  calloutText: "#262626",
+  calloutLabel: "#262626",
+  calloutLeader: "#26262a",
+  calloutLeaderWidth: "1px",
+  calloutDot: "#26262a",
+  calloutGhost: "#b4b4b8",
+} satisfies Partial<ThemeTokens>;
+
+/**
+ * The model's look in the dark: a near-black ground, bands lifted above it so bodies separate (#333333 / #262626 /
+ * #1c1c1c, the round-2 proposal), light ink, and the DRC set at its brighter values, each at least 4.5:1 on the
+ * ground and on a callout card.
+ */
+export const DARK_SCENE_TOKENS = {
+  sceneBackground: "#131313",
+  sceneGrid: "#2a2a2a",
+  sceneGridMinor: "#1c1c1c",
+  modelToneLit: "#333333",
+  modelToneMid: "#262626",
+  modelToneShade: "#1c1c1c",
+  inkSilhouette: "#d4d4d4",
+  inkCrease: "#6a6a6a",
+  inkFaint: "#3e3e3e",
+  inkWidth: "1px",
+  sectionCap: "#4a4640",
+  sectionLine: "#d4d4d4",
+  drcError: "#f87171",
+  drcWarning: "#eed202",
+  drcInfo: "#60a5fa",
+  drcRisk: "#ff8a3d",
+  drcPass: "#34d399",
+  drcUnknown: "#9ba3ad",
+  calloutSurface: "#1c1c1c",
+  calloutBorder: "#333333",
+  calloutText: "#e5e5e5",
+  calloutLabel: "#e5e5e5",
+  calloutLeader: "#d4d4d4",
+  calloutLeaderWidth: "1.25px",
+  calloutDot: "#d4d4d4",
+  calloutGhost: "#5a5a5a",
+} satisfies Partial<ThemeTokens>;
+
+/** The viewer's dark theme: the anatomy dark token set (PB-1189) on the viewer's dark surfaces. */
 export const defaultDark: Theme = {
   id: "default-dark",
-  label: "Default dark",
+  label: "Anatomy dark",
   scheme: "dark",
   tokens: {
     ...(DERIVED as ThemeTokens),
@@ -109,9 +179,7 @@ export const defaultDark: Theme = {
     highlight: "#22d3ee",
     ...DARK_DATA_TOKENS,
     ...DRC_TOKENS,
-    sceneBackground: "#1a1a1a",
-    sceneGrid: "#3a3a3a",
-    sceneGridMinor: "#262626",
+    ...DARK_SCENE_TOKENS,
     radius: "8px",
     shadowSm: "0px 2px 0px 0px hsl(0 0% 20% / 0.15), 0px 1px 2px -1px hsl(0 0% 20% / 0.15)",
     shadowMd: "0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 2px 4px -1px hsl(0 0% 0% / 0.35)",
@@ -120,9 +188,10 @@ export const defaultDark: Theme = {
   },
 };
 
+/** The viewer's light theme: the anatomy paper token set (PB-1189) on the viewer's light surfaces. */
 export const defaultLight: Theme = {
   id: "default-light",
-  label: "Default light",
+  label: "Anatomy paper",
   scheme: "light",
   tokens: {
     ...(DERIVED as ThemeTokens),
@@ -159,9 +228,7 @@ export const defaultLight: Theme = {
     highlight: "#0891b2",
     ...LIGHT_DATA_TOKENS,
     ...DRC_TOKENS,
-    sceneBackground: "#ececea",
-    sceneGrid: "#c4c2c0",
-    sceneGridMinor: "#dcdad8",
+    ...PAPER_SCENE_TOKENS,
     radius: "8px",
     shadowSm: "0px 1px 2px 0px hsl(0 0% 0% / 0.06)",
     shadowMd: "0px 1px 2px 0px hsl(0 0% 0% / 0.08), 0px 2px 6px -1px hsl(0 0% 0% / 0.08)",

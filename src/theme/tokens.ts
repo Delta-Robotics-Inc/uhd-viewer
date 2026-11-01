@@ -136,6 +136,60 @@ export interface ThemeTokens {
   sceneGrid: string;
   sceneGridMinor: string;
 
+  // ---- the model's look (PB-1189: anatomy baseline, matte toon bands, restrained ink) ----------------
+  /**
+   * The three matte toon bands, as the colours a neutral body (one with no colour of its own) takes in the lit,
+   * middle and shaded band. A coloured body keeps its hue: each band scales it by the band's luminance over the
+   * lit band's (docs/style-guide.md).
+   */
+  modelToneLit: string;
+  modelToneMid: string;
+  modelToneShade: string;
+  /** Silhouette and depth-step ink (the outline of every part against what lies behind it). */
+  inkSilhouette: string;
+  /** Crease ink: a fold between two faces of one part. */
+  inkCrease: string;
+  /** Faint ink: part boundaries and secondary lines (callout leaders to a ghosted marker). */
+  inkFaint: string;
+  /** Ink width in CSS px (a length: `1px`); constant on screen, never scaled by distance. */
+  inkWidth: string;
+  /** The flat fill of a section cap (where a section plane cuts through solid material). */
+  sectionCap: string;
+  /** The exact cut outline drawn on the cap once the view settles. */
+  sectionLine: string;
+
+  // ---- DRC findings in the 3D view and its callouts (PB-1073, contrast-checked per theme) ----------
+  /** Fail (red octagon). Each DRC colour is at least 4.5:1 against this theme's scene background and surfaces. */
+  drcError: string;
+  /** Warning (yellow triangle). */
+  drcWarning: string;
+  /** Information (blue circle). */
+  drcInfo: string;
+  /** Risk: a warning that may be bad (orange diamond). Orange is reserved for this; the accent is blue. */
+  drcRisk: string;
+  /** Pass (green circle with a check). */
+  drcPass: string;
+  /** Could not be checked (grey dashed circle): never green. */
+  drcUnknown: string;
+
+  // ---- callouts (W3-B reads these by name) ------------------------------------------------------
+  /** A callout card's fill. */
+  calloutSurface: string;
+  /** A callout card's outline. */
+  calloutBorder: string;
+  /** Sentence text on a callout card. */
+  calloutText: string;
+  /** The mono uppercase id label on the shelf. */
+  calloutLabel: string;
+  /** The leader line (horizontal, vertical or 45° legs, a 45° chamfer, a horizontal shelf). */
+  calloutLeader: string;
+  /** The leader's width in CSS px (a length), constant on screen. */
+  calloutLeaderWidth: string;
+  /** The leader's terminal dot on the part. */
+  calloutDot: string;
+  /** A marker or leader whose anchor is hidden behind a part (drawn ghosted). */
+  calloutGhost: string;
+
   // ---- shape and type -----------------------------------------------------
   radius: string;
   shadowSm: string;
@@ -182,6 +236,9 @@ export const TOKEN_NAMES: readonly ThemeToken[] = [
   "drcConfigured", "drcPartial", "drcIncompatible", "drcUnconfigured", "severityError", "severityWarning", "severityInfo", "severityOk",
   "scrollbarThumb", "scrollbarThumbHover",
   "sceneBackground", "sceneGrid", "sceneGridMinor",
+  "modelToneLit", "modelToneMid", "modelToneShade", "inkSilhouette", "inkCrease", "inkFaint", "inkWidth", "sectionCap", "sectionLine",
+  "drcError", "drcWarning", "drcInfo", "drcRisk", "drcPass", "drcUnknown",
+  "calloutSurface", "calloutBorder", "calloutText", "calloutLabel", "calloutLeader", "calloutLeaderWidth", "calloutDot", "calloutGhost",
   "radius", "shadowSm", "shadowMd", "shadowLg", "fontUi", "fontLabel", "fontMono",
 ];
 

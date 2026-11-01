@@ -26,9 +26,15 @@ import { buildMerged, disposeMerged, mergeable, type MergeInput, type MergeResul
 import { GpuTimer, type TimerGl } from "./render/quality/gpuTimer";
 import { ViewLifecycle, inVsCodeWebview, type LifecycleState, type ResumeResult, type Snapshot, type SuspendResult } from "./render/quality/lifecycle";
 import { budgetFromPeriod, measureDisplayPeriod, runLiveViewBenchmark } from "./render/quality/benchmark";
+import { DEFAULT_LOOK, EDGE_GLSL, EDGE_THRESHOLDS, ToonTwins, applyLookToUniforms, readSceneLook, toonUniforms, toonable, type SceneLook } from "./render/toon";
+import { SECTION_LAYER } from "./render/batch";
+import { SceneSections, SectionCaps, findScopeRoots, sectionsByCamera, toPlanes, type SectionsInput, type SectionsReport, type SectionCut } from "./sections";
+import { resolveTokenColor, resolveTokenValue } from "../theme/resolveColor";
 
 export { onGlbLoad, onFrame, onContextLost, type GlbLoadEvent, type FrameEvent, type FrameQuality, type ContextLostEvent } from "./render/events";
-export { LOGICAL_LAYER } from "./render/batch";
+export { LOGICAL_LAYER, SECTION_LAYER } from "./render/batch";
+export { readSceneLook, bandFactors, DEFAULT_LOOK, type SceneLook } from "./render/toon";
+export type { SectionsInput, SectionsReport, SectionCut } from "./sections";
 export type { LoadedModel } from "./render/glbCache";
 
 /** The theme's colours for the scene, as `#rrggbb` (ThemeProvider's tokenColor). */
@@ -348,6 +354,31 @@ export interface SceneOptions {
    * shown). DEFAULT true inside a VS Code webview, false elsewhere (the browser dev viewer).
    */
   freeGpuWhenHidden?: boolean;
+  /** The matte toon bands (PB-1189, ./render/toon.ts). Default on; URL `?toon=0` for comparisons. */
+  toon?: boolean;
+  /** The ink pass (silhouettes and creases). Default on; URL `?edges=0`. The quality curve drops it while moving when over budget. */
+  edges?: boolean;
+}
+
+/** The model's look (PB-1189): the toon bands and the ink, and what the theme set. */
+export interface StyleApi {
+  /** The look now: whether the bands and the ink are on, and the theme's values. */
+  state: () => { toon: boolean; edges: boolean; edgesDrawn: boolean; look: SceneLook };
+  setToon: (on: boolean) => void;
+  setEdges: (on: boolean) => void;
+}
+
+/** Sections (PB-1186): the planes on this scene, the live caps and the settled cut (./sections). */
+export interface SectionsApi {
+  /**
+   * Put planes on the scene (world mm; null: none, and the renderer's own global planes are used, which is how
+   * CadView cut the whole model before). With `scope`, only the meshes under those roots are cut.
+   */
+  set: (input: SectionsInput | null) => void;
+  /** Planes, scope, the settled cut (null until computed), the caps' last pass. Undefined: no section. */
+  report: () => SectionsReport | undefined;
+  /** Compute the exact cut now (it is also computed by itself once the view is quiet). */
+  compute: () => SectionCut[];
 }
 
 export interface SceneStats {
@@ -490,17 +521,41 @@ export interface SceneHandle {
   /** Suspended or live, and why. */
   lifecycle: () => LifecycleState;
   onLifecycle: (cb: (s: LifecycleState) => void) => () => void;
+  /** The toon bands and the ink (PB-1189). */
+  style: StyleApi;
+  /** Section planes, caps and the cut as data (PB-1186). */
+  sections: SectionsApi;
 }
 
 let nextSceneId = 1;
 
-/** Composites a scene target onto the canvas: tone mapping and output colour space, then over the background (upscaled when the target is smaller). */
-function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial } {
+/**
+ * Composites a scene target onto the canvas: tone mapping and output colour space, then over the background
+ * (upscaled when the target is smaller); with `edges`, the ink pass (./render/toon.ts) over the result, from the
+ * target's depth.
+ */
+function outputQuad(edges = false): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial } {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2));
   const material = new THREE.ShaderMaterial({
-    uniforms: { tDiffuse: { value: null }, background: { value: new THREE.Vector3() } },
+    uniforms: {
+      tDiffuse: { value: null },
+      background: { value: new THREE.Vector3() },
+      ...(edges
+        ? {
+            tDepth: { value: null },
+            texel: { value: new THREE.Vector2(1, 1) },
+            inkWidth: { value: 1 },
+            cameraNear: { value: 1 },
+            cameraFar: { value: 5000 },
+            inkSilhouette: { value: new THREE.Vector3() },
+            inkCrease: { value: new THREE.Vector3() },
+            edgeThresholds: { value: new THREE.Vector2(EDGE_THRESHOLDS.silhouette, EDGE_THRESHOLDS.crease) },
+          }
+        : {}),
+    },
+    ...(edges ? { defines: { EDGES: "" } } : {}),
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
@@ -510,6 +565,9 @@ function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; mat
       uniform sampler2D tDiffuse;
       uniform vec3 background;
       varying vec2 vUv;
+      #ifdef EDGES
+      ${EDGE_GLSL}
+      #endif
       void main() {
         vec4 c = texture2D(tDiffuse, vUv);
         float a = clamp(c.a, 0.0, 1.0);
@@ -518,7 +576,13 @@ function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; mat
           rgb = toneMapping(rgb);
         #endif
         rgb = linearToOutputTexel(vec4(rgb, 1.0)).rgb;
-        gl_FragColor = vec4(mix(background, rgb, a), 1.0);
+        vec3 outColor = mix(background, rgb, a);
+        #ifdef EDGES
+          // the ink, in the output colour space (its uniforms are the tokens' sRGB values)
+          vec4 ink = inkAt(vUv);
+          outColor = mix(outColor, ink.rgb, ink.a);
+        #endif
+        gl_FragColor = vec4(outColor, 1.0);
       }`,
     depthTest: false,
     depthWrite: false,
@@ -564,7 +628,32 @@ const SAMPLE_RING = 2000;
 
 /** Measurement and debugging handles of every live scene, by id (`window.__cadQuality`; not an API). */
 const debugScenes = new Map<number, Record<string, unknown>>();
-if (typeof window !== "undefined") (window as unknown as Record<string, unknown>).__cadQuality = { scenes: debugScenes, benchmark: runLiveViewBenchmark };
+/**
+ * `window.__cadQuality` is installed only behind a debug flag (the wave 2 gate): `?cadDebug` in the page URL (any
+ * value), or `globalThis.__CAD_DEBUG__ = true` before the viewer loads. Measuring scripts add `cadDebug=1`.
+ */
+export function cadDebugEnabled(): boolean {
+  if ((globalThis as { __CAD_DEBUG__?: unknown }).__CAD_DEBUG__ === true) return true;
+  return typeof location !== "undefined" && new URLSearchParams(location.search).has("cadDebug");
+}
+if (typeof window !== "undefined" && cadDebugEnabled()) (window as unknown as Record<string, unknown>).__cadQuality = { scenes: debugScenes, benchmark: runLiveViewBenchmark };
+
+/** The settle snapshot waits this long after the view comes to rest, then for an idle moment (DEFAULT, W3-C: read back right after a load it stalled the main thread 200-300 ms on ClientX while the GPU finished its uploads). */
+const SETTLE_SNAPSHOT_DELAY_MS = 400;
+/**
+ * MSAA samples of the scene target while the ink pass is on (the target replaces the context's own antialiasing
+ * then). DEFAULT 0: measured on the Intel UHD (ANGLE d3d11, 1440x900), 4 samples cost 7.3 ms a frame on the drone
+ * and 7.5 ms on ClientX (the multisampled depth resolve the ink needs), 2 samples 5.4 ms, none 0.4 ms; the ink
+ * covers the silhouettes the samples would smooth. `?edgeSamples=N` measures the others.
+ */
+const EDGE_SAMPLES = 0;
+
+function urlFlag(name: string): boolean | undefined {
+  if (typeof location === "undefined") return undefined;
+  const v = new URLSearchParams(location.search).get(name);
+  if (v === null) return undefined;
+  return !(v === "0" || v === "off" || v === "false");
+}
 
 function urlQuality(): Partial<QualityConfig> {
   if (typeof location === "undefined") return {};
@@ -586,8 +675,29 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   const aa: AntialiasMode = options.antialias ?? "native";
   const samples = aa === "msaa" ? Math.max(0, options.samples ?? 4) : 0;
   // preserveDrawingBuffer false (PB-1175): a capture draws and reads in one task (renderOnce)
-  const renderer = new THREE.WebGLRenderer({ antialias: aa === "native", preserveDrawingBuffer: false });
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // stencil: the section caps (PB-1186, ./sections/caps.ts) count crossings in one stencil bit
+  const renderer = new THREE.WebGLRenderer({ antialias: aa === "native", preserveDrawingBuffer: false, stencil: true });
+  // a scoped section clips through materials (./sections)
+  renderer.localClippingEnabled = true;
+  // the look (PB-1189): matte toon bands (the theme's tones exactly: no tone mapping) and the ink pass
+  let toonOn = urlFlag("toon") ?? options.toon ?? true;
+  let edgesWanted = urlFlag("edges") ?? options.edges ?? true;
+  /** Samples of the scene target under the ink (measuring knob `?edgeSamples=N`). */
+  const edgeSamples = (() => {
+    const v = typeof location === "undefined" ? NaN : Number(new URLSearchParams(location.search).get("edgeSamples") ?? NaN);
+    return Number.isFinite(v) && v >= 0 ? Math.min(8, Math.round(v)) : EDGE_SAMPLES;
+  })();
+  /** The quality curve's `effects` knob switches the ink off while the view moves over budget. */
+  let edgesAllowed = true;
+  let edgesDrawn = false;
+  let look: SceneLook = { ...DEFAULT_LOOK };
+  const toonU = toonUniforms();
+  applyLookToUniforms(toonU, look);
+  const twins = new ToonTwins(toonU);
+  const setToneMapping = () => {
+    renderer.toneMapping = toonOn ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+  };
+  setToneMapping();
   renderer.toneMappingExposure = 1.05;
   const baseDpr = Math.min(window.devicePixelRatio, 2);
   // the canvas stays at this ratio: the quality curve lowers resolution in a render target, never by resizing the canvas
@@ -645,12 +755,15 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   lightFor(scene.background as THREE.Color);
 
   let grid = new THREE.GridHelper(600, 60, 0x3a3a3a, 0x262626);
+  // the grid writes no depth: the ink pass would outline its lines
+  (grid.material as THREE.Material).depthWrite = false;
   grid.rotation.x = Math.PI / 2;
   grid.position.z = -0.5;
   scene.add(grid);
   /** New grid colours: a GridHelper bakes them into its vertices, so the grid is rebuilt in place. */
   const setGridColors = (major: string, minor: string) => {
     const next = new THREE.GridHelper(600, 60, major, minor);
+    (next.material as THREE.Material).depthWrite = false;
     next.position.copy(grid.position);
     next.quaternion.copy(grid.quaternion);
     next.scale.copy(grid.scale);
@@ -665,8 +778,11 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   const root = new THREE.Group();
   const overlay = new THREE.Group();
   scene.add(root, overlay);
-  const batcher = options.batching === false ? null : new Batcher();
-  if (batcher) scene.add(batcher.root);
+  const batcher = options.batching === false ? null : new Batcher({ toon: toonU });
+  if (batcher) {
+    batcher.materials.setToon(toonOn);
+    scene.add(batcher.root);
+  }
   // merged meshes of unfocused parts (the quality curve's merge knob) are drawn from here
   const qualityRoot = new THREE.Group();
   qualityRoot.name = "quality";
@@ -677,6 +793,133 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   // ---- the scene target and the output pass (aa "msaa", and a lowered pixel ratio) ----
   let target: THREE.WebGLRenderTarget | null = null;
   let quad: ReturnType<typeof outputQuad> | null = aa === "msaa" ? outputQuad() : null;
+  /** The output pass with the ink (made on first use). */
+  let edgeQuad: ReturnType<typeof outputQuad> | null = null;
+  const inkSilhouette = new THREE.Vector3();
+  const inkCrease = new THREE.Vector3();
+  const srgbOf = (hex: string, out: THREE.Vector3) => {
+    const c = new THREE.Color(hex).getRGB(new THREE.Color(), THREE.SRGBColorSpace);
+    out.set(c.r, c.g, c.b);
+  };
+  srgbOf(look.silhouette, inkSilhouette);
+  srgbOf(look.crease, inkCrease);
+
+  // ---- sections (PB-1186): live stencil caps, the settled cut, its outline ----
+  const caps = new SectionCaps();
+  caps.setColor(look.cap);
+  const sections = new SceneSections({
+    roots: () => logicalRoots().filter((r) => r !== grid && r !== overlay),
+    globalPlanes: () => renderer.clippingPlanes,
+    invalidate: () => invalidate("view"),
+    eye: () => camera.position,
+  });
+  sections.setLineColor(look.capLine);
+  /** The outline is drawn in a pass of its own with no clipping (it lies on the planes). */
+  const outlineHolder = new THREE.Scene();
+  outlineHolder.matrixWorldAutoUpdate = false;
+  outlineHolder.add(sections.outline);
+  const stencilCamera = new THREE.PerspectiveCamera();
+  const emptyScene = new THREE.Scene();
+  emptyScene.matrixWorldAutoUpdate = false;
+  const stencilSphere = new THREE.Sphere();
+  /**
+   * Hide, for one plane's stencil pass, what the plane does not cross: a closed part on one side of the plane adds
+   * an even count (0 or 2) to every pixel, so leaving it out changes nothing but the cost (a board cut on ClientX
+   * draws the board, not the enclosure). Returns what to show again.
+   */
+  const hideUncrossed = (plane: THREE.Plane): THREE.Object3D[] => {
+    const hidden: THREE.Object3D[] = [];
+    const test = (o: THREE.Mesh) => {
+      if (!o.visible) return;
+      const g = o.geometry;
+      const bs = (o as THREE.InstancedMesh).isInstancedMesh ? (o as THREE.InstancedMesh).boundingSphere : (g.boundingSphere ?? (g.computeBoundingSphere(), g.boundingSphere));
+      if (!bs) return;
+      stencilSphere.copy(bs).applyMatrix4(o.matrixWorld);
+      if (!plane.intersectsSphere(stencilSphere)) {
+        o.visible = false;
+        hidden.push(o);
+      }
+    };
+    if (batcher) {
+      for (const c of batcher.root.children) test(c as THREE.Mesh);
+      for (const m of batcher.own) test(m);
+    }
+    if (merged) for (const m of merged.meshes) test(m);
+    return hidden;
+  };
+  /** Meshes the scoped section marked (`userData.sectionScoped`), to unmark. */
+  let scopedMarked: THREE.Object3D[] = [];
+  let scopeRoots: THREE.Object3D[] | null = null;
+  let rootChanged = false;
+  const markScope = () => {
+    for (const o of scopedMarked) {
+      delete o.userData.sectionScoped;
+      o.layers.disable(SECTION_LAYER);
+    }
+    scopedMarked = [];
+    if (!scopeRoots) return;
+    for (const r of scopeRoots)
+      r.traverse((o) => {
+        if (!(o as THREE.Mesh).isMesh) return;
+        o.userData.sectionScoped = true;
+        scopedMarked.push(o);
+      });
+  };
+  /** Caps and the settled outline for the planes in force, into the current target, after the scene pass. */
+  const drawSections = (cam: THREE.Camera) => {
+    const { planes, scope } = sections.planes();
+    if (!planes.length) return;
+    const saved = renderer.clippingPlanes;
+    const background = scene.background;
+    try {
+      // the cap quad covers the cut: centred on the orbit target, as wide as the view is deep (stencil trims it)
+      const r = Math.max(1000, 4 * camera.position.distanceTo(controls.target));
+      caps.draw(
+        renderer,
+        cam,
+        planes,
+        new THREE.Sphere(controls.target, r),
+        (material, plane) => {
+          const gridShown = grid.visible;
+          grid.visible = false;
+          const hidden = hideUncrossed(plane);
+          scene.background = null;
+          scene.overrideMaterial = material;
+          try {
+            if (scope) {
+              material.clippingPlanes = planes;
+              stencilCamera.copy(cam as THREE.PerspectiveCamera, false);
+              stencilCamera.layers.set(SECTION_LAYER);
+              renderer.render(scene, stencilCamera);
+            } else {
+              material.clippingPlanes = null;
+              renderer.render(scene, cam);
+            }
+          } finally {
+            scene.overrideMaterial = null;
+            scene.background = background;
+            grid.visible = gridShown;
+            for (const o of hidden) o.visible = true;
+          }
+        },
+        (ps) => {
+          if (scope) caps.fill.clippingPlanes = ps;
+          else renderer.clippingPlanes = ps;
+        },
+      );
+      sections.caps = caps.last;
+      if (sections.outline.children.length) {
+        renderer.clippingPlanes = [];
+        const autoClear = renderer.autoClear;
+        renderer.autoClear = false;
+        renderer.render(outlineHolder, cam);
+        renderer.autoClear = autoClear;
+      }
+    } finally {
+      renderer.clippingPlanes = saved;
+      caps.fill.clippingPlanes = null;
+    }
+  };
   const drawingSize = new THREE.Vector2();
   const ensureTarget = (scale: number, wantSamples: number) => {
     renderer.getDrawingBufferSize(drawingSize);
@@ -685,7 +928,12 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     if (!target) {
       // half float keeps colour above 1 for the tone mapping (where the context can render to it)
       const half = renderer.extensions.has("EXT_color_buffer_float") || renderer.extensions.has("EXT_color_buffer_half_float");
-      target = new THREE.WebGLRenderTarget(w, h, { samples: wantSamples, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true });
+      // depth as a texture (the ink pass reads it) with a stencil bit for the section caps
+      const depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedInt248Type);
+      depthTexture.format = THREE.DepthStencilFormat;
+      // the stencil is never resolved (the caps use it inside the multisampled buffer; resolving it is slow on D3D),
+      // and the depth only once per frame, after the last pass (drawScene)
+      target = new THREE.WebGLRenderTarget(w, h, { samples: wantSamples, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true, stencilBuffer: true, depthTexture, resolveStencilBuffer: false });
     } else if (target.width !== w || target.height !== h) target.setSize(w, h);
     if (target.samples !== wantSamples) {
       target.samples = wantSamples;
@@ -890,18 +1138,26 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   let disposed = false;
   const last = { ms: 0, draws: 0, triangles: 0 };
 
-  /** The scene pass: straight to the canvas, or through the target (msaa, a lowered pixel ratio) and the output pass, then the foveal inset. */
+  /**
+   * The scene pass: straight to the canvas, or through the target (msaa, a lowered pixel ratio, the ink pass) and
+   * the output pass, then the foveal inset. Section caps follow the scene pass in the same target.
+   */
   const drawScene = (inset: { x: number; y: number; w: number; h: number } | undefined) => {
     renderer.info.reset();
     const scale = knobsNow.scale;
-    if (aa !== "msaa" && scale >= 1) {
+    const ink = edgesWanted && edgesAllowed;
+    edgesDrawn = ink;
+    if (aa !== "msaa" && scale >= 1 && !ink) {
       renderer.render(scene, camera);
       last.draws = renderer.info.render.calls;
       last.triangles = renderer.info.render.triangles;
+      drawSections(camera);
       return;
     }
-    quad ??= outputQuad();
-    const rt = ensureTarget(scale, aa === "msaa" && !knobsNow.effectsOff ? samples : 0);
+    const out = ink ? (edgeQuad ??= outputQuad(true)) : (quad ??= outputQuad());
+    const rt = ensureTarget(scale, ink ? edgeSamples : aa === "msaa" && !knobsNow.effectsOff ? samples : 0);
+    // a multisampled target is resolved after every render call: the depth only after the last one (below)
+    rt.resolveDepthBuffer = false;
     const background = scene.background;
     const clearAlpha = renderer.getClearAlpha();
     renderer.getClearColor(clear);
@@ -914,13 +1170,32 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     renderer.render(scene, camera);
     last.draws = renderer.info.render.calls;
     last.triangles = renderer.info.render.triangles;
+    drawSections(camera);
+    if (ink && rt.samples > 0) {
+      // one resolve with the depth, for the ink pass (an empty render: three resolves at the end of each render)
+      rt.resolveDepthBuffer = true;
+      const autoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.render(emptyScene, camera);
+      renderer.autoClear = autoClear;
+    }
     renderer.setRenderTarget(null);
     renderer.setClearColor(clear, clearAlpha);
-    const u = quad.material.uniforms;
+    const u = out.material.uniforms;
     u.tDiffuse.value = rt.texture;
-    const out = bg.getRGB(new THREE.Color(), renderer.outputColorSpace);
-    (u.background.value as THREE.Vector3).set(out.r, out.g, out.b);
-    renderer.render(quad.mesh, quad.camera);
+    const outBg = bg.getRGB(new THREE.Color(), renderer.outputColorSpace);
+    (u.background.value as THREE.Vector3).set(outBg.r, outBg.g, outBg.b);
+    if (ink) {
+      u.tDepth.value = rt.depthTexture;
+      (u.texel.value as THREE.Vector2).set(1 / rt.width, 1 / rt.height);
+      // ink width in target pixels: CSS px x the canvas's pixel ratio x the target's scale
+      u.inkWidth.value = Math.max(1, look.inkWidth * baseDpr * scale);
+      u.cameraNear.value = camera.near;
+      u.cameraFar.value = camera.far;
+      (u.inkSilhouette.value as THREE.Vector3).copy(inkSilhouette);
+      (u.inkCrease.value as THREE.Vector3).copy(inkCrease);
+    }
+    renderer.render(out.mesh, out.camera);
     if (inset) {
       // the focused parts at full pixel density (attention foveation): the whole scene again inside their
       // rectangle, so what stands in front of them still hides them; depth is cleared there only
@@ -943,6 +1218,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       grid.visible = false;
       renderer.render(scene, insetCamera);
       grid.visible = gridShown;
+      // the caps inside the inset too (they are content, not an effect)
+      drawSections(insetCamera);
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, cw, chh);
       renderer.autoClear = autoClear;
@@ -982,10 +1259,39 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     if (d.changed) applyKnobs();
     if (d.final) {
       notify();
-      if (lifecycle.wantsSnapshots && !lost) void lifecycle.snapshot("settle");
-      else if (d.changed) invalidate("scene");
+      if (lifecycle.wantsSnapshots && !lost) scheduleSettleSnapshot();
+      if (d.changed) invalidate("scene");
     } else if (d.changed) invalidate("scene");
     scheduleWake();
+  };
+
+  /**
+   * The settle snapshot, after the view has rested `SETTLE_SNAPSHOT_DELAY_MS` and then at an idle moment (W3-C):
+   * taken at once it read the canvas back while the GPU was still busy with the loads (200-300 ms on the main
+   * thread on ClientX). A new gesture cancels it.
+   */
+  let settleShotTimer: ReturnType<typeof setTimeout> | undefined;
+  let settleShotIdle: number | undefined;
+  const cancelSettleSnapshot = () => {
+    if (settleShotTimer) clearTimeout(settleShotTimer);
+    settleShotTimer = undefined;
+    const cancelIdle = (globalThis as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback;
+    if (settleShotIdle !== undefined && cancelIdle) cancelIdle(settleShotIdle);
+    settleShotIdle = undefined;
+  };
+  const scheduleSettleSnapshot = () => {
+    cancelSettleSnapshot();
+    settleShotTimer = setTimeout(() => {
+      settleShotTimer = undefined;
+      const run = () => {
+        settleShotIdle = undefined;
+        if (disposed || manualOn || lost || lifecycle.state.suspended || ctl.state !== "idle") return;
+        void lifecycle.snapshot("settle");
+      };
+      const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (idle) settleShotIdle = idle(run, { timeout: 1000 });
+      else run();
+    }, SETTLE_SNAPSHOT_DELAY_MS);
   };
 
   /** A state change (idle to interacting) is reported once, not every frame. */
@@ -1005,6 +1311,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       let moved = false;
       let inset: ReturnType<typeof insetRect> = undefined;
       const swapped: [THREE.Mesh, THREE.BufferGeometry][] = [];
+      const swappedMaterials: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];
       try {
         // damping and auto-rotate move the camera here; OrbitControls says whether it did
         if (controls.update(dt)) again = true;
@@ -1018,6 +1325,13 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
         // placements only (an explode tween, a sequence playing): matrices are rewritten, nothing regrouped
         const posed = !external && (pose === true || poseDirty);
         poseDirty = false;
+        // sections: CadView may write the renderer's planes itself; a model that moved or changed needs a new cut
+        sections.checkGlobal();
+        if (sections.active && (posed || rootChanged)) {
+          if (rootChanged && scopeRoots) markScope();
+          sections.changed();
+        }
+        rootChanged = false;
         if (external || posed) {
           sceneVersion++;
           lastExternal = t0;
@@ -1056,6 +1370,19 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
               m.geometry = g;
             }
           }
+        // meshes drawn as themselves draw their toon twin (PB-1189), clipped through it under a scoped section
+        if (batcher && (toonOn || scopeRoots)) {
+          const own = merged ? [...batcher.own, ...merged.meshes] : batcher.own;
+          for (const m of own) {
+            const mat = m.material;
+            if (!toonable(mat)) continue;
+            const scoped = !!scopeRoots && m.userData.sectionScoped === true;
+            if (!toonOn && !scoped) continue;
+            swappedMaterials.push([m, mat]);
+            m.material = twins.of(mat, { toon: toonOn, clip: scoped ? batcher.materials.clipPlanes : null });
+            if (scoped) m.layers.enable(SECTION_LAYER);
+          }
+        }
         // subtrees the batches draw entirely are not walked by the renderer at all (ClientX: 140k nodes)
         const skip = batcher?.pure ?? [];
         const was = skip.map((o) => o.visible);
@@ -1069,6 +1396,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
         }
       } finally {
         for (const [m, g] of swapped) m.geometry = g;
+        for (const [m, mat] of swappedMaterials) m.material = mat;
         inFrame = false;
       }
       last.ms = performance.now() - t0;
@@ -1113,6 +1441,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   controls.addEventListener("change", () => invalidate("view"));
   // the gesture cannot settle while a pointer holds the view
   controls.addEventListener("start", () => {
+    cancelSettleSnapshot();
     if (manualOn) return;
     if (ctl.pointer(true, performance.now()).changed) applyKnobs();
     notifyState();
@@ -1124,8 +1453,14 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     scheduleWake();
   });
   // a host that adds a model to the root (an artifact preview) needs no call of its own
-  root.addEventListener("childadded", () => invalidate());
-  root.addEventListener("childremoved", () => invalidate());
+  root.addEventListener("childadded", () => {
+    rootChanged = true;
+    invalidate();
+  });
+  root.addEventListener("childremoved", () => {
+    rootChanged = true;
+    invalidate();
+  });
   attention.onChange(() => {
     focusBoxes = undefined;
     // what a knob does depends on what is focused (the inset, what is merged): judge them again
@@ -1147,6 +1482,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
 
   const canvas = renderer.domElement;
   let restored: ((ok: boolean) => void) | undefined;
+  /** The 5 s wait for a restored context (cleared on dispose). */
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined;
   const onLost = (e: Event) => {
     // keep the chance of a restore; nothing is drawn until then
     e.preventDefault();
@@ -1214,13 +1551,15 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
                   resolve(true);
                   return;
                 }
-                const timer = setTimeout(() => {
+                restoreTimer = setTimeout(() => {
+                  restoreTimer = undefined;
                   restored = undefined;
                   suspending = false;
                   resolve(false);
                 }, 5000);
                 restored = (ok) => {
-                  clearTimeout(timer);
+                  if (restoreTimer) clearTimeout(restoreTimer);
+                  restoreTimer = undefined;
                   suspending = false;
                   resolve(ok);
                 };
@@ -1309,7 +1648,17 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       });
     try {
       if (tmp.children.length) await renderer.compileAsync(tmp, camera, scene);
-      for (const o of own) await renderer.compileAsync(o, camera, scene);
+      for (const o of own) {
+        // the toon twin is what will be drawn (PB-1189)
+        const mesh = o as THREE.Mesh;
+        const prev = mesh.material;
+        if (toonOn && mesh.isMesh && toonable(prev)) mesh.material = twins.of(prev, { toon: true });
+        try {
+          await renderer.compileAsync(o, camera, scene);
+        } finally {
+          mesh.material = prev;
+        }
+      }
     } catch (e) {
       console.warn("[cad] compileAsync:", e);
     }
@@ -1342,6 +1691,63 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       };
     },
   };
+
+  const setLook = (next: SceneLook) => {
+    look = next;
+    applyLookToUniforms(toonU, look);
+    srgbOf(look.silhouette, inkSilhouette);
+    srgbOf(look.crease, inkCrease);
+    caps.setColor(look.cap);
+    sections.setLineColor(look.capLine);
+  };
+  const style: StyleApi = {
+    state: () => ({ toon: toonOn, edges: edgesWanted, edgesDrawn, look: { ...look, bands: [...look.bands] as SceneLook["bands"] } }),
+    setToon: (on) => {
+      if (on === toonOn) return;
+      toonOn = on;
+      setToneMapping();
+      batcher?.materials.setToon(on);
+      invalidate("scene");
+    },
+    setEdges: (on) => {
+      if (on === edgesWanted) return;
+      edgesWanted = on;
+      invalidate("view");
+    },
+  };
+  // the ink is the first thing the quality curve drops while the view moves over budget (PB-1176's `effects` rung)
+  const offEdgesEffect = quality.registerEffect({
+    name: "edges",
+    setEnabled: (on) => {
+      if (on === edgesAllowed) return;
+      edgesAllowed = on;
+      invalidate("view");
+    },
+  });
+  const sectionsApi: SectionsApi = {
+    set: (input) => {
+      // a scope by instance path (an agent's request): the bodies under it
+      const scope = input?.scope?.length ? [...input.scope] : input?.scopePaths?.length ? findScopeRoots(root, input.scopePaths) : [];
+      if (input && !input.scope?.length && input.scopePaths?.length && !scope.length) console.warn(`[cad] section scope ${input.scopePaths.join(", ")}: nothing under it is drawn; cutting nothing`);
+      scopeRoots = scope.length ? scope : null;
+      markScope();
+      const planes = input ? toPlanes(input.planes) : [];
+      batcher?.materials.setClipPlanes(scopeRoots ? planes : []);
+      // unscoped planes cut everything: the renderer's global planes (picking reads them too)
+      renderer.clippingPlanes = scopeRoots ? [] : [...planes];
+      sections.set(input && planes.length ? { ...input, planes, scope: scopeRoots } : null);
+      invalidate("scene");
+    },
+    report: () => sections.report(),
+    compute: () => sections.compute(),
+  };
+  sectionsByCamera.set(camera, () => sections.report());
+  // the ink pass's program, compiled off the main path now: compiled on first use it cost the first frame after a
+  // load ~80 ms on ANGLE d3d11 (W3-C's profile)
+  if (edgesWanted) {
+    edgeQuad ??= outputQuad(true);
+    void renderer.compileAsync(edgeQuad.mesh, edgeQuad.camera).catch(() => undefined);
+  }
 
   const handle: SceneHandle = {
     id,
@@ -1399,6 +1805,9 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       lightFor(scene.background as THREE.Color);
       setGridColors(theme.grid, theme.gridMinor);
       Object.assign(colors, sceneColors(theme));
+      // the look's tokens (PB-1189) are read from the themed element the scene sits in: CadView and ModelView pass
+      // only the colours above, so nothing changes for them
+      setLook(readSceneLook((t) => (t === "inkWidth" ? resolveTokenValue(container, t) : resolveTokenColor(container, t))));
       invalidate();
     },
     quality,
@@ -1410,12 +1819,26 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     resume: () => lifecycle.resume({ reason: "host" }),
     lifecycle: () => lifecycle.state,
     onLifecycle: (cb) => lifecycle.onState(cb),
+    style,
+    sections: sectionsApi,
     dispose: () => {
       disposed = true;
       loop.dispose();
       ro.disconnect();
       if (wakeTimer) clearTimeout(wakeTimer);
       if (prewarmTimer) clearTimeout(prewarmTimer);
+      cancelSettleSnapshot();
+      // a restore still waited for: settle it now, and drop its 5 s timer (the wave 2 gate)
+      if (restoreTimer) clearTimeout(restoreTimer);
+      restoreTimer = undefined;
+      restored?.(false);
+      restored = undefined;
+      offEdgesEffect();
+      sections.dispose();
+      caps.dispose();
+      sectionsByCamera.delete(camera);
+      edgeQuad?.material.dispose();
+      edgeQuad?.mesh.geometry.dispose();
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
@@ -1428,6 +1851,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       quad?.material.dispose();
       quad?.mesh.geometry.dispose();
       renderer.dispose();
+      // give the GL context back now rather than when the canvas is collected: browsers cap live contexts (the wave 2 gate)
+      renderer.forceContextLoss();
       renderer.domElement.remove();
       debugScenes.delete(id);
     },
@@ -1444,6 +1869,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     resume: handle.resume,
     prepareCoarse,
     manual: (on: boolean) => (handle.manual.on = on),
+    style,
+    sections: sectionsApi,
   });
   return handle;
 }

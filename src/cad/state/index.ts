@@ -5,5 +5,7 @@ export * from "./store";
 export * from "./serialize";
 export * from "./persist";
 export * from "./bridge";
+export * from "./leases";
+export * from "./journal";
 export * from "./hub";
 export { useViewSlice } from "./react";

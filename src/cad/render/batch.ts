@@ -27,9 +27,14 @@
  * own InstancedMesh, which gets the shared material and the same attributes.
  */
 import * as THREE from "three";
+import { patchToon, toonUniforms, type ToonUniforms } from "./toon";
 
 /** The layer of logical meshes (not rendered by the camera; picking and sampling enable it). */
 export const LOGICAL_LAYER = 31;
+/** See-through parts at this opacity or more still write depth (the ink treats them as surfaces). DEFAULT. */
+export const SURFACE_OPACITY = 0.5;
+/** The layer of what a scoped section cuts (../sections): the stencil pass of the caps draws only this layer. */
+export const SECTION_LAYER = 30;
 const LOGICAL_MASK = (1 << LOGICAL_LAYER) >>> 0;
 
 const INSTANCE_EMISSIVE = "instanceEmissive";
@@ -49,6 +54,8 @@ export interface Look {
   wireframe: boolean;
   flatShading: boolean;
   renderOrder: number;
+  /** Under a scoped section (`userData.sectionScoped`): clipped by the section planes through its material. */
+  clip: boolean;
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -69,6 +76,7 @@ export function lookOf(mesh: THREE.Mesh, material: THREE.MeshStandardMaterial): 
     wireframe: material.wireframe,
     flatShading: material.flatShading,
     renderOrder: mesh.renderOrder,
+    clip: mesh.userData.sectionScoped === true,
   };
 }
 
@@ -80,7 +88,7 @@ export function lookOf(mesh: THREE.Mesh, material: THREE.MeshStandardMaterial): 
  */
 const lookCache = new WeakMap<THREE.Material, Map<string, { version: number; side: THREE.Side; opacity: number; look: Look; key: string }>>();
 export function cachedLook(mesh: THREE.Mesh, material: THREE.MeshStandardMaterial): { look: Look; key: string } {
-  const variant = `${mesh.renderOrder}|${mesh.userData.xray === true ? 1 : 0}`;
+  const variant = `${mesh.renderOrder}|${mesh.userData.xray === true ? 1 : 0}|${mesh.userData.sectionScoped === true ? 1 : 0}`;
   let byVariant = lookCache.get(material);
   if (!byVariant) lookCache.set(material, (byVariant = new Map()));
   const hit = byVariant.get(variant);
@@ -92,7 +100,7 @@ export function cachedLook(mesh: THREE.Mesh, material: THREE.MeshStandardMateria
 }
 
 export const lookKey = (l: Look) =>
-  `${l.roughness}/${l.metalness}/${l.transparent ? 1 : 0}/${l.opacity}/${l.side}/${l.depthWrite ? 1 : 0}${l.depthTest ? 1 : 0}/${l.polygonOffset ? `${l.polygonOffsetFactor},${l.polygonOffsetUnits}` : "-"}/${l.wireframe ? 1 : 0}${l.flatShading ? 1 : 0}/${l.renderOrder}`;
+  `${l.roughness}/${l.metalness}/${l.transparent ? 1 : 0}/${l.opacity}/${l.side}/${l.depthWrite ? 1 : 0}${l.depthTest ? 1 : 0}/${l.polygonOffset ? `${l.polygonOffsetFactor},${l.polygonOffsetUnits}` : "-"}/${l.wireframe ? 1 : 0}${l.flatShading ? 1 : 0}/${l.renderOrder}${l.clip ? "/clip" : ""}`;
 
 /** A MeshStandardMaterial with nothing per-mesh the batcher would lose (maps, vertex colours, clipping of its own). */
 function batchableMaterial(m: THREE.Material | THREE.Material[]): m is THREE.MeshStandardMaterial {
@@ -134,6 +142,44 @@ export function isBatchable(o: THREE.Object3D): o is THREE.Mesh {
  */
 export class MaterialRegistry {
   private byKey = new Map<string, THREE.MeshStandardMaterial>();
+  /** The planes of a scoped section (../sections): the materials of clipped looks share this array. */
+  readonly clipPlanes: THREE.Plane[] = [];
+  /** The toon bands (./toon.ts, PB-1189): shared uniforms; on unless `setToon(false)`. */
+  readonly toon: ToonUniforms;
+  private toonOn = true;
+
+  constructor(toon: ToonUniforms = toonUniforms()) {
+    this.toon = toon;
+  }
+
+  /** The matte cel look on (default) or the standard lit look; every shared material follows (one recompile each). */
+  setToon(on: boolean): void {
+    if (on === this.toonOn) return;
+    this.toonOn = on;
+    for (const m of this.byKey.values()) this.applyToon(m);
+  }
+
+  get toonEnabled(): boolean {
+    return this.toonOn;
+  }
+
+  /** The scoped section's planes (world). A change in their number recompiles the clipped looks. */
+  setClipPlanes(planes: readonly THREE.Plane[]): void {
+    const recompile = planes.length !== this.clipPlanes.length;
+    this.clipPlanes.length = 0;
+    this.clipPlanes.push(...planes);
+    if (recompile) for (const m of this.byKey.values()) if (m.clippingPlanes === this.clipPlanes) m.needsUpdate = true;
+  }
+
+  private applyToon(m: THREE.MeshStandardMaterial): void {
+    const defines = { ...(m.defines ?? {}) } as Record<string, string>;
+    if (this.toonOn) defines.UHD_TOON = "";
+    else delete defines.UHD_TOON;
+    m.defines = defines;
+    // the tones on screen are the theme's: no tone mapping under the toon look
+    m.toneMapped = !this.toonOn;
+    m.needsUpdate = true;
+  }
 
   get(look: Look): THREE.MeshStandardMaterial {
     const key = lookKey(look);
@@ -155,8 +201,14 @@ export class MaterialRegistry {
         flatShading: look.flatShading,
       });
       m.name = `look:${key}`;
+      // under the toon look a see-through part at half opacity or more writes depth (DEFAULT): it is a surface for
+      // the ink pass, which would otherwise draw what lies behind it through it; x-ray (0.22) still does not
+      if (look.transparent && look.opacity >= SURFACE_OPACITY) m.depthWrite = true;
+      if (look.clip) m.clippingPlanes = this.clipPlanes;
       m.defines = { ...(m.defines ?? {}), USE_INSTANCE_EMISSIVE: "" };
+      const toon = this.toon;
       m.onBeforeCompile = (shader) => {
+        patchToon(shader, toon);
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", `#include <common>\nattribute vec3 ${INSTANCE_EMISSIVE};\nvarying vec3 vInstanceEmissive;`)
           .replace("#include <begin_vertex>", `#include <begin_vertex>\nvInstanceEmissive = ${INSTANCE_EMISSIVE};`);
@@ -164,7 +216,8 @@ export class MaterialRegistry {
           .replace("#include <common>", "#include <common>\nvarying vec3 vInstanceEmissive;")
           .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vInstanceEmissive;");
       };
-      m.customProgramCacheKey = () => "uhd-instance-emissive";
+      m.customProgramCacheKey = () => "uhd-instance-emissive|uhd-toon";
+      this.applyToon(m);
       this.byKey.set(key, m);
     }
     return m;
@@ -270,7 +323,7 @@ function emissiveOf(mesh: THREE.Object3D, material: THREE.MeshStandardMaterial |
 export class Batcher {
   /** Holds the instanced meshes; add it to the scene once. */
   readonly root = new THREE.Group();
-  readonly materials = new MaterialRegistry();
+  readonly materials: MaterialRegistry;
   private groups = new Map<string, Group>();
   /** Instanced meshes from a GLB (EXT_mesh_gpu_instancing) whose material was swapped for a shared one. */
   private native = new Set<THREE.InstancedMesh>();
@@ -283,11 +336,18 @@ export class Batcher {
   /** Logical meshes drawn as themselves after the last sync (a look with fewer than `minInstances` meshes): the quality curve swaps their geometry for the draw. */
   singles: THREE.Mesh[] = [];
 
+  /**
+   * Visible meshes drawn as themselves after the last sync, whatever the reason (singles, materials the batcher
+   * cannot share, `noBatch` cables, a GLB's own instancing it could not adopt): the scene draws their toon twins.
+   */
+  own: THREE.Mesh[] = [];
+
   /** Looks with fewer visible meshes than this are drawn mesh by mesh (default 2). */
   readonly minInstances: number;
 
-  constructor(options: { minInstances?: number } = {}) {
+  constructor(options: { minInstances?: number; toon?: ToonUniforms } = {}) {
     this.minInstances = Math.max(1, options.minInstances ?? 2);
+    this.materials = new MaterialRegistry(options.toon);
     this.root.name = "batches";
     this.root.matrixAutoUpdate = false;
   }
@@ -300,6 +360,7 @@ export class Batcher {
   sync(sources: THREE.Object3D[], policy: SyncPolicy = {}): SyncStats {
     const t0 = performance.now();
     const singles: THREE.Mesh[] = [];
+    const ownList: THREE.Mesh[] = [];
     const lists = new Map<string, { source: THREE.BufferGeometry; look: Look; members: THREE.Mesh[]; tops: THREE.Object3D[] }>();
     let native = 0;
     const seenNative = new Set<THREE.InstancedMesh>();
@@ -331,8 +392,10 @@ export class Batcher {
           o.layers.mask = o.userData.__layers;
           delete o.userData.__layers;
         }
-        if ((o as THREE.InstancedMesh).isInstancedMesh && this.adoptNative(o as THREE.InstancedMesh)) seenNative.add(o as THREE.InstancedMesh);
+        const adopted = (o as THREE.InstancedMesh).isInstancedMesh && this.adoptNative(o as THREE.InstancedMesh);
+        if (adopted) seenNative.add(o as THREE.InstancedMesh);
         if (vis) native++;
+        if (vis && !adopted) ownList.push(o as THREE.Mesh);
         own = true;
       } else if ((o as THREE.Line).isLine || (o as THREE.Points).isPoints || (o as THREE.Sprite).isSprite || (o as THREE.Light).isLight) own = true;
       for (const c of o.children) if (walk(c, vis, top)) own = true;
@@ -365,6 +428,7 @@ export class Batcher {
     }
     this.pure = candidates.filter((c) => !impure.has(c));
     this.singles = singles;
+    this.own = ownList.concat(singles);
 
     // groups that are gone
     for (const [key, g] of this.groups)
@@ -395,6 +459,7 @@ export class Batcher {
         mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
         mesh.matrixAutoUpdate = false;
         mesh.renderOrder = list.look.renderOrder;
+        if (list.look.clip) mesh.layers.enable(SECTION_LAYER);
         mesh.name = key;
         this.root.add(mesh);
         g = { key, source: list.source, look: list.look, material, mesh, capacity, members: [] };
@@ -468,7 +533,10 @@ export class Batcher {
       }
       this.native.add(mesh);
     }
-    mesh.material = this.materials.get(lookOf(mesh, logical as THREE.MeshStandardMaterial));
+    const look = lookOf(mesh, logical as THREE.MeshStandardMaterial);
+    mesh.material = this.materials.get(look);
+    if (look.clip) mesh.layers.enable(SECTION_LAYER);
+    else mesh.layers.disable(SECTION_LAYER);
     const emissive = mesh.geometry.getAttribute(INSTANCE_EMISSIVE) as THREE.InstancedBufferAttribute;
     const per = mesh.userData.instanceEmissive as Map<number, number> | undefined;
     emissiveOf(mesh, logical as THREE.MeshStandardMaterial, _e);

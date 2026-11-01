@@ -82,6 +82,7 @@ export function resolveForCad(input: CadResolveInput): ResolvedSequence {
   }
   input.root.updateMatrixWorld(true);
   for (const rec of bodies.values())
+    // assembly mm to the named body's parent node space (GLB metres, Y up, inside cadWrapper): see applyCadPose
     for (const part of rec.parts) if (part.obj.parent) part.toLocal = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().copy(part.obj.parent.matrixWorld).invert());
 
   const mated = new Set(model.bodies.filter((b) => b.via && model.assembly.mates.some((m) => m.linkId === b.via)).map((b) => b.key));
@@ -128,7 +129,10 @@ function reparentHardwareToParts(resolved: ResolvedSequence, asm: Assembly, hard
   hardware.forEach((hw, i) => {
     const rec = bodies.get(hw.structure);
     if (!rec?.parts.length || !keys[i]) return;
+    // both in the body's own CAD frame, mm: `local` through the inverse of the body's placement, `cadBox` as
+    // CadView measured it before parenting (world = CAD coordinates, mm, Z up)
     const local = new THREE.Vector3().setFromMatrixPosition(hw.base).applyMatrix4(rec.base.clone().invert());
+    // DEFAULT 1 mm: a seat on the named body's surface (a screw head on the lid) counts as inside its box
     const part = rec.parts.find((p) => p.cadBox.clone().expandByScalar(1).containsPoint(local));
     if (part) resolved.parents.set(keys[i], `${rec.body.key}::${part.obj.name}`);
   });
@@ -158,6 +162,9 @@ export function applyCadPose(pose: ReadonlyMap<string, Mat>, model: { assembly: 
       part.obj.position.copy(part.base);
       part.travel.set(0, 0, 0);
       if (!pd) continue;
+      // travel is assembly mm (Z up); the named body's node sits inside cadWrapper, in GLB metres (Y up). `toLocal`
+      // (the inverse of its parent's world matrix, taken assembled) carries the mm vector into that space: the
+      // wrapper's x1000 scale and +90 degree turn about X come out here (mm to metres, Z up to Y up)
       part.travel.set(pd.elements[12] - rec.offset.x, pd.elements[13] - rec.offset.y, pd.elements[14] - rec.offset.z);
       if (part.toLocal) part.obj.position.add(part.travel.clone().applyMatrix3(part.toLocal));
     }
