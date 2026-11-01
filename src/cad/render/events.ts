@@ -33,6 +33,30 @@ export interface FrameEvent {
   /** Draw calls and triangles of the scene pass (renderer.info, the output pass not counted). */
   draws: number;
   triangles: number;
+  /** The quality curve at this frame (PB-1176, ./quality/controller.ts). */
+  quality?: FrameQuality;
+}
+
+/** Quality fields of a frame (PB-1176). */
+export interface FrameQuality {
+  /** idle, interacting or settling. */
+  state: "idle" | "interacting" | "settling";
+  /** Highest engaged rung + 1 (0 = full quality). */
+  rung: number;
+  /** Engaged knobs, in ladder order (effects, dpr1.5, dpr1, coarse, merge, dpr0.75, dpr0.5). */
+  knobs: string[];
+  /** What limits the frame, as the controller guesses it. */
+  bottleneck: "cpu" | "gpu" | "unknown";
+  /** Device pixel ratio drawn at (the unfocused part of the frame when a foveal inset is drawn). */
+  dpr: number;
+  /** The display budget (ms). */
+  budgetMs: number;
+  /** GPU time of the newest finished frame (ms), where EXT_disjoint_timer_query_webgl2 exists. */
+  gpuMs?: number;
+  /** Interval to the previous frame of the same motion (ms). */
+  intervalMs?: number;
+  /** A foveal inset (the focused parts at full pixel density) was drawn. */
+  inset?: boolean;
 }
 
 export interface ContextLostEvent {

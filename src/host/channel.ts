@@ -73,11 +73,20 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
     case "uhd-viewer:openArtifact":
       return options.onOpenArtifact?.({ defId: event.defId, artifactId: event.artifactId });
     case "uhd-viewer:openModule":
-      return options.onOpenModule?.({ path: event.path });
+      return options.onOpenModule?.({ path: event.path, ...(event.view ? { view: event.view } : {}) });
     case "uhd-viewer:openPair":
       return options.onOpenPair?.({ linkId: event.linkId, a: event.a, b: event.b });
     case "uhd-viewer:inspect":
       return options.onInspect?.({ path: event.path, ...(event.defId ? { defId: event.defId } : {}) });
+    case "uhd-viewer:viewState":
+      return options.onViewStateChange?.(event.file);
+    case "uhd-viewer:presentation":
+      return options.onPresentationChange?.(event.presentation);
+    case "uhd-viewer:bridgeReply":
+      // a reply goes back the way its request came (the parent window); no option callback
+      return;
+    case "uhd-viewer:sequenceState":
+      return options.onSequenceState?.(event);
   }
 }
 

@@ -41,6 +41,8 @@ export interface LoadedModel {
   /** The URL the bytes came from. */
   path: string;
   source: "sidecar" | "glb";
+  /** Which tier was loaded (absent: the fine tier, or a plain GLB). */
+  tier?: "coarse";
   sidecar?: ViewSidecar;
   bytes: number;
   /** Time the GLTFLoader parse took (ms) when the content was parsed. */
@@ -60,6 +62,13 @@ export interface GlbCacheOptions {
 export interface LoadOptions {
   /** false: `X.glb` itself, never the sidecar (a caller that needs the original's node structure). */
   sidecar?: boolean;
+  /**
+   * "coarse" (PB-1176, W2-C's loading screen): the sidecar's coarse tier (`tiers.coarse.file`, same nodes and ids,
+   * fewer triangles) when it has one of its own, else the fine one. The fine tier is a later `load(url)`: its
+   * content hash differs, so a hot swap replaces the coarse body. Face tables are not applied to the coarse tier
+   * (they index the fine triangles); per-vertex feature ids still name faces.
+   */
+  tier?: "fine" | "coarse";
 }
 
 export interface GlbCache {
@@ -70,6 +79,8 @@ export interface GlbCache {
   readonly generation: number;
   /** Hash a URL resolved to in the current or last generation. */
   hashOf: (url: string) => string | undefined;
+  /** The models the current generation's loads resolved to (the quality curve's coarse tier reads their sidecars). */
+  loaded: () => LoadedModel[];
   /** Parsed models held (by content hash). */
   readonly size: number;
   /** Drop parsed models no URL resolved to in the current generation (call once a generation's loads settled). */
@@ -170,7 +181,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
   /** Parsed models by content hash. */
   const byHash = new Map<string, Promise<LoadedModel | null>>();
   /** URL → its load in a generation. */
-  const byUrl = new Map<string, { generation: number; promise: Promise<LoadedModel | null>; hash?: string }>();
+  const byUrl = new Map<string, { generation: number; promise: Promise<LoadedModel | null>; hash?: string; model?: LoadedModel }>();
   let generation = 0;
 
   const get = async (url: string, method: "GET" | "HEAD" = "GET") => {
@@ -187,19 +198,21 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
   };
 
   /** Parse bytes once per content hash. */
-  const parseOnce = (hash: string, make: () => Promise<{ data: ArrayBuffer; path: string; source: LoadedModel["source"]; sidecar?: ViewSidecar }>, url: string): Promise<LoadedModel | null> => {
+  const parseOnce = (hash: string, make: () => Promise<{ data: ArrayBuffer; path: string; source: LoadedModel["source"]; sidecar?: ViewSidecar; tier?: "coarse" }>, url: string): Promise<LoadedModel | null> => {
     const have = byHash.get(hash);
     if (have) return have;
     const p = (async () => {
-      const { data, path, source, sidecar } = await make();
+      const { data, path, source, sidecar, tier } = await make();
       checkGlb(data);
       const tParse = now();
       const gltf = await options.parse(data, folderOf(path));
       const parseMs = now() - tParse;
       // the parsed scene is a template (callers clone it): ids go on it once, before any clone
       const assoc = (gltf.parser as unknown as { associations?: Map<THREE.Object3D, { nodes?: number }> }).associations;
-      applySidecar(gltf.scene, hash, sidecar, (o) => assoc?.get(o)?.nodes);
-      return { gltf, hash, url, path, source, ...(sidecar ? { sidecar } : {}), bytes: data.byteLength, parseMs } satisfies LoadedModel;
+      // the coarse tier has the same nodes and ids, but its triangles are not the ones the face tables index
+      const ids = tier === "coarse" && sidecar ? { ...sidecar, nodes: sidecar.nodes.map(({ faces: _faces, ...n }) => n) } : sidecar;
+      applySidecar(gltf.scene, hash, ids, (o) => assoc?.get(o)?.nodes);
+      return { gltf, hash, url, path, source, ...(sidecar ? { sidecar } : {}), ...(tier ? { tier } : {}), bytes: data.byteLength, parseMs } satisfies LoadedModel;
     })();
     byHash.set(hash, p);
     // a failed parse is not cached: the next generation tries again
@@ -207,7 +220,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
     return p;
   };
 
-  const viaSidecar = async (url: string): Promise<LoadedModel | undefined> => {
+  const viaSidecar = async (url: string, tier: "fine" | "coarse" = "fine"): Promise<LoadedModel | undefined> => {
     const urls = useSidecars ? sidecarUrls(url) : undefined;
     if (!urls) return undefined;
     const jsonRes = await get(urls.json);
@@ -227,6 +240,23 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
         return undefined;
       }
       const sc = sidecar;
+      if (tier === "coarse" && sc.coarse) {
+        const coarse = sc.coarse;
+        const coarseUrl = urls.glb.replace(/[^/?#]*(?=[?#]|$)/, encodeURIComponent(coarse.file));
+        const viaCoarse = await parseOnce(
+          coarse.sha256 ?? `${sc.hash}#coarse`,
+          async () => {
+            const r = await get(coarseUrl);
+            if (!r) throw new Error(`${coarseUrl} missing`);
+            return { data: await r.arrayBuffer(), path: coarseUrl, source: "sidecar", sidecar: sc, tier: "coarse" };
+          },
+          url,
+        ).catch((e) => {
+          console.warn(`[cad] ${coarseUrl}: coarse tier not used (${e instanceof Error ? e.message : e})`);
+          return null;
+        });
+        if (viaCoarse) return viaCoarse;
+      }
       return (await parseOnce(
         sc.hash,
         async () => {
@@ -255,16 +285,17 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
 
   const load = (url: string, loadOptions: LoadOptions = {}): Promise<LoadedModel | null> => {
     const plain = loadOptions.sidecar === false;
-    const slot = plain ? `${url}#glb-only` : url;
+    const coarse = !plain && loadOptions.tier === "coarse";
+    const slot = plain ? `${url}#glb-only` : coarse ? `${url}#coarse` : url;
     const known = byUrl.get(slot);
     if (known && known.generation === generation) return known.promise;
     const t0 = now();
     const before = new Set(byHash.keys());
-    const entry: { generation: number; promise: Promise<LoadedModel | null>; hash?: string } = { generation, promise: Promise.resolve(null) };
+    const entry: { generation: number; promise: Promise<LoadedModel | null>; hash?: string; model?: LoadedModel } = { generation, promise: Promise.resolve(null) };
     entry.promise = (async () => {
       let model: LoadedModel | null | undefined;
       try {
-        model = plain ? undefined : await viaSidecar(url);
+        model = plain ? undefined : await viaSidecar(url, coarse ? "coarse" : "fine");
       } catch (e) {
         console.warn(`[cad] ${url}: view sidecar not used (${e instanceof Error ? e.message : e})`);
         model = undefined;
@@ -279,6 +310,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
       }
       if (!model) return null;
       entry.hash = model.hash;
+      entry.model = model;
       const c = counts(model.gltf.scene);
       const cached = before.has(model.hash);
       const ms = now() - t0;
@@ -296,6 +328,16 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
       return generation;
     },
     hashOf: (url) => byUrl.get(url)?.hash,
+    loaded: () => {
+      const seen = new Set<string>();
+      const out: LoadedModel[] = [];
+      for (const e of byUrl.values())
+        if (e.generation === generation && e.model && !seen.has(e.model.hash)) {
+          seen.add(e.model.hash);
+          out.push(e.model);
+        }
+      return out;
+    },
     get size() {
       return byHash.size;
     },

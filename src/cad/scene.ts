@@ -13,12 +13,21 @@ import type { GeometryFrame, InterfaceDef, ModuleDef } from "@uhd/types/index.js
 import type { Mat4 } from "@uhd/system/geometry.js";
 import { param, traitParam } from "./model";
 import type { Appearance } from "../source/source";
-import { createGlbCache, type LoadedModel, type LoadOptions } from "./render/glbCache";
+import { checkGlb, createGlbCache, type LoadedModel, type LoadOptions } from "./render/glbCache";
 import { createFrameLoop, type Invalidation } from "./render/loop";
-import { Batcher, isBatchable, lookOf, LOGICAL_LAYER, type SyncStats } from "./render/batch";
-import { emitContextLost, emitFrame, frameListeners, type FrameEvent } from "./render/events";
+import { Batcher, isBatchable, lookOf, LOGICAL_LAYER, type SyncPolicy, type SyncStats } from "./render/batch";
+import { emitContextLost, emitFrame, frameListeners, type FrameEvent, type FrameQuality } from "./render/events";
+import { MAX_GLB_BYTES, MAX_SIDECAR_JSON_BYTES, normaliseSidecar, sidecarUrls } from "./render/sidecar";
+import { boxesFromSidecar } from "./render/boxes";
+import { QualityController, dprFor, type Availability, type Knob, type QualityConfig, type QualityState, type QualityStatus } from "./render/quality/controller";
+import { Attention, focusRect, focusedBoxes, type AttentionKind, type AttentionSnapshot } from "./render/quality/attention";
+import { CoarseTier, type CoarseStats } from "./render/quality/coarse";
+import { buildMerged, disposeMerged, mergeable, type MergeInput, type MergeResult } from "./render/quality/merge";
+import { GpuTimer, type TimerGl } from "./render/quality/gpuTimer";
+import { ViewLifecycle, inVsCodeWebview, type LifecycleState, type ResumeResult, type Snapshot, type SuspendResult } from "./render/quality/lifecycle";
+import { budgetFromPeriod, measureDisplayPeriod, runLiveViewBenchmark } from "./render/quality/benchmark";
 
-export { onGlbLoad, onFrame, onContextLost, type GlbLoadEvent, type FrameEvent, type ContextLostEvent } from "./render/events";
+export { onGlbLoad, onFrame, onContextLost, type GlbLoadEvent, type FrameEvent, type FrameQuality, type ContextLostEvent } from "./render/events";
 export { LOGICAL_LAYER } from "./render/batch";
 export type { LoadedModel } from "./render/glbCache";
 
@@ -90,6 +99,25 @@ export const glbCache = createGlbCache({ parse: (data, path) => loader.parseAsyn
 /** Load a GLB by URL (artifact URLs come from the viewer source's resolver), with its hash and sidecar. */
 export function loadModel(url: string, options?: LoadOptions): Promise<LoadedModel | null> {
   return glbCache.load(url, options);
+}
+
+/**
+ * Boxes for a GLB from its view sidecar's index alone (`X.view.json`; PB-1176, W2-C's "Show boxes"): one box per
+ * node at its bounds, in the GLB's frame (wrap with `cadWrapper` like a GLB scene). Null when there is no sidecar.
+ */
+export async function loadBoxes(url: string): Promise<THREE.Group | null> {
+  const urls = sidecarUrls(url);
+  if (!urls) return null;
+  try {
+    const r = await fetch(urls.json, { cache: "no-cache" });
+    if (!r.ok) return null;
+    const text = await r.text();
+    if (text.length > MAX_SIDECAR_JSON_BYTES) return null;
+    const sc = normaliseSidecar(JSON.parse(text));
+    return sc ? boxesFromSidecar(sc) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Load a GLB by URL: the parsed glTF only (callers clone `gltf.scene`). */
@@ -309,6 +337,17 @@ export interface SceneOptions {
   samples?: number;
   /** Draw through shared materials and instancing (./render/batch.ts). Default true. */
   batching?: boolean;
+  /**
+   * The interaction quality curve (PB-1176, ./render/quality/controller.ts). Default on. URL knobs for
+   * measuring: `?quality=off`, `?qbudget=<ms>` (the display budget), `?qtau=<ms>` (the recovery constant),
+   * `?qtrial=0` (no knob trials: every knob the curve engages stays).
+   */
+  quality?: Partial<QualityConfig>;
+  /**
+   * When the page is hidden, give the GL context back as well as stop drawing (restored from the CPU copies when
+   * shown). DEFAULT true inside a VS Code webview, false elsewhere (the browser dev viewer).
+   */
+  freeGpuWhenHidden?: boolean;
 }
 
 export interface SceneStats {
@@ -322,6 +361,58 @@ export interface SceneStats {
   samples: number;
   geometries: number;
   programs: number;
+}
+
+/** An effect the quality curve may switch off while the view moves (edges, outline: W3-C registers them). */
+export interface QualityEffect {
+  name: string;
+  setEnabled: (on: boolean) => void;
+}
+
+/** One frame as the quality curve saw it (the ring buffer `quality.samples()` keeps, for measuring). */
+export interface QualitySampleRecord {
+  t: number;
+  cpuMs: number;
+  gpuMs?: number;
+  intervalMs?: number;
+  active: boolean;
+  flush: boolean;
+  state: QualityState;
+  knobs: Knob[];
+  draws: number;
+  triangles: number;
+  dpr: number;
+  inset: boolean;
+}
+
+/** The quality curve's state as a read-only view (W2-A surfaces it in the view state and the UI). */
+export interface QualityReport extends QualityStatus {
+  enabled: boolean;
+  /** Which GPU timing the browser gives (EXT_disjoint_timer_query_webgl2). */
+  gpuTimer: boolean;
+  availability: Availability;
+  coarse: CoarseStats;
+  merge?: { meshes: number; members: number; triangles: number; ms: number };
+  /** The focused parts are drawn at full pixel density in an inset while the rest is at a lower one. */
+  inset: boolean;
+  /** Knobs tried this scene that did not make frames cheaper (skipped until the scene changes). */
+  skipped: Knob[];
+  attention: AttentionSnapshot;
+}
+
+export interface QualityApi {
+  /** The current state, knobs, bottleneck guess and what is available. */
+  report: () => QualityReport;
+  /** Every change of state or knobs. */
+  onChange: (cb: (r: QualityReport) => void) => () => void;
+  /** Change the configuration (budget, tau, enabled, ...). */
+  configure: (c: Partial<QualityConfig>) => void;
+  /** Load the coarse tiers of what is shown now (done by itself once a heavy scene is loaded). */
+  prepareCoarse: () => Promise<CoarseStats>;
+  /** The last frames (up to 2,000). */
+  samples: () => QualitySampleRecord[];
+  /** Register an effect the curve switches off first; returns its unregister. */
+  registerEffect: (e: QualityEffect) => () => void;
 }
 
 export interface SceneHandle {
@@ -347,8 +438,9 @@ export interface SceneHandle {
   /** The theme's background, grid and focus colours. */
   setTheme: (theme: SceneTheme) => void;
   /**
-   * Ask for a frame: "view" when only the camera moved, "scene" (default)
-   * when anything else changed. Frames are drawn only when asked for.
+   * Ask for a frame: "view" when only the camera moved, "pose" when only placements of objects already drawn
+   * changed (an explode tween, a sequence playing: the batcher rewrites matrices, no regrouping), "scene"
+   * (default) when anything else changed (shown, hidden, recoloured, added). Frames are drawn only when asked for.
    */
   invalidate: (what?: Invalidation) => void;
   /**
@@ -357,13 +449,13 @@ export interface SceneHandle {
    * `invalidate()` from it when it changed the scene.
    */
   beforeRender: Set<(dt: number) => boolean | void>;
-  /** This scene's frames ({ms, draws, triangles}); the module-wide `onFrame` hears every scene. */
+  /** This scene's frames ({ms, draws, triangles, quality}); the module-wide `onFrame` hears every scene. */
   onFrame: (cb: (e: FrameEvent) => void) => () => void;
-  /** This scene's WebGL context was lost. */
+  /** This scene's WebGL context was lost (not when `suspend` gave it back on purpose). */
   onContextLost: (cb: () => void) => () => void;
   /** When set, scheduled frames are skipped and the caller draws with `renderOnce` (video capture). */
   manual: { on: boolean };
-  /** Draw a frame now, synchronously (a capture reads the canvas in the same task). */
+  /** Draw a frame now, synchronously, at full quality (a capture reads the canvas in the same task). */
   renderOnce: () => void;
   /**
    * Compile the programs `objects` will need, without blocking (`compileAsync`),
@@ -372,13 +464,37 @@ export interface SceneHandle {
   compile: (objects: THREE.Object3D[]) => Promise<void>;
   /** Draw counts and what the batcher did. */
   stats: () => SceneStats;
-  /** The trees the batcher draws (the scene's children but its own and the camera). */
+  /** The trees the batcher draws (the scene's children but its own, the quality curve's and the camera). */
   logicalRoots: () => THREE.Object3D[];
+  /** The interaction quality curve (PB-1176): read-only state, events and its configuration. */
+  quality: QualityApi;
+  /**
+   * Attention foveation (PB-1176): set the selected, agent-focused or hovered keys (body keys or harness keys,
+   * as CadView's `userData.bodyKey` / `userData.harness`). Those parts keep the fine tier and full pixel density
+   * while the curve degrades the rest. Until a host sets "selected", lit (highlighted) meshes count as selected.
+   */
+  setAttention: (kind: AttentionKind, keys: Iterable<string>) => void;
+  /** The attention sets now. */
+  attention: () => AttentionSnapshot;
+  /**
+   * A PNG of the canvas each time the view settles (and before a suspend). The host keeps the latest as the
+   * tab's picture: shown while the view is suspended, and at once when a tab comes back. Returns unsubscribe.
+   */
+  onSnapshot: (cb: (s: Snapshot) => void) => () => void;
+  /** A snapshot now (drawn at full quality, read in the same task). */
+  snapshot: () => Promise<Snapshot | undefined>;
+  /** Stop drawing, after a snapshot; `freeGpu` also gives the GL context back (host's live-view budget). */
+  suspend: (options?: { freeGpu?: boolean }) => Promise<SuspendResult>;
+  /** Draw again (restoring the GL context when it was given back): one frame, then on demand. */
+  resume: () => Promise<ResumeResult | undefined>;
+  /** Suspended or live, and why. */
+  lifecycle: () => LifecycleState;
+  onLifecycle: (cb: (s: LifecycleState) => void) => () => void;
 }
 
 let nextSceneId = 1;
 
-/** Composites the multisampled scene target onto the canvas: tone mapping and output colour space, then over the background. */
+/** Composites a scene target onto the canvas: tone mapping and output colour space, then over the background (upscaled when the target is smaller). */
 function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial } {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));
@@ -412,6 +528,58 @@ function outputQuad(): { mesh: THREE.Mesh; camera: THREE.OrthographicCamera; mat
   return { mesh, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), material };
 }
 
+/**
+ * Coarse tiers, shared by every scene (the fine geometries they stand in for are the GLB cache's templates,
+ * shared too). Each coarse file goes through the same size and extension checks as any GLB.
+ */
+export const coarseTier = new CoarseTier({
+  load: async (url) => {
+    const r = await fetch(url, { cache: "no-cache" });
+    if (!r.ok) throw new Error(`${r.status}`);
+    const n = Number(r.headers.get("content-length"));
+    if (Number.isFinite(n) && n > MAX_GLB_BYTES) throw new Error(`over the ${MAX_GLB_BYTES}-byte cap`);
+    const data = await r.arrayBuffer();
+    checkGlb(data);
+    const path = url.split(/[?#]/)[0];
+    return loader.parseAsync(data, path.slice(0, path.lastIndexOf("/") + 1));
+  },
+});
+
+/** The one-second benchmark behind the host's `maxLiveViews` budget (./render/quality/benchmark.ts). */
+export { runLiveViewBenchmark, liveViewsFor, viewsToSuspend, benchmarkKey, type LiveViewBenchmark, type LiveViews } from "./render/quality/benchmark";
+export type { Snapshot, SuspendResult, ResumeResult, LifecycleState } from "./render/quality/lifecycle";
+export type { Knob, QualityConfig, QualityStatus, QualityState, Availability } from "./render/quality/controller";
+export type { AttentionKind, AttentionSnapshot } from "./render/quality/attention";
+
+/** Triangles past which a loaded scene prepares its coarse tiers by itself (DEFAULT). */
+const COARSE_PREWARM_TRIANGLES = 200_000;
+/** Draws (instanced groups plus meshes drawn as themselves) from which merging unfocused parts can help (DEFAULT). */
+const MERGE_MIN_DRAWS = 16;
+/** A scene change this recent keeps the merge from being rebuilt (an explode tween changes the scene every frame). */
+const MERGE_QUIET_MS = 250;
+/** The foveal inset is drawn only while the focused parts cover at most this share of the view (DEFAULT). */
+const INSET_MAX_FRACTION = 0.6;
+/** Samples kept for measuring. */
+const SAMPLE_RING = 2000;
+
+/** Measurement and debugging handles of every live scene, by id (`window.__cadQuality`; not an API). */
+const debugScenes = new Map<number, Record<string, unknown>>();
+if (typeof window !== "undefined") (window as unknown as Record<string, unknown>).__cadQuality = { scenes: debugScenes, benchmark: runLiveViewBenchmark };
+
+function urlQuality(): Partial<QualityConfig> {
+  if (typeof location === "undefined") return {};
+  const q = new URLSearchParams(location.search);
+  const out: Partial<QualityConfig> = {};
+  if (q.get("quality") === "off") out.enabled = false;
+  const b = Number(q.get("qbudget"));
+  if (q.has("qbudget") && Number.isFinite(b) && b > 0) out.budgetMs = b;
+  const tau = Number(q.get("qtau"));
+  if (q.has("qtau") && Number.isFinite(tau) && tau >= 0) out.tauMs = tau;
+  // measuring only: keep every knob the curve engages (no trials)
+  if (q.get("qtrial") === "0") out.trialFrames = 0;
+  return out;
+}
+
 export function createScene(container: HTMLElement, options: SceneOptions = {}): SceneHandle {
   const id = nextSceneId++;
   const created = performance.now();
@@ -421,7 +589,9 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   const renderer = new THREE.WebGLRenderer({ antialias: aa === "native", preserveDrawingBuffer: false });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const baseDpr = Math.min(window.devicePixelRatio, 2);
+  // the canvas stays at this ratio: the quality curve lowers resolution in a render target, never by resizing the canvas
+  renderer.setPixelRatio(baseDpr);
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // counts are read per frame (scene pass only), so they are not reset by each render call
@@ -497,48 +667,241 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   scene.add(root, overlay);
   const batcher = options.batching === false ? null : new Batcher();
   if (batcher) scene.add(batcher.root);
-  const logicalRoots = () => scene.children.filter((c) => c !== batcher?.root && c !== camera);
+  // merged meshes of unfocused parts (the quality curve's merge knob) are drawn from here
+  const qualityRoot = new THREE.Group();
+  qualityRoot.name = "quality";
+  qualityRoot.matrixAutoUpdate = false;
+  scene.add(qualityRoot);
+  const logicalRoots = () => scene.children.filter((c) => c !== batcher?.root && c !== camera && c !== qualityRoot);
 
-  // ---- the multisampled target and the output pass (aa "msaa") ----
+  // ---- the scene target and the output pass (aa "msaa", and a lowered pixel ratio) ----
   let target: THREE.WebGLRenderTarget | null = null;
-  const quad = aa === "msaa" ? outputQuad() : null;
+  let quad: ReturnType<typeof outputQuad> | null = aa === "msaa" ? outputQuad() : null;
   const drawingSize = new THREE.Vector2();
-  const ensureTarget = () => {
+  const ensureTarget = (scale: number, wantSamples: number) => {
     renderer.getDrawingBufferSize(drawingSize);
-    const w = Math.max(1, drawingSize.x);
-    const h = Math.max(1, drawingSize.y);
+    const w = Math.max(1, Math.round(drawingSize.x * scale));
+    const h = Math.max(1, Math.round(drawingSize.y * scale));
     if (!target) {
       // half float keeps colour above 1 for the tone mapping (where the context can render to it)
       const half = renderer.extensions.has("EXT_color_buffer_float") || renderer.extensions.has("EXT_color_buffer_half_float");
-      target = new THREE.WebGLRenderTarget(w, h, { samples, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true });
+      target = new THREE.WebGLRenderTarget(w, h, { samples: wantSamples, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true });
     } else if (target.width !== w || target.height !== h) target.setSize(w, h);
-    if (target.samples !== samples) {
-      target.samples = samples;
+    if (target.samples !== wantSamples) {
+      target.samples = wantSamples;
       target.dispose();
     }
     return target;
   };
   const bg = new THREE.Color();
   const clear = new THREE.Color();
+  /** The foveal inset's camera: the scene camera narrowed to the focused parts' rectangle. */
+  const insetCamera = new THREE.PerspectiveCamera();
+  insetCamera.matrixAutoUpdate = true;
+
+  // ---- the quality curve (PB-1176) ----
+  const ctl = new QualityController({ ...(options.quality ?? {}), ...urlQuality() });
+  const budgetFixed = options.quality?.budgetMs !== undefined || urlQuality().budgetMs !== undefined;
+  /** The display period as measured (ms); measured again once the loads settle when the first try looked slow. */
+  let displayPeriodMs = 1000 / 60;
+  let periodTries = 0;
+  const measureBudget = () => {
+    periodTries++;
+    void measureDisplayPeriod().then((p) => {
+      displayPeriodMs = p;
+      if (!budgetFixed) ctl.config.budgetMs = budgetFromPeriod(p);
+    });
+  };
+  measureBudget();
+  const attention = new Attention();
+  const effects = new Set<QualityEffect>();
+  const gpu = new GpuTimer(renderer.getContext() as unknown as TimerGl);
+  /** What the knobs set now. */
+  const knobsNow = { effectsOff: false, scale: 1, coarse: false, merge: false };
+  let merged: MergeResult | undefined;
+  let mergedKey = "";
+  const mergeFailed = new Set<string>();
+  let mergeUseful = false;
+  let sceneVersion = 0;
+  let lastExternal = -Infinity;
+  let policyDirty = false;
+  let focusBoxes: { key: string; boxes: THREE.Box3[] } | undefined;
+  let lastInset = false;
+  const ring: QualitySampleRecord[] = [];
+  const changeSubs = new Set<(r: QualityReport) => void>();
+  let wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  let prewarmTimer: ReturnType<typeof setTimeout> | undefined;
+  let prewarmedFor = "";
+  /** The GLB cache generation the knob trials were judged on (a new model: judge again). */
+  let trialsGeneration = -1;
+  let manualOn = false;
+  /** The state last reported to `quality.onChange` subscribers. */
+  let reportedState: QualityState = "idle";
+  let suspendedPause = false;
+  const prevCamera = new THREE.Matrix4();
+
+  const policy: SyncPolicy = {
+    // unfocused parts draw their coarse stand-in while the coarse knob is engaged
+    geometryOf: (m) => (knobsNow.coarse && !attention.focused(m) ? coarseTier.geometryFor(m.geometry) : undefined),
+    exclude: (m) => !!merged?.members.has(m),
+  };
+
+  const availability = (): Availability => {
+    const st = coarseTier.stats;
+    return {
+      effects: effects.size > 0 || (aa === "msaa" && samples > 0),
+      baseDpr,
+      coarse: !!batcher && coarseTier.available && st.coarseTriangles < 0.9 * st.fineTriangles,
+      merge: !!batcher && mergeUseful,
+    };
+  };
+  const report = (): QualityReport => ({
+    ...ctl.status(),
+    enabled: ctl.config.enabled,
+    gpuTimer: gpu.available,
+    availability: ctl.availability,
+    coarse: { ...coarseTier.stats },
+    ...(merged ? { merge: { meshes: merged.meshes.length, members: merged.members.size, triangles: merged.triangles, ms: Math.round(merged.ms * 10) / 10 } } : {}),
+    inset: lastInset,
+    skipped: ctl.skipped,
+    attention: attention.snapshot(),
+  });
+  const notify = () => {
+    reportedState = ctl.state;
+    if (!changeSubs.size) return;
+    const r = report();
+    for (const cb of changeSubs) {
+      try {
+        cb(r);
+      } catch (e) {
+        console.warn("[cad] quality subscriber failed:", e);
+      }
+    }
+  };
+  /** Make the scene match the engaged knobs (the next frame draws with them). */
+  const applyKnobs = () => {
+    const ks = ctl.knobs;
+    const effectsOff = ks.includes("effects");
+    if (effectsOff !== knobsNow.effectsOff) for (const e of effects) e.setEnabled(!effectsOff);
+    const coarse = ks.includes("coarse");
+    const merge = ks.includes("merge");
+    if (coarse !== knobsNow.coarse || merge !== knobsNow.merge) policyDirty = true;
+    Object.assign(knobsNow, { effectsOff, scale: Math.min(1, dprFor(ks, baseDpr) / baseDpr), coarse, merge });
+    notify();
+  };
+  const refreshAvailability = () => {
+    if (ctl.setAvailability(availability()).changed) applyKnobs();
+  };
+
+  /** Merged meshes for the unfocused parts: built when the knob is on and the scene has been still for a moment. */
+  const maintainMerge = (external: boolean, now: number): boolean => {
+    const want = knobsNow.merge && !external && now - lastExternal >= MERGE_QUIET_MS;
+    const keyNow = `${sceneVersion}|${attention.version}|${knobsNow.coarse ? coarseTier.version : "fine"}`;
+    let changed = false;
+    if (merged && (!want || keyNow !== mergedKey)) {
+      disposeMerged(merged);
+      merged = undefined;
+      changed = true;
+    }
+    if (want && !merged && !mergeFailed.has(keyNow)) {
+      const inputs: MergeInput[] = [];
+      const walk = (o: THREE.Object3D, visible: boolean) => {
+        const vis = visible && o.visible;
+        if (!vis) return;
+        if (mergeable(o) && !attention.focused(o)) inputs.push({ mesh: o, geometry: (knobsNow.coarse ? coarseTier.geometryFor(o.geometry) : undefined) ?? o.geometry });
+        for (const c of o.children) walk(c, vis);
+      };
+      for (const r of logicalRoots()) walk(r, true);
+      const built = inputs.length > 1 ? buildMerged(inputs) : undefined;
+      if (built) {
+        merged = built;
+        mergedKey = keyNow;
+        for (const m of built.meshes) qualityRoot.add(m);
+        changed = true;
+      } else mergeFailed.add(keyNow);
+    }
+    return changed;
+  };
+
+  /** The focused parts' screen rectangle, for the foveal inset (CSS px, bottom-left origin). */
+  const insetRect = () => {
+    if (knobsNow.scale >= 1) return undefined;
+    const keyNow = `${sceneVersion}|${attention.version}`;
+    if (!focusBoxes || focusBoxes.key !== keyNow) focusBoxes = { key: keyNow, boxes: focusedBoxes(logicalRoots(), attention) };
+    if (!focusBoxes.boxes.length) return undefined;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    const r = focusRect(focusBoxes.boxes, camera, w, h);
+    if (!r || r.w * r.h > INSET_MAX_FRACTION * w * h) return undefined;
+    return r;
+  };
+
+  /** Load the coarse tiers of the models this scene shows. */
+  const prepareCoarse = async (): Promise<CoarseStats> => {
+    const inScene = new Set<THREE.BufferGeometry>();
+    for (const r of logicalRoots()) r.traverse((o) => (o as THREE.Mesh).isMesh && inScene.add((o as THREE.Mesh).geometry));
+    const models = glbCache.loaded().filter((m) => {
+      // a body loaded at the coarse tier already draws it
+      if (!m.sidecar?.coarse || m.tier === "coarse") return false;
+      let hit = false;
+      m.gltf.scene.traverse((o) => {
+        if (!hit && (o as THREE.Mesh).isMesh && inScene.has((o as THREE.Mesh).geometry)) hit = true;
+      });
+      return hit;
+    });
+    const before = coarseTier.version;
+    const stats = await coarseTier.prepare(models);
+    if (coarseTier.version !== before) {
+      refreshAvailability();
+      if (knobsNow.coarse) {
+        policyDirty = true;
+        invalidate("view");
+      }
+    }
+    return stats;
+  };
+  const schedulePrewarm = () => {
+    if (prewarmTimer) clearTimeout(prewarmTimer);
+    // a second after the last scene change: the loads have settled; light scenes never need the coarse tier
+    prewarmTimer = setTimeout(() => {
+      prewarmTimer = undefined;
+      if (disposed) return;
+      // the first measure ran while the models loaded (a busy page stretches the gaps): once more, now it is quiet
+      if (periodTries < 2 && displayPeriodMs > 17.5) measureBudget();
+      if (last.triangles < COARSE_PREWARM_TRIANGLES) return;
+      // once per set of loaded models (a selection change is a scene change too, and needs nothing loaded)
+      const loadedKey = `${glbCache.generation}|${glbCache.loaded().length}`;
+      if (loadedKey === prewarmedFor) return;
+      prewarmedFor = loadedKey;
+      void prepareCoarse().catch(() => undefined);
+    }, 1000);
+  };
 
   // ---- frames, drawn on demand ----
   const beforeRender = new Set<(dt: number) => boolean | void>();
   const frameSubs = new Set<(e: FrameEvent) => void>();
   const lostSubs = new Set<() => void>();
   let sceneDirty = true;
+  /** Placements changed (`invalidate("pose")`). */
+  let poseDirty = false;
   let inFrame = false;
   let lost = false;
+  let suspending = false;
+  let disposed = false;
   const last = { ms: 0, draws: 0, triangles: 0 };
 
-  const drawScene = () => {
+  /** The scene pass: straight to the canvas, or through the target (msaa, a lowered pixel ratio) and the output pass, then the foveal inset. */
+  const drawScene = (inset: { x: number; y: number; w: number; h: number } | undefined) => {
     renderer.info.reset();
-    if (!quad) {
+    const scale = knobsNow.scale;
+    if (aa !== "msaa" && scale >= 1) {
       renderer.render(scene, camera);
       last.draws = renderer.info.render.calls;
       last.triangles = renderer.info.render.triangles;
       return;
     }
-    const rt = ensureTarget();
+    quad ??= outputQuad();
+    const rt = ensureTarget(scale, aa === "msaa" && !knobsNow.effectsOff ? samples : 0);
     const background = scene.background;
     const clearAlpha = renderer.getClearAlpha();
     renderer.getClearColor(clear);
@@ -552,47 +915,189 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     last.draws = renderer.info.render.calls;
     last.triangles = renderer.info.render.triangles;
     renderer.setRenderTarget(null);
-    scene.background = background;
     renderer.setClearColor(clear, clearAlpha);
     const u = quad.material.uniforms;
     u.tDiffuse.value = rt.texture;
     const out = bg.getRGB(new THREE.Color(), renderer.outputColorSpace);
     (u.background.value as THREE.Vector3).set(out.r, out.g, out.b);
     renderer.render(quad.mesh, quad.camera);
+    if (inset) {
+      // the focused parts at full pixel density (attention foveation): the whole scene again inside their
+      // rectangle, so what stands in front of them still hides them; depth is cleared there only
+      // rectangle; a camera narrowed to it (a view offset) culls the meshes wholly outside it
+      const calls = renderer.info.render.calls;
+      const tris = renderer.info.render.triangles;
+      const autoClear = renderer.autoClear;
+      const cw = container.clientWidth;
+      const chh = container.clientHeight;
+      insetCamera.copy(camera, false);
+      insetCamera.setViewOffset(cw, chh, inset.x, chh - inset.y - inset.h, inset.w, inset.h);
+      insetCamera.updateMatrixWorld(true);
+      renderer.autoClear = false;
+      renderer.setViewport(inset.x, inset.y, inset.w, inset.h);
+      renderer.setScissor(inset.x, inset.y, inset.w, inset.h);
+      renderer.setScissorTest(true);
+      renderer.clearDepth();
+      // the ground grid stays as the low-resolution pass drew it: its fine lines would show the rectangle's edge
+      const gridShown = grid.visible;
+      grid.visible = false;
+      renderer.render(scene, insetCamera);
+      grid.visible = gridShown;
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, cw, chh);
+      renderer.autoClear = autoClear;
+      last.draws += renderer.info.render.calls - calls;
+      last.triangles += renderer.info.render.triangles - tris;
+    }
+    scene.background = background;
+  };
+
+  const cameraMoved = () => {
+    const a = camera.matrixWorld.elements;
+    const b = prevCamera.elements;
+    // 1e-4 of the distance to the target, and as much in rotation
+    const eps = 1e-4 * Math.max(1, camera.position.distanceTo(controls.target));
+    let moved = false;
+    for (let i = 0; i < 16; i++)
+      if (Math.abs(a[i] - b[i]) > (i >= 12 && i <= 14 ? eps : 1e-4)) {
+        moved = true;
+        break;
+      }
+    prevCamera.copy(camera.matrixWorld);
+    return moved;
+  };
+
+  const scheduleWake = () => {
+    if (wakeTimer) clearTimeout(wakeTimer);
+    wakeTimer = undefined;
+    const w = ctl.nextWakeAt();
+    if (w === undefined || disposed) return;
+    wakeTimer = setTimeout(onWake, Math.max(0, w - performance.now()));
+  };
+  /** The settle timer: release, then the recovery curve, then one full-quality frame (and the snapshot). */
+  const onWake = () => {
+    wakeTimer = undefined;
+    if (disposed || manualOn || lifecycle.state.suspended) return;
+    const d = ctl.tick(performance.now());
+    if (d.changed) applyKnobs();
+    if (d.final) {
+      notify();
+      if (lifecycle.wantsSnapshots && !lost) void lifecycle.snapshot("settle");
+      else if (d.changed) invalidate("scene");
+    } else if (d.changed) invalidate("scene");
+    scheduleWake();
+  };
+
+  /** A state change (idle to interacting) is reported once, not every frame. */
+  const notifyState = () => {
+    if (ctl.state === reportedState) return;
+    reportedState = ctl.state;
+    notify();
   };
 
   const loop = createFrameLoop({
-    frame: ({ dt, scene: changed }) => {
+    frame: ({ dt, scene: changed, pose, flush, interval }) => {
       if (lost) return false;
       inFrame = true;
       const t0 = performance.now();
       let again = false;
+      let animating = false;
+      let moved = false;
+      let inset: ReturnType<typeof insetRect> = undefined;
+      const swapped: [THREE.Mesh, THREE.BufferGeometry][] = [];
       try {
         // damping and auto-rotate move the camera here; OrbitControls says whether it did
         if (controls.update(dt)) again = true;
         if (controls.autoRotate) again = true;
-        for (const f of beforeRender) if (f(dt) === true) again = true;
-        const sync = changed || sceneDirty;
-        sceneDirty = false;
+        for (const f of beforeRender)
+          if (f(dt) === true) {
+            again = true;
+            animating = true;
+          }
+        const external = changed || sceneDirty;
+        // placements only (an explode tween, a sequence playing): matrices are rewritten, nothing regrouped
+        const posed = !external && (pose === true || poseDirty);
+        poseDirty = false;
+        if (external || posed) {
+          sceneVersion++;
+          lastExternal = t0;
+          if (glbCache.generation !== trialsGeneration) {
+            trialsGeneration = glbCache.generation;
+            ctl.forgetTrials();
+          }
+        }
         // a camera move needs the camera's matrices only; anything else, the whole tree (then the batches follow it)
-        if (sync) scene.updateMatrixWorld();
+        if (external || posed || policyDirty) scene.updateMatrixWorld();
         else camera.updateMatrixWorld(true);
-        if (batcher && sync) batcher.sync(logicalRoots());
+        moved = cameraMoved();
+        const mergeChanged = batcher ? maintainMerge(external || posed, t0) : false;
+        const sync = external || policyDirty || mergeChanged;
+        sceneDirty = false;
+        policyDirty = false;
+        if (batcher && posed && !sync) batcher.refreshMatrices();
+        if (batcher && sync) {
+          batcher.sync(logicalRoots(), policy);
+          // merging helps when there are many draws; judged on a sync that is not itself merged
+          if (!merged) {
+            const useful = batcher.last.groups + batcher.last.native >= MERGE_MIN_DRAWS;
+            if (useful !== mergeUseful) {
+              mergeUseful = useful;
+              refreshAvailability();
+            }
+          }
+        }
+        inset = insetRect();
+        // meshes drawn as themselves show their coarse stand-in for this draw only (picking reads the fine one)
+        if (knobsNow.coarse && batcher)
+          for (const m of batcher.singles) {
+            const g = policy.geometryOf!(m);
+            if (g && g !== m.geometry) {
+              swapped.push([m, m.geometry]);
+              m.geometry = g;
+            }
+          }
         // subtrees the batches draw entirely are not walked by the renderer at all (ClientX: 140k nodes)
         const skip = batcher?.pure ?? [];
         const was = skip.map((o) => o.visible);
         for (const o of skip) o.visible = false;
+        gpu.begin();
         try {
-          drawScene();
+          drawScene(inset);
         } finally {
+          gpu.end();
           skip.forEach((o, i) => (o.visible = was[i]));
         }
       } finally {
+        for (const [m, g] of swapped) m.geometry = g;
         inFrame = false;
       }
       last.ms = performance.now() - t0;
+      lastInset = !!inset;
+      const gpuMs = gpu.poll();
+      const active = moved || animating;
+      if (!flush && !manualOn) {
+        const d = ctl.frame({ t: t0, cpuMs: last.ms, ...(gpuMs !== undefined ? { gpuMs } : {}), ...(interval !== undefined ? { intervalMs: interval } : {}), active });
+        if (d.changed) applyKnobs();
+        else if (active && ctl.state === "interacting") notifyState();
+        scheduleWake();
+      }
+      if (changed && !flush) schedulePrewarm();
+      const st = ctl.status();
+      const q: FrameQuality = {
+        state: st.state,
+        rung: st.rung,
+        knobs: st.knobs,
+        bottleneck: st.bottleneck,
+        dpr: st.dpr,
+        budgetMs: Math.round(st.budgetMs * 100) / 100,
+        ...(gpuMs !== undefined ? { gpuMs: Math.round(gpuMs * 100) / 100 } : {}),
+        ...(interval !== undefined ? { intervalMs: Math.round(interval * 100) / 100 } : {}),
+        ...(inset ? { inset: true } : {}),
+      };
+      ring.push({ t: t0, cpuMs: last.ms, ...(gpuMs !== undefined ? { gpuMs } : {}), ...(interval !== undefined ? { intervalMs: interval } : {}), active, flush: !!flush, state: st.state, knobs: st.knobs, draws: last.draws, triangles: last.triangles, dpr: st.dpr, inset: !!inset });
+      if (ring.length > SAMPLE_RING) ring.splice(0, ring.length - SAMPLE_RING);
       if (frameSubs.size || frameListeners()) {
-        const e: FrameEvent = { scene: id, ms: last.ms, draws: last.draws, triangles: last.triangles };
+        const e: FrameEvent = { scene: id, ms: last.ms, draws: last.draws, triangles: last.triangles, quality: q };
         for (const cb of frameSubs) cb(e);
         emitFrame(e);
       }
@@ -602,12 +1107,35 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   /** Ask for a frame; inside a frame callback a scene change is picked up by this frame's batcher sync. */
   const invalidate = (what: Invalidation = "scene") => {
     if (what === "scene") sceneDirty = true;
+    else if (what === "pose") poseDirty = true;
     if (!inFrame) loop.invalidate(what);
   };
   controls.addEventListener("change", () => invalidate("view"));
+  // the gesture cannot settle while a pointer holds the view
+  controls.addEventListener("start", () => {
+    if (manualOn) return;
+    if (ctl.pointer(true, performance.now()).changed) applyKnobs();
+    notifyState();
+    scheduleWake();
+  });
+  controls.addEventListener("end", () => {
+    if (manualOn) return;
+    ctl.pointer(false, performance.now());
+    scheduleWake();
+  });
   // a host that adds a model to the root (an artifact preview) needs no call of its own
   root.addEventListener("childadded", () => invalidate());
   root.addEventListener("childremoved", () => invalidate());
+  attention.onChange(() => {
+    focusBoxes = undefined;
+    // what a knob does depends on what is focused (the inset, what is merged): judge them again
+    ctl.forgetTrials();
+    if (knobsNow.coarse || knobsNow.merge) {
+      policyDirty = true;
+      invalidate("view");
+    }
+    notify();
+  });
 
   const ro = new ResizeObserver(() => {
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -618,10 +1146,14 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   ro.observe(container);
 
   const canvas = renderer.domElement;
+  let restored: ((ok: boolean) => void) | undefined;
   const onLost = (e: Event) => {
     // keep the chance of a restore; nothing is drawn until then
     e.preventDefault();
     lost = true;
+    gpu.reset();
+    // given back on purpose (suspend): not a crash
+    if (suspending) return;
     for (const cb of lostSubs) cb();
     emitContextLost({ scene: id, at: performance.now() - created });
   };
@@ -629,10 +1161,91 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     lost = false;
     target?.dispose();
     target = null;
+    gpu.reset();
+    restored?.(true);
+    restored = undefined;
     invalidate();
   };
   canvas.addEventListener("webglcontextlost", onLost);
   canvas.addEventListener("webglcontextrestored", onRestored);
+
+  // ---- snapshot, suspend and resume (PB-1176) ----
+  const setPaused = () => {
+    loop.paused = manualOn || suspendedPause;
+  };
+  /** Drop every knob and draw now, synchronously. */
+  const renderFull = () => {
+    if (ctl.reset().changed) applyKnobs();
+    loop.flush(1 / 30);
+  };
+  const lifecycle = new ViewLifecycle(
+    {
+      renderFull,
+      read: () => new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), "image/png")),
+      size: () => {
+        renderer.getDrawingBufferSize(drawingSize);
+        return { width: drawingSize.x, height: drawingSize.y };
+      },
+      frames: () => loop.frames,
+      pause: (on) => {
+        suspendedPause = on;
+        setPaused();
+        if (on) {
+          if (wakeTimer) clearTimeout(wakeTimer);
+          wakeTimer = undefined;
+          ctl.reset();
+          applyKnobs();
+        }
+      },
+      ...(renderer.extensions.has("WEBGL_lose_context")
+        ? {
+            loseContext: () => {
+              suspending = true;
+              // the merged meshes and the target are rebuilt from the CPU side after the restore
+              disposeMerged(merged);
+              merged = undefined;
+              renderer.forceContextLoss();
+              return true;
+            },
+            restoreContext: () =>
+              new Promise<boolean>((resolve) => {
+                if (!renderer.getContext().isContextLost()) {
+                  suspending = false;
+                  resolve(true);
+                  return;
+                }
+                const timer = setTimeout(() => {
+                  restored = undefined;
+                  suspending = false;
+                  resolve(false);
+                }, 5000);
+                restored = (ok) => {
+                  clearTimeout(timer);
+                  suspending = false;
+                  resolve(ok);
+                };
+                renderer.forceContextRestore();
+              }),
+          }
+        : {}),
+      warm: async () => {
+        if (batcher) {
+          scene.updateMatrixWorld();
+          batcher.sync(logicalRoots(), policy);
+          await renderer.compileAsync(batcher.root, camera, scene).catch(() => undefined);
+        }
+      },
+      contextLost: () => lost,
+      now: () => performance.now(),
+    },
+    { freeGpuWhenHidden: options.freeGpuWhenHidden ?? inVsCodeWebview() },
+  );
+  const onVisibility = () => {
+    if (typeof document === "undefined") return;
+    if (document.visibilityState === "hidden") void lifecycle.suspend({ reason: "hidden" });
+    else void lifecycle.resume({ reason: "hidden" });
+  };
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
 
   const upAxis = new THREE.Vector3(0, 0, 1);
   const lights: [THREE.Object3D, THREE.Vector3][] = [
@@ -703,7 +1316,34 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     stub.dispose();
   };
 
-  return {
+  const quality: QualityApi = {
+    report,
+    onChange: (cb) => {
+      changeSubs.add(cb);
+      return () => void changeSubs.delete(cb);
+    },
+    configure: (c) => {
+      Object.assign(ctl.config, c);
+      if (!ctl.config.enabled && ctl.reset().changed) {
+        applyKnobs();
+        invalidate("scene");
+      }
+    },
+    prepareCoarse,
+    samples: () => ring.slice(),
+    registerEffect: (e) => {
+      effects.add(e);
+      e.setEnabled(!knobsNow.effectsOff);
+      refreshAvailability();
+      return () => {
+        effects.delete(e);
+        e.setEnabled(true);
+        refreshAvailability();
+      };
+    },
+  };
+
+  const handle: SceneHandle = {
     id,
     scene,
     camera,
@@ -726,15 +1366,22 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     },
     manual: {
       get on() {
-        return loop.paused;
+        return manualOn;
       },
       set on(v: boolean) {
-        loop.paused = v;
+        manualOn = v;
+        // a capture driver draws every frame itself, at full quality
+        if (v && ctl.reset().changed) applyKnobs();
+        setPaused();
         if (!v) invalidate();
       },
     },
-    // what changed was said through invalidate(): a camera-only frame skips the batcher's sync
-    renderOnce: () => loop.flush(1 / 30),
+    // what changed was said through invalidate(): a camera-only frame skips the batcher's sync; a capture is
+    // never a degraded frame (the knobs drop first)
+    renderOnce: () => {
+      if (ctl.reset().changed) applyKnobs();
+      loop.flush(1 / 30);
+    },
     compile,
     stats: () => ({
       frames: loop.frames,
@@ -754,18 +1401,49 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       Object.assign(colors, sceneColors(theme));
       invalidate();
     },
+    quality,
+    setAttention: (kind, keys) => void attention.set(kind, keys),
+    attention: () => attention.snapshot(),
+    onSnapshot: (cb) => lifecycle.onSnapshot(cb),
+    snapshot: () => lifecycle.snapshot("request"),
+    suspend: (o = {}) => lifecycle.suspend({ ...o, reason: "host" }),
+    resume: () => lifecycle.resume({ reason: "host" }),
+    lifecycle: () => lifecycle.state,
+    onLifecycle: (cb) => lifecycle.onState(cb),
     dispose: () => {
+      disposed = true;
       loop.dispose();
       ro.disconnect();
+      if (wakeTimer) clearTimeout(wakeTimer);
+      if (prewarmTimer) clearTimeout(prewarmTimer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
       controls.dispose();
       batcher?.dispose();
+      disposeMerged(merged);
+      merged = undefined;
+      gpu.dispose();
       target?.dispose();
       quad?.material.dispose();
       quad?.mesh.geometry.dispose();
       renderer.dispose();
       renderer.domElement.remove();
+      debugScenes.delete(id);
     },
   };
+  refreshAvailability();
+  debugScenes.set(id, {
+    handle,
+    report,
+    samples: () => ring.slice(),
+    configure: quality.configure,
+    setAttention: handle.setAttention,
+    snapshot: handle.snapshot,
+    suspend: handle.suspend,
+    resume: handle.resume,
+    prepareCoarse,
+    manual: (on: boolean) => (handle.manual.on = on),
+  });
+  return handle;
 }

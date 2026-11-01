@@ -226,6 +226,17 @@ interface Group {
   members: THREE.Mesh[];
 }
 
+/**
+ * What the quality curve (PB-1176, ./quality/) changes in a sync: a stand-in
+ * geometry to draw for a mesh (the coarse tier of an unfocused part), and
+ * meshes the batcher leaves out because a merged mesh draws them. The logical
+ * meshes themselves are not touched (picking and ids read their own geometry).
+ */
+export interface SyncPolicy {
+  geometryOf?: (mesh: THREE.Mesh) => THREE.BufferGeometry | undefined;
+  exclude?: (mesh: THREE.Mesh) => boolean;
+}
+
 export interface SyncStats {
   /** Logical meshes drawn by the batcher (visible ones). */
   instances: number;
@@ -269,6 +280,8 @@ export class Batcher {
    * need not walk them (the scene hides them for the draw call and puts them back).
    */
   pure: THREE.Object3D[] = [];
+  /** Logical meshes drawn as themselves after the last sync (a look with fewer than `minInstances` meshes): the quality curve swaps their geometry for the draw. */
+  singles: THREE.Mesh[] = [];
 
   /** Looks with fewer visible meshes than this are drawn mesh by mesh (default 2). */
   readonly minInstances: number;
@@ -284,8 +297,9 @@ export class Batcher {
    * the logical tree and a rewrite of the instance attributes, so it runs only
    * when the scene changed, never for a camera move.
    */
-  sync(sources: THREE.Object3D[]): SyncStats {
+  sync(sources: THREE.Object3D[], policy: SyncPolicy = {}): SyncStats {
     const t0 = performance.now();
+    const singles: THREE.Mesh[] = [];
     const lists = new Map<string, { source: THREE.BufferGeometry; look: Look; members: THREE.Mesh[]; tops: THREE.Object3D[] }>();
     let native = 0;
     const seenNative = new Set<THREE.InstancedMesh>();
@@ -294,13 +308,18 @@ export class Batcher {
       const vis = visible && o.visible;
       let own = false;
       if (isBatchable(o)) {
-        const { look, key: lk } = cachedLook(o, o.material as THREE.MeshStandardMaterial);
-        const key = `${o.geometry.id}|${lk}`;
-        let list = lists.get(key);
-        if (!list) lists.set(key, (list = { source: o.geometry, look, members: [], tops: [] }));
-        if (vis) {
-          list.members.push(o);
-          list.tops.push(top);
+        // a mesh a merged mesh draws (the quality curve's merge knob) stays on the logical layer, in no group
+        if (!policy.exclude?.(o)) {
+          const { look, key: lk } = cachedLook(o, o.material as THREE.MeshStandardMaterial);
+          // the quality curve may draw a stand-in (the coarse tier); the logical mesh keeps its own geometry
+          const geometry = policy.geometryOf?.(o) ?? o.geometry;
+          const key = `${geometry.id}|${lk}`;
+          let list = lists.get(key);
+          if (!list) lists.set(key, (list = { source: geometry, look, members: [], tops: [] }));
+          if (vis) {
+            list.members.push(o);
+            list.tops.push(top);
+          }
         }
         if (o.layers.mask !== LOGICAL_MASK) {
           o.userData.__layers ??= o.layers.mask;
@@ -339,11 +358,13 @@ export class Batcher {
           delete m.userData.__layers;
         }
         impure.add(list.tops[i]);
+        singles.push(m);
         native++;
       });
       lists.delete(key);
     }
     this.pure = candidates.filter((c) => !impure.has(c));
+    this.singles = singles;
 
     // groups that are gone
     for (const [key, g] of this.groups)
@@ -409,6 +430,25 @@ export class Batcher {
     this.materials.retain(used);
     this.last = { instances, groups: this.groups.size, materials: this.materials.size, native, ms: performance.now() - t0 };
     return this.last;
+  }
+
+  /**
+   * Placements only changed (an explode tween, a sequence playing): rewrite each group's instance matrices from
+   * its members' world matrices, without walking the tree or regrouping. Visibility, looks and highlights must
+   * not have changed (those need `sync`). Returns the instances written.
+   */
+  refreshMatrices(): number {
+    let n = 0;
+    for (const g of this.groups.values()) {
+      const { mesh, members } = g;
+      for (let i = 0; i < members.length; i++) mesh.setMatrixAt(i, members[i].matrixWorld);
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, members.length * 16);
+      mesh.computeBoundingSphere();
+      n += members.length;
+    }
+    return n;
   }
 
   /** A GLB's own InstancedMesh: shared material, colour and emissive attributes. False when its material cannot be shared. */

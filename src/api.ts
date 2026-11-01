@@ -7,6 +7,10 @@
  * This file holds types only, so the published declarations stay small.
  */
 import type { UhdBundle, UhdBundleDiagnostic } from "@uhd/types/bundle.js";
+/** The live part of the 3D view's state the host saves per scope (`.protoboard/local/viewer-state.json`). */
+export type ViewerLiveState = Partial<Pick<ViewState, LiveKey>>;
+/** Named views and annotations: deliberate presentation, kept in the display file (`spatial.views`, `spatial.annotations`). */
+export type ViewerPresentation = Pick<ViewState, "namedViews" | "annotations">;
 
 /** URL for a definition's artifact file path, or undefined if it cannot be resolved. */
 export type ArtifactResolver = (definitionId: string, filePath: string) => string | undefined;
@@ -113,9 +117,11 @@ export interface ViewerOptions {
    * NEW TAB in its context menu): `path` is its instance path from the root.
    * Given: double-click opens the module there (a host's new tab or window),
    * and expanding it in place moves to the context menu. Not given:
-   * double-click expands the module in place.
+   * double-click expands the module in place. `view: "3d"` (PB-1072): a part
+   * with nothing inside but a model of its own (a bought part), or a part
+   * double-clicked in the 3D view, opens on its 3D view.
    */
-  onOpenModule?: (request: { path: string }) => void;
+  onOpenModule?: (request: { path: string; view?: "3d" }) => void;
   /**
    * The user asked for the pair view of a link (the inspector's pair
    * preview). Given: the host shows it (its own tab or window); otherwise
@@ -160,6 +166,89 @@ export interface ViewerOptions {
    * that tells the viewer when the host's theme changes.
    */
   theme?: ViewerThemeOption;
+
+  // ---- the 3D view's state (PB-1178; docs: protoboard-stack docs/reference/viewer-bridge.md) ----
+  /**
+   * The live view state saved before (per scope: camera, selection,
+   * visibility, sections, explode), to show again: the host passes what it
+   * saved from `onViewStateChange`. URL parameters and writes made since the
+   * page opened win over it.
+   */
+  viewState?: ViewerStateFile;
+  /**
+   * Called 400 ms after the live view state last changed (and at once when
+   * the page hides), only when it did: the host saves it per user, never in
+   * a committed file (`.protoboard/local/viewer-state.json`, a webview's own
+   * state).
+   */
+  onViewStateChange?: (file: ViewerStateFile) => void;
+  /**
+   * Named views or annotations changed by an explicit save (the `saveView` and
+   * `deleteView` verbs, from the user or an agent): the host writes them to
+   * the display file (`spatial.views`, `spatial.annotations`) if they differ
+   * from what it holds. Never called for a camera move.
+   */
+  onPresentationChange?: (presentation: ViewerPresentation) => void;
+  /**
+   * The 3D view's save points (PB-1180 handoff): on settle and when the page hides, the frame drawn as a PNG
+   * and what it shows. The host keeps them (`.protoboard/local/snapshots/<level>__<view>.png` and `.json`,
+   * `source: "viewer"`) so the next tab opens on them with no camera jump. Called only when given.
+   */
+  onSavePoint?: (point: ViewerSavePoint) => void;
+  /** Replies to `uhd-viewer:sequence` commands (the assembly sequence player, PB-1183). */
+  onSequenceState?: (reply: ViewerSequenceReply) => void;
+}
+
+/** A save point the 3D view hands its host (`onSavePoint`). */
+export interface ViewerSavePoint {
+  /** The PNG as drawn (device pixels). */
+  png: Blob;
+  level: string;
+  view: "3d";
+  width: number;
+  height: number;
+  css: { width: number; height: number; dpr: number };
+  camera: CameraState;
+  viewState: ViewState;
+  /** "settle" (every model in, the view at rest) or "hide" (the page went away). */
+  reason: "settle" | "hide";
+  takenAt: string;
+}
+
+/**
+ * The host's last snapshot of a tab (`uhd-viewer:snapshot`, PB-1180): the 3D view paints it at once, scaled to
+ * its height and centred, sets its camera exactly, and goes live under it with no jump.
+ */
+export interface ViewerSnapshotMessage {
+  type: "uhd-viewer:snapshot";
+  schema: "protoboard.snapshot/v0";
+  view: string;
+  level: string;
+  imageUrl: string;
+  camera?: CameraState;
+  viewState?: Partial<ViewState>;
+  bundleHash?: string;
+  revision?: number;
+  backend?: string;
+  css?: { width: number; height: number; dpr: number };
+  theme?: string;
+  takenAt?: string;
+  /** The hash of the bundle the host is about to load: when it differs from `bundleHash`, the view says it is updating. */
+  currentBundleHash?: string;
+}
+
+/** A command for the assembly sequence player (W2-C, `src/cad/sequence`); see `SequenceCommand` there. */
+export interface ViewerSequenceCommand {
+  action: string;
+  [key: string]: unknown;
+}
+
+export interface ViewerSequenceReply {
+  type: "uhd-viewer:sequenceState";
+  ok: boolean;
+  error?: string;
+  /** The player's snapshot: steps (ids, titles), t, the current step, playing, loop, joints. */
+  state?: unknown;
 }
 
 /** A theme: values for the viewer's semantic tokens (docs: README, "Theming"). */
@@ -212,7 +301,22 @@ export type ViewerHostMessage =
   | { type: "uhd-viewer:select"; ids: string[]; reveal?: boolean }
   /** Show the level of this instance path ("" is the root system). */
   | { type: "uhd-viewer:drill"; path: string }
-  | { type: "uhd-viewer:setView"; view: ViewerView };
+  | { type: "uhd-viewer:setView"; view: ViewerView }
+  /** Write the 3D view's state (writable keys of `ViewState`), as a host: last writer wins, logged as the host's. */
+  | { type: "uhd-viewer:setViewState"; state: Partial<ViewState> }
+  /** Saved live state to show again (`ViewerOptions.viewState`). */
+  | { type: "uhd-viewer:restoreViewState"; file: ViewerStateFile }
+  /** A live-tab bridge batch (an agent's, relayed by the host): the reply comes back as `uhd-viewer:bridgeReply`. */
+  | BridgeRequest
+  /** Run an assembly sequence command (goto, explode, assemble, play, loop, stop, isolate, joint, set, clip): reply `uhd-viewer:sequenceState`. */
+  | { type: "uhd-viewer:sequence"; command: ViewerSequenceCommand }
+  /** The host's last snapshot of this tab: painted at once, then the view goes live under it (PB-1180). */
+  | ViewerSnapshotMessage
+  /**
+   * The 3D view's quality curve settings (PB-1176): `enabled`, `tauMs` (recovery), `budgetMs` (frame budget). The
+   * VS Code settings `protoboard.viewer.settleTauMs` and an off switch map to these.
+   */
+  | { type: "uhd-viewer:quality"; config: Record<string, unknown> };
 
 /** Viewer → host events (posted to the parent window, or the options' callbacks). */
 export type ViewerEvent =
@@ -220,9 +324,17 @@ export type ViewerEvent =
   | { type: "uhd-viewer:selectionChanged"; selection: ViewerSelection | null }
   | { type: "uhd-viewer:openSource"; defId: string; instancePath?: string }
   | { type: "uhd-viewer:openArtifact"; defId: string; artifactId: string }
-  | { type: "uhd-viewer:openModule"; path: string }
+  | { type: "uhd-viewer:openModule"; path: string; view?: "3d" }
   | { type: "uhd-viewer:openPair"; linkId: string; a: string; b: string }
-  | { type: "uhd-viewer:inspect"; path: string; defId?: string };
+  | { type: "uhd-viewer:inspect"; path: string; defId?: string }
+  /** The live view state changed (400 ms after the last change): `ViewerOptions.onViewStateChange`. */
+  | { type: "uhd-viewer:viewState"; file: ViewerStateFile }
+  /** Named views or annotations were saved: `ViewerOptions.onPresentationChange`. */
+  | { type: "uhd-viewer:presentation"; presentation: ViewerPresentation }
+  /** The reply to a bridge batch. */
+  | BridgeReplyMessage
+  /** The reply to a sequence command. */
+  | ViewerSequenceReply;
 
 export interface ViewerHandle {
   /**
@@ -249,4 +361,216 @@ export interface ViewerHandle {
    * model is on screen wait for it.
    */
   post(message: unknown): boolean;
+  /** The 3D view's state now (camera, selection, visibility, sections, explode, named views, the facts). */
+  viewState(): ViewState;
+  /** Write view-state keys as the host (last writer wins); throws when a value is refused. */
+  setViewState(state: Partial<ViewState>): void;
+  /** Saved live state to show again (as `ViewerOptions.viewState`). */
+  restoreViewState(file: ViewerStateFile): void;
+  /** Apply a live-tab bridge request (an agent's batch the host relays); returns the reply to send back. */
+  bridge(request: BridgeRequest): BridgeReplyMessage | undefined;
+  /** The named views and annotations (what an explicit save writes to the display file). */
+  presentation(): ViewerPresentation;
+  /** Run an assembly sequence command now (the 3D view must be shown); the player's reply. */
+  sequence(command: ViewerSequenceCommand): ViewerSequenceReply;
 }
+
+// ---------------------------------------------------------------------------
+// The 3D view's state (PB-1178): one schema for the URL, host messages, `window.__cad` and the live-tab bridge.
+// Implemented in src/cad/state (the store, its verbs and op log); the types are part of the public contract.
+// ---------------------------------------------------------------------------
+
+export type Vec3 = [number, number, number];
+
+/** The camera, in the root's coordinates (mm). `fov` (degrees, vertical) for a perspective camera; `ortho` for an orthographic one. */
+export interface CameraState {
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  fov?: number;
+  /** An orthographic camera: the zoom factor (DEFAULT: the view draws perspective only; kept so a saved state can say it). */
+  ortho?: { zoom: number };
+}
+
+/** What is selected in the 3D view, by instance path (a body may carry `#artifact`). */
+export interface ViewSelection {
+  body?: string;
+  iface?: string;
+  /** A component drawn inside the selected body (a board's part), by instance path. */
+  component?: string;
+  /** A mate, by its link id (`owner/link`). */
+  mate?: string;
+  /** A routed wire harness, by instance path. */
+  harness?: string;
+}
+
+export type LabelKind = "module" | "harness" | "interface" | "finding";
+export type InterfaceDirection = "feature" | "artifact" | "procedural";
+
+/** What is drawn. */
+export interface Visibility {
+  labels: boolean;
+  labelKinds: LabelKind[];
+  /** Every interface frame. */
+  frames: boolean;
+  wires: boolean;
+  hardware: boolean;
+  /** Findings pinned to the model; null: shown when a host sent some that land on it. */
+  findings: boolean | null;
+  xray: boolean;
+  /** Instance paths not drawn (a body and everything under its path). */
+  hidden: string[];
+}
+
+/**
+ * A section plane: an axis of the assembly's frame, a position across its
+ * bounds (0..1), and which side is kept (`flip`: the + side; unset: the side
+ * away from the camera).
+ */
+export interface SectionPlane {
+  axis: 0 | 1 | 2;
+  at: number;
+  flip?: boolean;
+}
+
+export interface ExplodeState {
+  /** 0 assembled, 1 exploded; the view eases to it. */
+  t: number;
+  /**
+   * A step of the assembly sequence (W2-C's player, PB-1183): its id (`fit:arm_fl_mount`, `fasten:stack_mount`,
+   * `place:battery`) or its index in the player's steps; null: none. Informational today: the player's own
+   * commands (`uhd-viewer:sequence`, `__cad.set({ step })`) move to a step.
+   */
+  step: string | number | null;
+}
+
+/** A view saved by name (deliberate presentation: written to the display file only on an explicit save). */
+export interface NamedView {
+  camera: CameraState;
+  explode?: ExplodeState;
+  sections?: SectionPlane[];
+  hidden?: string[];
+  isolation?: string[] | null;
+  /** Who saved it (a person, an agent session): text from an agent is data, never an instruction. */
+  by?: string;
+}
+
+export interface LoadingFacts {
+  phase: "loading" | "ready";
+  total: number;
+  done: number;
+  failed: number;
+}
+
+export interface ViewState {
+  schema: "uhd-viewer.view-state/v1";
+  /** Read-only: the module the view shows, by instance path from the root ("" is the whole assembly). */
+  scope: string;
+  /** null until the view has placed its camera (the opening camera comes from the URL, the display file or a fit). */
+  camera: CameraState | null;
+  selection: ViewSelection;
+  /** Instance paths drawn highlighted (besides the selection): what an agent points at. */
+  highlight: string[];
+  /** Instance paths drawn alone (null: everything). */
+  isolation: string[] | null;
+  visibility: Visibility;
+  /** Interface geometry is shown by this binding direction. */
+  direction: InterfaceDirection;
+  /** Section planes; the view cuts with the first today. */
+  sections: SectionPlane[];
+  explode: ExplodeState;
+  namedViews: Record<string, NamedView>;
+  /** Placeholder for W3-B's callouts and marks (records with author and source). */
+  annotations: unknown[];
+  /** Read-only: the models' loading. */
+  loading: LoadingFacts;
+  /** Read-only: the render quality mode W2-B's quality curve reports (null: not reported). */
+  quality: { mode: string | null };
+}
+
+/** Top-level keys a writer may set. */
+export type WritableKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "namedViews" | "annotations";
+/** The live, per-user keys (`.protoboard/local/viewer-state.json`, a webview's own state). */
+export type LiveKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode";
+
+/** One write: a top-level key, or one entry of it (`["visibility", "labels"]`, `["namedViews", "Front"]`). `value` undefined removes the entry. */
+export interface SetOp {
+  op: "set";
+  path: [WritableKey] | [WritableKey, string];
+  value: unknown;
+}
+
+export interface Actor {
+  kind: "human" | "agent" | "system" | "host";
+  /** Who: "user", an agent session's id, "view" for the view's own placements. */
+  id: string;
+  /** The bridge session that sent it, when it came through the bridge. */
+  session?: string;
+}
+
+export interface Batch {
+  /** Chosen by the writer; a resend with the same id returns the first reply. */
+  batchId: string;
+  /** 3 to 8 words saying what it does (Pen's call label). */
+  label: string;
+  /** Typed verbs (./ops.ts `ViewOp`); empty: a read. */
+  ops: unknown[];
+  /** The seq the writer read the whole state at: refused when anything was committed since. */
+  expectSeq?: number;
+  /** The versions of the keys the writer read or will touch: refused when any changed since. */
+  expectVersions?: Record<string, number>;
+  /** Return the state after the batch (default true). */
+  state?: boolean;
+}
+
+export interface MissedEntry {
+  seq: number;
+  actor: Actor;
+  batchId?: string;
+  label: string;
+  keys: string[];
+}
+
+export type BatchReply =
+  | { status: "applied"; batchId: string; seq: number; applied: SetOp[]; changed: string[]; versions: Record<string, number>; duplicate?: true; state?: ViewState }
+  | { status: "read"; batchId: string; seq: number; versions: Record<string, number>; state?: ViewState; duplicate?: true }
+  | {
+      status: "refused";
+      batchId: string;
+      seq: number;
+      reason: "stale-seq" | "stale-versions";
+      /** The entries committed after what the writer read: re-observe, then decide again. */
+      missed: { from: number; to: number; entries: MissedEntry[] };
+      /** Per key that changed: what the writer expected, what it is now, its value, and who changed it last. */
+      conflicts?: { key: string; expected: number; current: number; value: unknown; by?: Actor; seq?: number }[];
+      duplicate?: true;
+    }
+  | { status: "invalid"; batchId: string; seq: number; error: string; index?: number; duplicate?: true };
+
+export interface ViewerStateFile {
+  schema: "protoboard.viewer-state/v0";
+  /** The view-state schema of the values. */
+  viewState: "uhd-viewer.view-state/v1";
+  /** The scope shown last. */
+  scope: string;
+  /** Live keys per scope ("" is the whole assembly). */
+  scopes: Record<string, Partial<Pick<ViewState, LiveKey>>>;
+}
+
+/** Host → viewer: a batch from an actor the host authenticated (a bridge session). */
+export interface BridgeRequest {
+  type: "uhd-viewer:bridge";
+  /** The host's id for this delivery (echoed in the reply). */
+  id: string;
+  batch: Batch;
+  actor: Actor;
+  /** Also return what is drawn (`__cad.observe`, without components). */
+  observe?: boolean;
+}
+
+export interface BridgeReplyMessage {
+  type: "uhd-viewer:bridgeReply";
+  id: string;
+  reply: BatchReply & { observation?: unknown; view?: "3d" | "diagram" };
+}
+

@@ -19,7 +19,7 @@ import { applySelectChanges, initialInteraction, interactionReducer, validViewpo
 import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
 import type { CadSelection } from "../cad/CadView";
 import type { LegendStage } from "../ui/legendFit";
-import { defAt } from "../cad/model";
+import { defAt, glbFor } from "../cad/model";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
 import { pairEnds } from "../chrome/PairView";
@@ -56,11 +56,14 @@ function useSaved(key: string, value: unknown, enabled = true) {
 }
 
 /**
- * Layout edits when a host owns them: edits go to `onChange`, debounced like
- * local saves, and a different layout the host passes later replaces them.
- * Nothing is sent that the host already has (on mount, or its own layout back).
+ * Layout edits when a host owns them: edits go to `onChange` once a drag is
+ * dropped (PB-1178: the host writes the committed display file, so it hears a
+ * move once, on drop, not after every pause of a drag), coalesced with what
+ * follows within 250 ms, and a different layout the host passes later
+ * replaces them. Nothing is sent that the host already has (on mount, or its
+ * own layout back, or the same layout again).
  */
-function useHostLayout(layout: ViewerLayout, host: ViewerLayout | undefined, apply: (layout: ViewerLayout) => void, onChange?: (layout: ViewerLayout) => void) {
+function useHostLayout(layout: ViewerLayout, host: ViewerLayout | undefined, apply: (layout: ViewerLayout) => void, onChange?: (layout: ViewerLayout) => void, dragging = false) {
   const handler = useRef(onChange);
   handler.current = onChange;
   // the layout the host has: what it passed in, or what it was last sent
@@ -73,13 +76,14 @@ function useHostLayout(layout: ViewerLayout, host: ViewerLayout | undefined, app
     if (!sameLayout(host, current.current)) apply(host ?? { positions: {}, links: {} });
   }, [host, apply]);
   useEffect(() => {
-    if (!handler.current || sameLayout(layout, known.current)) return;
+    // while a node is dragged nothing is sent: the drop sends the whole move once
+    if (dragging || !handler.current || sameLayout(layout, known.current)) return;
     const t = setTimeout(() => {
       known.current = layout;
       handler.current?.(layout);
     }, 250);
     return () => clearTimeout(t);
-  }, [layout]);
+  }, [layout, dragging]);
 }
 
 /** Findings the viewer computes itself for every scenario: left out of the producer's list. */
@@ -306,7 +310,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     setPositions(l.positions);
     setLinkEdits(l.links);
   }, []);
-  useHostLayout(useMemo(() => ({ positions, links: linkEdits }), [positions, linkEdits]), options.layout, applyHostLayout, options.onLayoutChange);
+  useHostLayout(useMemo(() => ({ positions, links: linkEdits }), [positions, linkEdits]), options.layout, applyHostLayout, options.onLayoutChange, Boolean(live?.nodes?.size || live?.links?.size));
   const editLink = useCallback(
     (linkId: string, patch: LinkLayout) =>
       setLinkEdits((e) => ({ ...e, [levelKey]: { ...(e[levelKey] ?? {}), [linkId]: { ...(e[levelKey]?.[linkId] ?? {}), ...patch } } })),
@@ -531,7 +535,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     () => ({
       openSource: host?.source ? (defId, instancePath) => host.emit({ type: "uhd-viewer:openSource", defId, ...(instancePath ? { instancePath } : {}) }) : undefined,
       openArtifact: host?.artifact ? (defId, artifactId) => host.emit({ type: "uhd-viewer:openArtifact", defId, artifactId }) : undefined,
-      openModule: host?.module ? (path) => host.emit({ type: "uhd-viewer:openModule", path }) : undefined,
+      openModule: host?.module ? (path, view) => host.emit({ type: "uhd-viewer:openModule", path, ...(view ? { view } : {}) }) : undefined,
       inspect: host?.inspect ? (path, defId) => host.emit({ type: "uhd-viewer:inspect", path, ...(defId ? { defId } : {}) }) : undefined,
     }),
     [host?.source, host?.artifact, host?.module, host?.inspect, host?.emit],
@@ -543,11 +547,19 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
    */
   const onOpenNode = useCallback(
     (id: string) => {
-      const what = openAction(vm.nodes.find((n) => n.id === id), Boolean(hostActions.openModule));
+      const node = vm.nodes.find((n) => n.id === id);
+      // a part with nothing inside but a model of its own (a bought part, PB-1072): its own 3D view
+      const def = node?.defId ? defFor(node.defId) : undefined;
+      const what = openAction(node, Boolean(hostActions.openModule), Boolean(def && glbFor(def)));
       if (what === "open") hostActions.openModule!(fullId(drill, id));
-      else if (what === "expand") onToggleExpand(id);
+      else if (what === "open3d") hostActions.openModule!(fullId(drill, id), "3d");
+      else if (what === "show3d") {
+        // no host to open a tab: the 3D view, the part selected and framed
+        setView("3d");
+        setCadFocus({ path: fullId(drill, id), seq: ++seq.current, kind: "node", look: true });
+      } else if (what === "expand") onToggleExpand(id);
     },
-    [vm, drill, hostActions, onToggleExpand],
+    [vm, drill, hostActions, onToggleExpand, defFor],
   );
   const onNodeContext = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
   const onPaneContext = useCallback((x: number, y: number) => setMenu({ x, y }), []);
@@ -688,7 +700,9 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
  * has a level to open or to expand; a part with nothing inside, a net's
  * junction, a rail's tap and a boundary port have none.
  */
-export function openAction(node: { defId?: string; childCount?: number; net?: unknown; tapOf?: string; sheetPort?: unknown } | undefined, hostOpens: boolean): "open" | "expand" | "none" {
+export function openAction(node: { defId?: string; childCount?: number; net?: unknown; tapOf?: string; sheetPort?: unknown } | undefined, hostOpens: boolean, hasModel = false): "open" | "open3d" | "show3d" | "expand" | "none" {
+  // a part with nothing inside: its own 3D model when it has one (PB-1072), else nothing to open
+  if (node && !node.childCount && hasModel && node.defId && !node.net && !node.tapOf && !node.sheetPort) return hostOpens ? "open3d" : "show3d";
   if (!node || !node.childCount) return "none";
   if (hostOpens && node.defId && !node.net && !node.tapOf && !node.sheetPort) return "open";
   return "expand";
