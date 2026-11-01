@@ -81,10 +81,20 @@ const inside = (dir, file) => file === dir || file.startsWith(dir.endsWith(sep) 
  *
  * @param {any} bundle a parsed `uhd.bundle/v0`
  * @param {string} bundleFile its path on disk (relative bases and definitions without a base resolve against its folder)
- * @returns {{ mounts: Map<string, string>, files: Map<string, string>, bases: Record<string, string>, rewrite: (origin: string) => any }}
+ * @returns {{ mounts: Map<string, string>, files: Map<string, string>, sidecars: Map<string, string>, bases: Record<string, string>, rewrite: (origin: string) => any }}
  *   mounts: URL name → base folder; files: "<name>/<artifact path>" → file;
+ *   sidecars: the view sidecars a GLB artifact may have beside it (see VIEW_SIDECARS), same keys and folders;
  *   bases: definition id → mount name or URL; rewrite: the bundle as served from `origin`.
  */
+/**
+ * The view sidecars the build may write beside a body `X.glb` (protoboard-stack
+ * `packages/core/src/view-model/names.ts`): the viewer loads `X.view.glb` and
+ * `X.view.json` when they are there, else `X.glb`. They are served for every
+ * GLB the bundle references, from the same folder, under the same checks; a
+ * sidecar that is not on disk answers 404 like any missing file.
+ */
+export const VIEW_SIDECARS = [".view.glb", ".view.coarse.glb", ".view.json"];
+
 export function planBundle(bundle, bundleFile) {
   if (bundle?.schema !== BUNDLE_SCHEMA) throw new Error(`${bundleFile} is not a UHD bundle (schema ${String(bundle?.schema)})`);
   const bundleDir = dirname(resolve(bundleFile));
@@ -102,6 +112,7 @@ export function planBundle(bundle, bundleFile) {
   const sourceBases = bundle.artifactBases ?? {};
   const bases = {};
   const files = new Map();
+  const sidecars = new Map();
   for (const [id, base] of Object.entries(sourceBases)) bases[id] = isUrl(base) ? base : mount(isAbsolute(base) ? normalize(base) : resolve(bundleDir, base));
   const definitions = [
     ...(bundle.definitions ?? []),
@@ -116,14 +127,22 @@ export function planBundle(bundle, bundleFile) {
       const rel = normalize(a.filePath);
       if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) continue;
       const name = bases[def.id];
-      files.set(`${name}/${rel.split(sep).join("/")}`, join(mounts.get(name), rel));
+      const key = `${name}/${rel.split(sep).join("/")}`;
+      files.set(key, join(mounts.get(name), rel));
+      // X.glb (not itself a sidecar): X.view.glb, X.view.coarse.glb and X.view.json beside it
+      if (/\.glb$/i.test(rel) && !/\.view(\.coarse)?\.glb$/i.test(rel)) {
+        const stem = rel.slice(0, -".glb".length);
+        for (const ext of VIEW_SIDECARS) sidecars.set(`${key.slice(0, -".glb".length)}${ext}`, join(mounts.get(name), `${stem}${ext}`));
+      }
     }
   }
   const rewrite = (origin) => ({
     ...bundle,
     artifactBases: Object.fromEntries(Object.entries(bases).map(([id, b]) => [id, isUrl(b) ? b : `${origin}/artifacts/${b}`])),
   });
-  return { mounts, files, bases, rewrite };
+  // a sidecar named like a referenced artifact is that artifact
+  for (const k of files.keys()) sidecars.delete(k);
+  return { mounts, files, sidecars, bases, rewrite };
 }
 
 /**
@@ -205,7 +224,7 @@ export function viewerHandler({ bundleFile, appDir: app = APP_DIR, allowHost = (
       if (path.startsWith("/artifacts/")) {
         const p = await plan();
         const key = path.slice("/artifacts/".length);
-        const file = p.files.get(key);
+        const file = p.files.get(key) ?? p.sidecars.get(key);
         if (!file) return send(res, 404, "not an artifact of this bundle", undefined, ARTIFACT_HEADERS);
         const base = await realOf(p.mounts.get(key.split("/")[0]));
         const real = await realpath(file).catch(() => undefined);

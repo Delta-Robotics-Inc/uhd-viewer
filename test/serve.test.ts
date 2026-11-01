@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { injectConfig, planBundle, startServer } from "../bin/serve.mjs";
 
 const def = (id: string, files: string[]) => ({ id, name: id, interfaces: [], artifacts: files.map((f, i) => ({ id: `a${i}`, type: "3d_model", filePath: f })) });
@@ -29,6 +29,28 @@ describe("planBundle", () => {
       // no base: the bundle's own folder
       "build/loose.glb": "/work/project/.build/loose.glb",
     });
+  });
+
+  it("adds the view sidecars beside every referenced GLB, from the same folder (PB-1175)", () => {
+    expect([...plan.sidecars.keys()]).toEqual([
+      "project/cad/sys.view.glb",
+      "project/cad/sys.view.coarse.glb",
+      "project/cad/sys.view.json",
+      "uhd/cad/motor.view.glb",
+      "uhd/cad/motor.view.coarse.glb",
+      "uhd/cad/motor.view.json",
+      "build/loose.view.glb",
+      "build/loose.view.coarse.glb",
+      "build/loose.view.json",
+      "uhd/cad/motor-alt.view.glb",
+      "uhd/cad/motor-alt.view.coarse.glb",
+      "uhd/cad/motor-alt.view.json",
+    ]);
+    expect(normalize(plan.sidecars.get("uhd/cad/motor.view.json")!)).toBe(normalize("/work/node_modules/@acme/uhd/cad/motor.view.json"));
+    // nothing for a URL base, a non-GLB artifact or a path that leaves its base; a referenced sidecar is just a file
+    const p = planBundle({ schema: "uhd.bundle/v0", root: "a", definitions: [def("a", ["m/a.view.glb", "m/a.step", "../b.glb"])], artifactBases: { a: "/x/proj" } }, "/b.json");
+    expect([...p.sidecars.keys()]).toEqual([]);
+    expect([...p.files.keys()]).toEqual(["proj/m/a.view.glb", "proj/m/a.step"]);
   });
 
   it("rewrites filesystem bases to URLs and keeps URL bases", () => {
@@ -88,6 +110,10 @@ describe("the server", () => {
     project = join(dir, "project");
     mkdirSync(join(project, "cad"), { recursive: true });
     writeFileSync(join(project, "cad", "body.glb"), "glTF");
+    // the view sidecars the build writes beside it (no coarse tier here)
+    writeFileSync(join(project, "cad", "body.view.glb"), "glTF-view");
+    writeFileSync(join(project, "cad", "body.view.json"), '{"schema":"protoboard.view-sidecar/v0"}');
+    writeFileSync(join(project, "cad", "notes.view.json"), "{}");
     writeFileSync(join(project, "cad", "notes.html"), "<script>parent.postMessage('x','*')</script>");
     writeFileSync(join(project, "cad", "drawing.svg"), "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>");
     writeFileSync(join(project, ".env"), "SECRET=1");
@@ -131,6 +157,22 @@ describe("the server", () => {
   it("serves referenced artifacts with their media type", async () => {
     const res = await get("/artifacts/project/cad/body.glb");
     expect(res).toMatchObject({ status: 200, type: "model/gltf-binary", body: "glTF" });
+  });
+
+  it("serves the view sidecars beside a referenced GLB, sandboxed, and 404 for one that is not there (PB-1175)", async () => {
+    const csp = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox";
+    const glb = await get("/artifacts/project/cad/body.view.glb");
+    expect(glb).toMatchObject({ status: 200, type: "model/gltf-binary", body: "glTF-view" });
+    expect([glb.headers["content-security-policy"], glb.headers["x-content-type-options"]]).toEqual([csp, "nosniff"]);
+    const json = await get("/artifacts/project/cad/body.view.json");
+    expect(json).toMatchObject({ status: 200, body: '{"schema":"protoboard.view-sidecar/v0"}' });
+    expect(json.type).toMatch(/application\/json/);
+    expect((await get("/artifacts/project/cad/body.view.json", { method: "HEAD" })).status).toBe(200);
+    // not written: 404, as a missing artifact
+    expect((await get("/artifacts/project/cad/body.view.coarse.glb")).status).toBe(404);
+    // only beside a GLB the bundle references (notes.html has none; an unreferenced GLB's sidecar is not served)
+    expect((await get("/artifacts/project/cad/notes.view.json")).status).toBe(404);
+    expect((await get("/artifacts/project/cad/other.view.glb")).status).toBe(404);
   });
 
   it("sends every artifact sandboxed and unsniffed, and an HTML file as a download (PB-1048)", async () => {

@@ -196,14 +196,19 @@ export class LabelLayer {
     }
   }
 
-  /** Lay out and draw; call every frame. */
-  update(camera: THREE.Camera, width: number, height: number, dt = 1 / 60) {
+  /**
+   * Lay out and draw; call every frame that is drawn. Returns true while the
+   * cards are still fading or easing towards their places (the view keeps
+   * drawing frames until they settle, then goes idle: PB-1175).
+   */
+  update(camera: THREE.Camera, width: number, height: number, dt = 1 / 60): boolean {
     const k = 1 - Math.exp(-dt * 8);
     this.opacity += (this.target - this.opacity) * k;
     if (Math.abs(this.target - this.opacity) < 0.002) this.opacity = this.target;
     this.root.style.opacity = String(this.opacity);
     this.root.style.display = this.opacity < 0.01 ? "none" : "block";
-    if (this.opacity < 0.01) return;
+    const fading = this.opacity !== this.target;
+    if (this.opacity < 0.01) return fading;
     this.svg.setAttribute("width", String(width));
     this.svg.setAttribute("height", String(height));
 
@@ -221,12 +226,13 @@ export class LabelLayer {
       c.path.style.display = c.dot.style.display = "";
       placed.push({ item, id: item.id, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height, w: c.el.offsetWidth, h: c.el.offsetHeight });
     }
-    if (!placed.length) return;
+    if (!placed.length) return fading;
 
     const solved = solveLabels(placed, width, height, this.margins);
     // ease towards the solution, then keep each column's order and gaps so cards never overlap while moving
     const ease = this.snap ? 1 : Math.min(1, k * 2.5);
     this.snap = false;
+    let easing = false;
     const columns = new Map<string, { p: LabelBox & { item: LabelItem }; s: SolvedLabel }[]>();
     for (const p of placed) {
       const sv = solved.get(p.id)!;
@@ -239,6 +245,9 @@ export class LabelLayer {
       for (const { p, s: sv } of col) {
         const c = this.cards.get(p.id)!;
         let y = Number.isNaN(c.y) || c.side !== `${sv.side}:${sv.column}` ? sv.y : c.y + (sv.y - c.y) * ease;
+        // half a pixel from where it is going: settled
+        if (Math.abs(sv.y - y) > 0.5) easing = true;
+        else y = sv.y;
         y = Math.max(y, floor);
         c.y = y;
         c.side = `${sv.side}:${sv.column}`;
@@ -253,6 +262,7 @@ export class LabelLayer {
         c.dot.setAttribute("cy", p.y.toFixed(1));
       }
     }
+    return fading || easing;
   }
 
   dispose() {

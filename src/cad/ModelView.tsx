@@ -131,6 +131,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
     h.controls.target.copy(centre);
     h.camera.position.copy(centre).addScaledVector(d, dist);
     h.controls.update();
+    h.invalidate("view");
   };
 
   // the model: the host's scene, or the GLB at `url`
@@ -193,6 +194,8 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
         mat.needsUpdate = true;
       }
     });
+    // frames are drawn on change only (PB-1175)
+    handle.current?.invalidate();
   }, [wire, xray, state.status, originals]);
 
   useEffect(() => {
@@ -200,6 +203,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
     if (!h) return;
     const g = h.scene.children.find((o) => o instanceof THREE.GridHelper);
     if (g) g.visible = grid;
+    h.invalidate();
   }, [grid, state.status, theme]);
 
   useEffect(() => {
@@ -207,6 +211,8 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
     if (!h) return;
     h.controls.autoRotate = spin;
     h.controls.autoRotateSpeed = 1.4;
+    // turning keeps frames coming while it is on; off, the view goes idle
+    h.invalidate("view");
   }, [spin]);
 
   const info = state.info;

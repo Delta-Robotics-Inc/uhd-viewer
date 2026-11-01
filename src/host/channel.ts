@@ -5,7 +5,34 @@
  * parent window.
  */
 import type { ViewerEvent, ViewerHostMessage, ViewerOptions } from "../api";
-import { originAllowed, parseHostMessage } from "./protocol";
+import { TELEMETRY_EVENT, originAllowed, parseHostMessage, parseTelemetryMessage, type TelemetryMessage } from "./protocol";
+
+/** The part of `window` the telemetry relay uses. */
+export interface TelemetryEventWindow {
+  addEventListener(type: string, listener: (e: Event) => void): void;
+  removeEventListener(type: string, listener: (e: Event) => void): void;
+}
+
+/**
+ * Relays the viewer's telemetry records (src/telemetry/: the window event
+ * `uhd-viewer:telemetry`) to a host: `post` gets each one as a checked
+ * `{ type: "uhd-viewer:telemetry", record }`. A host page calls this once
+ * and forwards the message its own way (the VS Code webview to the
+ * extension host, `protoboard dev`'s page to its server). Returns the stop.
+ */
+export function relayTelemetry(win: TelemetryEventWindow, post: (message: TelemetryMessage) => void): () => void {
+  const listener = (e: Event) => {
+    const m = parseTelemetryMessage((e as CustomEvent).detail);
+    if (!m) return;
+    try {
+      post(m);
+    } catch {
+      // a host that cannot take it: the record is dropped, the viewer goes on
+    }
+  };
+  win.addEventListener(TELEMETRY_EVENT, listener);
+  return () => win.removeEventListener(TELEMETRY_EVENT, listener);
+}
 
 /** Host messages on their way to the viewer component (App.tsx subscribes once it shows a model). */
 export interface CommandBus {
@@ -79,7 +106,9 @@ const HELD = 64;
  * go to the parent's origin: the frame's ancestor origin or referrer when it
  * is allowed, the only allowed origin when exactly one is listed, else the
  * origin of the parent's first accepted message (events wait until then).
- * Returns undefined when `win` is not in a frame.
+ * Returns undefined when `win` is not in a frame. The viewer's telemetry
+ * records (`relayTelemetry`) go to the parent the same way, as
+ * `{ type: "uhd-viewer:telemetry", record }`.
  */
 export function connectParent(win: ChannelWindow, options: { origins?: string[]; onMessage: (message: ViewerHostMessage) => void }): ParentChannel | undefined {
   const parent = win.parent;
@@ -94,7 +123,7 @@ export function connectParent(win: ChannelWindow, options: { origins?: string[];
         : allowed.length === 1 && allowed[0] === "*"
           ? "*"
           : undefined;
-  let held: ViewerEvent[] = [];
+  let held: (ViewerEvent | TelemetryMessage)[] = [];
   const flush = () => {
     if (!target) return;
     const out = held;
@@ -112,13 +141,24 @@ export function connectParent(win: ChannelWindow, options: { origins?: string[];
     options.onMessage(message);
   };
   win.addEventListener("message", listener);
+  const hold = (event: ViewerEvent | TelemetryMessage) => {
+    held.push(event);
+    if (held.length > HELD) held = held.slice(-HELD);
+    flush();
+  };
+  // the window of a test (or an odd host) may not take other event types: then no telemetry, nothing else changes
+  let stopTelemetry = () => {};
+  try {
+    stopTelemetry = relayTelemetry(win as unknown as TelemetryEventWindow, hold);
+  } catch {
+    stopTelemetry = () => {};
+  }
   return {
-    post(event) {
-      held.push(event);
-      if (held.length > HELD) held = held.slice(-HELD);
-      flush();
+    post: hold,
+    close: () => {
+      win.removeEventListener("message", listener);
+      stopTelemetry();
     },
-    close: () => win.removeEventListener("message", listener),
   };
 }
 
