@@ -18,8 +18,47 @@ import type { ViewerEvent, ViewerHandle, ViewerOptions } from "../api";
 import { mergeOptions } from "../options";
 import { commandBus, connectParent, deliver, type ChannelWindow, type ParentChannel } from "../host/channel";
 import { parseHostMessage } from "../host/protocol";
-import type { ViewerHostMessage, ViewerSequenceCommand, ViewerSequenceReply } from "../api";
-import { BRIDGE_REQUEST, handleBridgeMessage, presentation, same, viewHub, watchLiveState, type ViewState } from "../cad/state";
+import type { ViewerHostMessage, ViewerSequenceCommand, ViewerSequenceReply, ViewerTheme, ViewerThemeAdapter, ViewerThemeOption } from "../api";
+import { BRIDGE_REQUEST, handleBridgeMessage, presentation, same, splitBridgeReply, viewHub, watchLiveState, type ViewState, type ViewStore } from "../cad/state";
+import { resolveTheme, themeFromUrl } from "../theme/resolve";
+
+/**
+ * The host's theme option made to follow the view state's `theme` (W4-D, wave 3 carry-forward: a view-state write
+ * after load switches the theme): `light`, `dark` or `system` written by the person, a host or `__cad.set` wins
+ * over the host's option; absent, the option (and the page URL's `?theme=`) decide as before. The adapter
+ * notifies on a theme write and passes on the chosen theme's own changes (system, VS Code).
+ */
+export function followViewStateTheme(option: ViewerThemeOption | undefined, store: Pick<ViewStore, "get" | "subscribe">): ViewerThemeAdapter {
+  const choice = () => {
+    const t = store.get().theme;
+    return t === "light" || t === "dark" || t === "system" ? t : undefined;
+  };
+  // the view state's choice beats the URL; with none, the URL and the option as before
+  const adapter = () => {
+    const c = choice();
+    // null, not undefined: undefined would take resolveTheme's default, the URL, over the view state's choice
+    return c ? resolveTheme(c, null) : resolveTheme(option, themeFromUrl());
+  };
+  return {
+    id: "view-state",
+    current: () => adapter().current() as unknown as ViewerTheme,
+    subscribe(onChange) {
+      let inner = adapter();
+      let stopInner = inner.subscribe?.((t) => onChange(t as unknown as ViewerTheme));
+      const stopStore = store.subscribe((c) => {
+        if (c.state.theme === c.prev.theme) return;
+        stopInner?.();
+        inner = adapter();
+        stopInner = inner.subscribe?.((t) => onChange(t as unknown as ViewerTheme));
+        onChange(inner.current() as unknown as ViewerTheme);
+      });
+      return () => {
+        stopStore();
+        stopInner?.();
+      };
+    },
+  };
+}
 
 export function renderViewer<P extends AppProps>(element: HTMLElement, props: P, Shell: ComponentType<P>): ViewerHandle {
   const root = createRoot(element);
@@ -28,6 +67,13 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   let parent: ParentChannel | undefined;
   const hub = viewHub();
   const store = hub.store;
+  // the theme follows a view-state write after load (W4-D); made once per host option so the shell keeps one adapter
+  let themeFor: { option: ViewerThemeOption | undefined; adapter: ViewerThemeAdapter } | undefined;
+  const themed = (p: P): P => {
+    const option = (p as { theme?: ViewerThemeOption }).theme;
+    if (!themeFor || themeFor.option !== option) themeFor = { option, adapter: followViewStateTheme(option, store) };
+    return { ...p, theme: themeFor.adapter } as P;
+  };
   const savePoints = () => {
     hub.savePoint = current.onSavePoint ? (p) => current.onSavePoint?.(p) : undefined;
   };
@@ -99,6 +145,8 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   // named views (and annotations a person saves): only an explicit save changes the display file. A change of
   // annotations alone is not posted (gate 3, W3-A's bullet): agent callouts are live and per user, and the host
   // writes `spatial.annotations` only on a save that says `saveAnnotations: true` (DEFAULT, collaboration D10).
+  // the person's explicit "Save callouts" (W4-D, D10): the presentation with `saveAnnotations: true`
+  hub.saveCallouts = () => emit({ type: "uhd-viewer:presentation", presentation: { ...presentation(store.get()), saveAnnotations: true } });
   const stopPresentation = store.subscribe((c) => {
     if (c.source === "display" || c.state.namedViews === c.prev.namedViews) return;
     if (same(presentation(c.state), presentation(c.prev))) return;
@@ -136,7 +184,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   const draw = () =>
     root.render(
       <StrictMode>
-        <Shell {...current} host={hostLink()} />
+        <Shell {...themed(current)} host={hostLink()} />
       </StrictMode>,
     );
   draw();
@@ -166,6 +214,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       root.unmount();
       // the hub outlives this mount (one per page): drop what this mount put on it (wave 2 gate item, W3-C's bullet)
       hub.savePoint = undefined;
+      hub.saveCallouts = undefined;
       hub.snapshot = undefined;
       hub.onSnapshot = undefined;
     },
@@ -178,6 +227,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
     setViewState: setState,
     restoreViewState: (file) => store.restore(file.scopes, "host"),
     bridge: (request) => (request && request.type === BRIDGE_REQUEST ? bridge(request) : undefined),
+    bridgeParts: (request, maxChars) => (request && request.type === BRIDGE_REQUEST ? splitBridgeReply(bridge(request), maxChars) : undefined),
     presentation: () => presentation(store.get()),
     sequence,
   };

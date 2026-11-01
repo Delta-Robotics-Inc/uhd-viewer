@@ -60,6 +60,16 @@ export interface CadToolbarProps {
   findingsControl?: ReactNode;
   /** Controls other workstreams mount (W3-C's style toggle, W3-D's measure and tour), after the findings. */
   extra?: ReactNode;
+  /**
+   * "Take over" (W4-D, PB-1196 D9): shown while an agent holds a lease or the camera; ends every agent lease and
+   * gives the camera back to the person (Esc does the same).
+   */
+  takeOver?: { agents: number; onTakeOver: () => void };
+  /**
+   * "Save callouts" (W4-D, collaboration D10): writes the callouts, marks and arrows to the project's display file
+   * (`saveAnnotations: true`); agents' callouts stay live and per user until the person saves them.
+   */
+  saveCallouts?: { count: number; onSave: () => void };
   direction: Direction;
   onDirection: (d: Direction) => void;
   onFit: () => void;
@@ -248,6 +258,23 @@ export function CadToolbar(p: CadToolbarProps) {
           />
         ))}
         {p.extra}
+        {p.saveCallouts && p.saveCallouts.count > 0 && (
+          <IconButton
+            icon="save"
+            label={`Save callouts to the display file · ${p.saveCallouts.count}`}
+            tooltipSide="top"
+            onClick={p.saveCallouts.onSave}
+          />
+        )}
+        {p.takeOver && p.takeOver.agents > 0 && (
+          <IconButton
+            icon="hand"
+            label={`Take over: end ${p.takeOver.agents === 1 ? "the agent's lease" : `${p.takeOver.agents} agents' leases`} and take the camera back (Esc)`}
+            tooltipSide="top"
+            badge={p.takeOver.agents}
+            onClick={p.takeOver.onTakeOver}
+          />
+        )}
         <ToolbarSeparator />
         <ToggleGroup
           label="Interface direction"

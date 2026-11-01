@@ -140,6 +140,8 @@ export interface ViewStore {
   takeOver(by?: Actor): EndedLease[];
   /** A checkpoint for the journal. */
   checkpoint(): StoreCheckpoint;
+  /** Whether a batch id was already answered (a resend gets the first reply): the bridge skips re-expanding it. */
+  replied(batchId: string): boolean;
 }
 
 /** Options: the clock (tests), the turn-taking times. */
@@ -151,6 +153,12 @@ export interface StoreOptions {
   dragMs?: number;
   /** A fixed epoch (tests); default: the time and a random part. */
   epoch?: string;
+  /**
+   * Continue from a journal (wave 3 carry-forward; `replayJournal`): the id counter and the retired ids of the
+   * epoch the journal holds, so a store restarted on the same epoch never issues or takes back an id it gave out.
+   * With a different epoch the issued ids differ anyway (`a.<epoch>.<n>`); `retired` still keeps old ids out.
+   */
+  seed?: { nextId?: number; retired?: string[] };
 }
 
 const SCOPED: LiveKey[] = ["camera", "selection", "highlight", "isolation", "sections", "explode"];
@@ -183,6 +191,15 @@ export function authorOf(actor: Actor): string {
   if (actor.kind === "human") return "user";
   const name = (actor.name ?? actor.id.replace(/^agent:/, "")).replace(/[^\w .:-]/g, "").trim().slice(0, 40) || actor.id;
   return actor.kind === "agent" ? `agent:${name}` : `${actor.kind}:${name}`;
+}
+
+/**
+ * A refusal's sentence, from owner-made facts only (collaboration D12, PB-1196): the lease id, the holder's actor id
+ * (a session id the bridge minted) and the time. The holder's chosen name, its purpose and its roots are text an
+ * agent wrote: they travel in `lease` as data with their author, never inside a message another agent reads.
+ */
+export function leasedMessage(l: Lease): string {
+  return `lease ${l.id} of ${l.holder.kind} ${l.holder.id} covers a path this batch touches until ${new Date(l.expiresAt).toISOString()} (its roots and purpose are in \`lease\`, as data)`;
 }
 
 function newEpoch(now: number): string {
@@ -218,9 +235,10 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
   const written = new Map<string, Set<string>>();
   let lastGesture: { name: string; actor: string; at: number } | undefined;
   /** Owner-issued ids: the counter only rises. */
-  let nextId = 1;
+  let nextId = Math.max(1, Math.floor(Number(options.seed?.nextId) || 1));
   /** Removed ids, never to come back as someone else's: id → when and by whom. */
   const retired = new Map<string, { seq: number; actor: Actor }>();
+  for (const id of options.seed?.retired ?? []) if (typeof id === "string" && retired.size < RETIRED_CAP) retired.set(id, { seq: 0, actor: { ...SYSTEM } });
   const leases: LeaseTable = createLeaseTable(now);
   let interactingSince = 0;
   const control: ViewControl = { holder: null, since: now(), lastHumanAt: 0, lastAgentAt: 0, handBackMs, interacting: false };
@@ -361,7 +379,7 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
       .map(([k, v]) => ({ key: k, expected: v, current: versions[k] ?? 0, value: valueAt(k), ...(lastBy[k] ? { by: lastBy[k].actor, seq: lastBy[k].seq } : {}) }));
     if (conflicts.length) {
       const from = Math.min(...conflicts.map((c) => c.seq ?? seq));
-      return refused(id, "stale-undo", { message: `"${e.label}" (seq ${e.seq}) cannot be undone: what it changed was changed again since`, missed: { from, to: seq, entries: missedSince(from - 1) }, conflicts });
+      return refused(id, "stale-undo", { message: `your batch at seq ${e.seq} cannot be undone: what it changed was changed again since (see conflicts)`, missed: { from, to: seq, entries: missedSince(from - 1) }, conflicts });
     }
     const r = applySets(state, e.inverse);
     if ("error" in r) return { status: "invalid", batchId: id, seq, error: `undo: ${r.error}` };
@@ -370,7 +388,7 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
     if (actor.kind === "agent" || actor.kind === "host") {
       const paths = touchedPaths(e.inverse, state as unknown as Record<string, unknown>);
       const other = leases.blocking(actor, paths);
-      if (other) return refused(id, "leased", { lease: other, message: `${other.holder.name ?? other.holder.id} holds ${other.roots.join(", ") || "the whole assembly"} (${other.purpose}) until ${new Date(other.expiresAt).toISOString()}` });
+      if (other) return refused(id, "leased", { lease: other, message: leasedMessage(other) });
       const fenced = leases.fence(actor, paths, leaseToken);
       if (fenced) return refused(id, fenced.reason, { ...(fenced.lease ? { lease: fenced.lease } : {}), message: fenced.message });
     }
@@ -454,7 +472,7 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
       if (own?.op === "claim") {
         const c = leases.claim(actor, own.roots, own.purpose, own.ttlMs);
         if ("error" in c) return withExtras(remember(id, invalid(c.error, 0)));
-        if ("refused" in c) return withExtras(remember(id, refused(id, "leased", { lease: c.refused, message: `${c.refused.holder.name ?? c.refused.holder.id} holds ${c.refused.roots.join(", ") || "the whole assembly"} (${c.refused.purpose}) until ${new Date(c.refused.expiresAt).toISOString()}` })));
+        if ("refused" in c) return withExtras(remember(id, refused(id, "leased", { lease: c.refused, message: leasedMessage(c.refused) })));
         emit(state, "presence");
         return withExtras(remember(id, { status: "applied", batchId: id, seq, applied: [], changed: [], versions: { ...versions }, lease: c.lease, ...stateOut() } as BatchReply));
       }
@@ -470,15 +488,30 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
       }
       if (!batch.ops.length) return withExtras(remember(id, { status: "read", batchId: id, seq, versions: { ...versions }, ...stateOut() }));
       const ids: Record<string, string> = {};
-      const r = applyOps(state, batch.ops, { issueId, author: authorOf(actor), ids, forceAuthor: actor.kind === "agent" });
+      // the ids this batch was issued (D2): an agent's new record must carry one of them
+      const issuedNow = new Set<string>();
+      const issueOne = () => {
+        const x = issueId();
+        issuedNow.add(x);
+        return x;
+      };
+      const r = applyOps(state, batch.ops, { issueId: issueOne, author: authorOf(actor), ids, forceAuthor: actor.kind === "agent" });
       if ("error" in r) return withExtras(remember(id, invalid(r.error, r.index)));
+      // D2 (wave 3 carry-forward): an agent never chooses a record's id. A record new to the list must carry an id
+      // the view issued in this very batch (`annotate` with a handle); a `set` that brings in an id of its own is
+      // refused. Hosts (the inspector, the display file) still write deterministic ids of their own.
       const back = reborn(state, r.state);
       if (back.length) return withExtras(remember(id, invalid(`the id ${back[0]} was removed at seq ${retired.get(back[0])?.seq}; ids are never reused (annotate with a handle gets a new one)`)));
+      if (actor.kind === "agent") {
+        const had = new Set(annotationIds(state.annotations));
+        const chosen = annotationIds(r.state.annotations).filter((x) => !had.has(x) && !issuedNow.has(x));
+        if (chosen.length) return withExtras(remember(id, invalid(`the view issues record ids: annotate with a handle to make a new record (an agent may not choose the id ${chosen[0]})`)));
+      }
       // ---- leases: another actor's subtree is refused; a stale or missing token inside one's own is refused
       if (actor.kind === "agent" || actor.kind === "host") {
         const paths = touchedPaths(r.sets, state as unknown as Record<string, unknown>);
         const other = leases.blocking(actor, paths);
-        if (other) return withExtras(remember(id, refused(id, "leased", { lease: other, message: `${other.holder.name ?? other.holder.id} holds ${other.roots.join(", ") || "the whole assembly"} (${other.purpose}) until ${new Date(other.expiresAt).toISOString()}; reads stay open` })));
+        if (other) return withExtras(remember(id, refused(id, "leased", { lease: other, message: `${leasedMessage(other)}; reads stay open` })));
         const fenced = leases.fence(actor, paths, batch.leaseToken);
         if (fenced) return withExtras(remember(id, refused(id, fenced.reason, { ...(fenced.lease ? { lease: fenced.lease } : {}), message: fenced.message })));
       }
@@ -577,6 +610,7 @@ export function createViewStore(initial: Partial<ViewState> = {}, options: Store
       emit(state, "presence");
       return ended;
     },
+    replied: (batchId) => replies.has(batchId),
     checkpoint() {
       return { schema: "uhd-viewer.store-checkpoint/v0", epoch, seq, time: now(), state: clone(state), versions: { ...versions }, nextId, retired: [...retired.keys()], leases: leases.live(), fenceToken: leases.fenceToken };
     },

@@ -12,6 +12,7 @@
  * "Show how the lid goes on" is `{ action: "play", mode: "assemble", from: "fit:lid_mount", to: "fasten:lid_mount" }`.
  */
 import { clampJoint, poseAt, stepAt, tAfter, tBefore, type Mat, type ResolvedJoint, type ResolvedSequence } from "./resolve";
+import type { JointLimitFlag } from "./types";
 
 export type PlayMode = "assemble" | "explode";
 
@@ -45,14 +46,19 @@ export type SequenceCommand =
 export interface PlayerSnapshot {
   source: ResolvedSequence["source"];
   /** In assembly order; `window` is where the step comes apart in explode amount (t from start to end: in, then out). */
-  steps: { id: string; title: string; kind: string; sequence: string; depth: number; members: number; links: string[]; still: boolean; window: [number, number] }[];
+  /** `limits`: keyframe joint values the hard stops held in this step (PB-1185); absent when none. */
+  steps: { id: string; title: string; kind: string; sequence: string; depth: number; members: number; links: string[]; still: boolean; window: [number, number]; limits?: JointLimitFlag[] }[];
   t: number;
   /** The step in progress (or just finished) at t. */
   step?: string;
   playing?: PlayMode;
   loop: boolean;
   isolate?: string;
-  joints: Record<string, { value: number; min?: number; max?: number; rest: number; type: string }>;
+  /**
+   * `held`: the last value asked of the joint (a drive, a clip sample) went beyond a stop and is held there;
+   * `limited`: its authored rest was beyond a stop (PB-1185).
+   */
+  joints: Record<string, { value: number; min?: number; max?: number; rest: number; type: string; held?: JointLimitFlag; limited?: JointLimitFlag }>;
   unknown: string[];
   clip?: { joints: string[]; samples: number; durationS: number };
 }
@@ -67,6 +73,8 @@ export class SequencePlayer {
   private range: [number, number] = [0, 1];
   private isolated: string | undefined;
   private values: Record<string, number> = {};
+  /** The last asked value a stop held, per joint (cleared when a value within the stops is asked). */
+  private stopped: Record<string, JointLimitFlag> = {};
   private clip: { clip: MotionClip; time: number } | undefined;
   private extraJoints: ResolvedJoint[] = [];
   /** Playback speed multiplier. */
@@ -166,6 +174,9 @@ export class SequencePlayer {
     if (!j) return undefined;
     const v = clampJoint(j, value);
     this.values[id] = v;
+    // a hard stop held it: flagged (snapshot().joints[id].held), never an error
+    if (v !== value) this.stopped[id] = { joint: id, asked: value, held: v, stop: v < value ? "max" : "min" };
+    else delete this.stopped[id];
     return v;
   }
 
@@ -218,10 +229,10 @@ export class SequencePlayer {
 
   snapshot(): PlayerSnapshot {
     const joints: PlayerSnapshot["joints"] = {};
-    for (const j of this.joints) joints[j.id] = { value: this.values[j.id] ?? j.rest, min: j.min, max: j.max, rest: j.rest, type: j.type };
+    for (const j of this.joints) joints[j.id] = { value: this.values[j.id] ?? j.rest, min: j.min, max: j.max, rest: j.rest, type: j.type, ...(this.stopped[j.id] ? { held: this.stopped[j.id] } : {}), ...(j.limited ? { limited: j.limited } : {}) };
     return {
       source: this.resolved.source,
-      steps: this.resolved.steps.map((s, i) => ({ id: s.id, title: s.title, kind: s.kind, sequence: s.sequence, depth: s.depth, members: s.members.length, links: s.links, still: s.still, window: [+this.resolved.windows[i][0].toFixed(6), +this.resolved.windows[i][1].toFixed(6)] as [number, number] })),
+      steps: this.resolved.steps.map((s, i) => ({ id: s.id, title: s.title, kind: s.kind, sequence: s.sequence, depth: s.depth, members: s.members.length, links: s.links, still: s.still, window: [+this.resolved.windows[i][0].toFixed(6), +this.resolved.windows[i][1].toFixed(6)] as [number, number], ...(s.limits?.length ? { limits: s.limits } : {}) })),
       t: this.t,
       step: this.isolated ?? stepAt(this.resolved, this.t)?.id,
       playing: this.mode,
@@ -266,14 +277,17 @@ export class SequencePlayer {
     }
   }
 
-  /** Carry out a host or agent command; `error` says why it could not. */
-  run(cmd: SequenceCommand): { ok: boolean; error?: string } {
+  /**
+   * Carry out a host or agent command; `error` says why it could not, `held` that a joint value asked beyond a
+   * hard stop is held at the stop (PB-1185: clamped and flagged, not refused).
+   */
+  run(cmd: SequenceCommand): { ok: boolean; error?: string; held?: JointLimitFlag } {
     const r = this.runCommand(cmd);
     this.notifyStep();
     return r;
   }
 
-  private runCommand(cmd: SequenceCommand): { ok: boolean; error?: string } {
+  private runCommand(cmd: SequenceCommand): { ok: boolean; error?: string; held?: JointLimitFlag } {
     const unknownStep = (id: string) => ({ ok: false, error: `no step "${id}" (steps: ${this.resolved.steps.slice(0, 8).map((s) => s.id).join(", ")}${this.resolved.steps.length > 8 ? ", …" : ""})` });
     switch (cmd.action) {
       case "goto":
@@ -297,8 +311,10 @@ export class SequencePlayer {
         return { ok: true };
       case "isolate":
         return this.isolate(cmd.step) ? { ok: true } : unknownStep(cmd.step ?? "");
-      case "joint":
-        return this.driveJoint(cmd.id, cmd.value) === undefined ? { ok: false, error: `no joint "${cmd.id}" (joints: ${this.joints.map((j) => j.id).join(", ") || "none"})` } : { ok: true };
+      case "joint": {
+        if (this.driveJoint(cmd.id, cmd.value) === undefined) return { ok: false, error: `no joint "${cmd.id}" (joints: ${this.joints.map((j) => j.id).join(", ") || "none"})` };
+        return this.stopped[cmd.id] ? { ok: true, held: this.stopped[cmd.id] } : { ok: true };
+      }
       case "set":
         this.set({ t: cmd.t });
         return { ok: true };

@@ -62,6 +62,17 @@ export function replayJournal(lines: (string | unknown)[]): JournalReplay | unde
     .filter((r) => r.o.t === "entry" && Number.isInteger(r.o.seq) && (r.o.seq as number) > seq)
     .sort((a, b) => (a.o.seq as number) - (b.o.seq as number));
   let lastSeq = -1;
+  // ids issued and retired after the checkpoint (wave 3 carry-forward): a store seeded from this replay
+  // (`createViewStore(..., { seed: { nextId, retired } })`) never issues an id again nor takes back a removed one
+  let nextId = cp?.nextId ?? 1;
+  const retired = new Set<string>(cp?.retired ?? []);
+  // an epoch is base-36 letters and digits (store.ts newEpoch); anything else never matches an issued id
+  const idNumber = /^[0-9a-z]+$/.test(epoch) ? new RegExp(`^a[.]${epoch}[.]([0-9]+)$`) : /^$^/;
+  const idsOf = (list: unknown): string[] => (Array.isArray(list) ? list.filter(isObj).map((r) => r.id).filter((x): x is string => typeof x === "string") : []);
+  for (const id of idsOf(state.annotations)) {
+    const m = idNumber.exec(id);
+    if (m) nextId = Math.max(nextId, Number(m[1]) + 1);
+  }
   for (const { i, o } of entries) {
     if (o.seq === lastSeq) continue; // a line written twice (a resend after a crash)
     lastSeq = o.seq as number;
@@ -74,10 +85,18 @@ export function replayJournal(lines: (string | unknown)[]): JournalReplay | unde
       skipped.push({ line: i, why: r.error });
       continue;
     }
+    const before = new Set(idsOf(state.annotations));
+    const after = idsOf(r.state.annotations);
+    for (const id of before) if (!after.includes(id)) retired.add(id);
+    for (const id of after) {
+      retired.delete(id);
+      const m = idNumber.exec(id);
+      if (m) nextId = Math.max(nextId, Number(m[1]) + 1);
+    }
     state = r.state;
     for (const k of Array.isArray(o.keys) ? (o.keys as string[]) : r.changed) versions[k] = (versions[k] ?? 0) + 1;
     seq = o.seq as number;
     applied++;
   }
-  return { epoch, seq, state, versions, nextId: cp?.nextId ?? 1, retired: cp?.retired ?? [], applied, skipped };
+  return { epoch, seq, state, versions, nextId, retired: [...retired], applied, skipped };
 }

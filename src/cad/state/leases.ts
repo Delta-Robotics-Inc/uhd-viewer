@@ -202,7 +202,7 @@ export function createLeaseTable(now: () => number = () => Date.now()): LeaseTab
         const live = leases.find((l) => l.token === given);
         if (!live || !sameActor(live.holder, actor)) {
           const old = ended.find((e) => e.token === given && sameActor(e.holder, actor));
-          return { reason: "lease-revoked", ...(old ? { lease: old } : {}), message: old ? `lease ${old.id} (token ${given}) ${old.reason === "revoked" ? `was revoked${old.detail ? `: ${old.detail}` : ""}` : old.reason === "taken-over" ? "ended: the person took over" : old.reason}; re-observe, then claim again` : `token ${given} names no live lease of yours; claim again` };
+          return { reason: "lease-revoked", ...(old ? { lease: old } : {}), message: old ? `lease ${old.id} (token ${given}) ${old.reason === "revoked" ? "was revoked by the person (see `lease.detail`)" : old.reason === "taken-over" ? "ended: the person took over" : old.reason}; re-observe, then claim again` : `token ${given} names no live lease of yours; claim again` };
         }
         // a live token covers only its own subtree: outside it, the usual rules hold
         const outside = paths.filter((p) => !live.roots.some((r) => covers(r, p)));
@@ -211,10 +211,10 @@ export function createLeaseTable(now: () => number = () => Date.now()): LeaseTab
       }
       // writing in a subtree this actor holds (under another live lease of its own) or held needs that live token
       const held = leases.find((l) => sameActor(l.holder, actor) && paths.some((p) => l.roots.some((r) => covers(r, p))));
-      if (held) return { reason: "lease-revoked", lease: { ...held }, message: `you hold lease ${held.id} on ${held.roots.join(", ") || "the whole assembly"}: quote its leaseToken ${held.token}` };
+      if (held) return { reason: "lease-revoked", lease: { ...held }, message: `you hold lease ${held.id} over this path: quote its leaseToken ${held.token}` };
       // the actor's latest ended lease there decides: released by the holder is a clean end; expired, revoked or taken over is not
       const was = [...ended].reverse().find((e) => sameActor(e.holder, actor) && paths.some((p) => e.roots.some((r) => covers(r, p))));
-      if (was && was.reason !== "released" && !(was.detail === "replaced by a new claim")) return { reason: "lease-revoked", lease: was, message: `your lease ${was.id} on ${was.roots.join(", ") || "the whole assembly"} ${was.reason === "expired" ? "expired" : was.reason === "taken-over" ? "ended when the person took over" : `was revoked${was.detail ? `: ${was.detail}` : ""}`}; re-observe, then claim again before writing there` };
+      if (was && was.reason !== "released" && !(was.detail === "replaced by a new claim")) return { reason: "lease-revoked", lease: was, message: `your lease ${was.id} over this path ${was.reason === "expired" ? "expired" : was.reason === "taken-over" ? "ended when the person took over" : "was revoked by the person (see `lease.detail`)"}; re-observe, then claim again before writing there` };
       return undefined;
     },
     renew(actor, given) {

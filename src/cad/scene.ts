@@ -1850,6 +1850,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       target?.dispose();
       quad?.material.dispose();
       quad?.mesh.geometry.dispose();
+      // the toon twins of the materials drawn as themselves (W4-D, wave 3 carry-forward)
+      twins.dispose();
       renderer.dispose();
       // give the GL context back now rather than when the canvas is collected: browsers cap live contexts (the wave 2 gate)
       renderer.forceContextLoss();

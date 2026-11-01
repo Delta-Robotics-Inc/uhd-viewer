@@ -25,11 +25,11 @@ import { useTheme, tokenColor } from "../theme/ThemeProvider";
 import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, materialFor, proceduralGeometry, toMatrix4, type AntialiasMode, type LoadedModel, type SceneHandle } from "./scene";
 import { buildAll, bvhStats, pick } from "./render/pick";
 import { setMeshLook } from "./render/looks";
-import { instancePathIn, isPlaceholder } from "./render/ids";
+import { instancePathIn, isPlaceholder, partInstanceIdOf } from "./render/ids";
 import { observeScene, type CadObservation, type LoadState } from "./render/observe";
 import { attachSceneTelemetry } from "../telemetry";
 import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
-import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measurePointFace, measurePointPoint, objectFace, pickRef, refFace, type MeasureKind, type MeasureRef } from "./measure";
+import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measurePointFace, measurePointPoint, meshFace, objectFace, orientByFace, pickRef, placeOnFace, refFace, toMat4, toPartFrame, type FaceSource, type MeasureKind, type MeasureRef, type MeshFaceInput } from "./measure";
 import { TourPlayback, parseTour, tourOps, type Tour } from "./tour";
 import { LoadingScreen, attachLoadTracker, glbPlacements, useLoadTiers, type LoadSnapshot, type LoadTier } from "./loading";
 import { resolvePlanes, type ScopedSectionPlane } from "./sections/planes";
@@ -39,10 +39,13 @@ import { layOutRow } from "./row";
 import { intoScope, outOfScope, scopeRef, scopedModel, scopedPlacements, shownSummary } from "./scope";
 import { CadInspector } from "./CadInspector";
 import { CadToolbar } from "./CadToolbar";
+import { GcodeView } from "./GcodeView";
+import { gcodeEntry } from "../gcode/entry";
 import { cableSummary, harnessMaterial, routeManifest } from "./harness";
 import type { ViewerSnapshotMessage } from "../api";
-import { HUMAN, SYSTEM, presentation, presentationFromDisplay, same, serializeViewState, useViewSlice, viewHub, type Actor, type Batch, type CameraState, type SectionPlane, type ViewHub, type ViewSelection, type ViewState } from "./state";
-import { matchesPath, placeholderSummary, shownBy, viewUp, type PlaceholderSummary } from "./state/view";
+import { HUMAN, SYSTEM, presentation, presentationFromDisplay, same, serializeViewState, useViewSlice, viewHub, type Actor, type Batch, type CameraState, type PlacementVerb, type SectionPlane, type ViewHub, type ViewSelection, type ViewState } from "./state";
+import type { PlacementFacts, SetOp } from "../api";
+import { matchesPath, placeholderSummary, shortRecordId, shownBy, viewUp, type PlaceholderSummary } from "./state/view";
 
 /** Render knobs from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -256,6 +259,10 @@ export function CadView({
   const harnessGroup = useRef(new THREE.Group());
   const harnessObjs = useRef(new Map<string, THREE.Group>());
   const [params] = useState(urlParams);
+  /** The G-code tab (PB-1192, W4-B; DEFAULT entry point `?gcode=<url>`): the G-code viewer instead of the model. */
+  const gcodeRaw = params.get("gcode");
+  // same origin or a blob: of this page only, the name decoded without throwing (wave 4 gate, src/gcode/entry.ts)
+  const gcode = gcodeEntry(gcodeRaw, typeof location !== "undefined" ? location.href : "http://localhost/");
   const explode = useRef({ value: explodeT, target: explodeT });
   const [manifests, setManifests] = useState<Map<string, GeometryManifest> | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -380,11 +387,16 @@ export function CadView({
   const [presenceSet, setPresenceSet] = useState<PresenceChip[]>([]);
   // W3-A's presence (PB-1196): the agents' live leases and recent writes, as "claude is working on U3" chips
   const [storeChips, setStoreChips] = useState<PresenceChip[]>([]);
+  /** Agents holding a lease or the camera now (W4-D: the "Take over" button shows while there are any). */
+  const [agentsHere, setAgentsHere] = useState(0);
   useEffect(() => {
     const read = () => {
-      const p = (store as { presence?: () => { intents?: { actor: Actor; roots: string[]; label: string }[] } }).presence?.();
+      const p = (store as { presence?: () => { intents?: { actor: Actor; roots: string[]; label: string }[]; leases?: { holder: Actor }[]; control?: { holder: Actor | null } } }).presence?.();
       const chips = (p?.intents ?? []).filter((i) => i.actor.kind === "agent" && i.roots.length).map((i) => ({ who: i.actor.id, ref: i.roots[0], label: i.label }));
       setStoreChips((prev) => (same(prev, chips) ? prev : chips));
+      const holders = new Set((p?.leases ?? []).filter((l) => l.holder.kind === "agent").map((l) => l.holder.id));
+      if (p?.control?.holder?.kind === "agent") holders.add(p.control.holder.id);
+      setAgentsHere(holders.size);
     };
     read();
     return store.subscribe((c) => {
@@ -1928,6 +1940,10 @@ export function CadView({
     // the host handle and the live-tab bridge read the same observation (./state/hub.ts)
     hub.observer = (opts) => observe(opts);
     hub.view = "3d";
+    // the bridge's probes (W4-D: the critic's pick probes and label boxes, MCP view_review and view_pick)
+    hub.pick = cadApi.pick as (fx: number, fy: number) => unknown;
+    hub.labels = cadApi.labels as () => unknown[];
+    hub.canvas = () => ({ width: h.renderer.domElement.clientWidth, height: h.renderer.domElement.clientHeight });
     // a host's quality settings (uhd-viewer:quality) reach this view's curve
     hub.quality = (c) => {
       h.quality.configure(c as never);
@@ -1940,6 +1956,9 @@ export function CadView({
     };
     return () => {
       if (hub.observer) hub.observer = undefined;
+      hub.pick = undefined;
+      hub.labels = undefined;
+      hub.canvas = undefined;
       hub.sequence = undefined;
       hub.quality = undefined;
       hub.view = "diagram";
@@ -2273,15 +2292,51 @@ export function CadView({
   // it by its explode delta on top (DEFAULT, W3-D); dropped when the key is removed
   const placements = useViewSlice(store, (s) => (s as { placements?: Record<string, { matrix?: number[] }> }).placements);
   const placedBase = useRef(new Map<string, { rec: BodyRec; base: THREE.Matrix4 }>());
+  /**
+   * The shown scope's frame in the root assembly's (W4-D, wave 3 carry-forward: placements are stored relative to
+   * the root, not per scope): from a body both assemblies place, root = S x scope. Identity at the root; undefined
+   * when no body is placed by both (DEFAULT: a placement made then keeps `frame: <scope>` and shows only there).
+   */
+  const rootFrame = useRef<{ model: CadModel | null; at: string; s: THREE.Matrix4 | undefined } | null>(null);
+  const scopeToRoot = (): THREE.Matrix4 | undefined => {
+    if (!at) return new THREE.Matrix4();
+    if (rootFrame.current && rootFrame.current.model === model && rootFrame.current.at === at) return rootFrame.current.s?.clone();
+    let s: THREE.Matrix4 | undefined;
+    if (model && manifests) {
+      try {
+        const rootModel = scopedModel(system, lookup, manifests, display, "");
+        for (const b of model.bodies) {
+          const r = rootModel.bodies.find((x) => x.key === `${at}/${b.key}`);
+          if (r) {
+            s = toMatrix4(r.matrix).multiply(toMatrix4(b.matrix).invert());
+            break;
+          }
+        }
+      } catch {
+        s = undefined;
+      }
+    }
+    rootFrame.current = { model, at, s };
+    return s?.clone();
+  };
+  /** A stored placement as drawn in this scope (part to the scope's assembly), or undefined when it is not shown here. */
+  const placementHere = (pl: { matrix: number[]; frame?: unknown }): THREE.Matrix4 | undefined => {
+    const m = toMatrix4(pl.matrix as unknown as Parameters<typeof toMatrix4>[0]);
+    if (typeof pl.frame === "string") return pl.frame === at ? m : undefined;
+    const s = scopeToRoot();
+    return s ? s.invert().multiply(m) : undefined;
+  };
   useEffect(() => {
     const keep = new Set<string>();
     for (const [path, pl] of Object.entries(placements ?? {})) {
       const key = keyIntoScope(path);
       const rec = key !== undefined ? bodies.current.get(key) : undefined;
       if (!rec || key === undefined || !Array.isArray(pl?.matrix) || pl.matrix.length !== 16 || !pl.matrix.every(Number.isFinite)) continue;
+      const here = placementHere(pl as { matrix: number[]; frame?: unknown });
+      if (!here) continue;
       const was = placedBase.current.get(key);
       if (!was || was.rec !== rec) placedBase.current.set(key, { rec, base: rec.base.clone() });
-      rec.base.copy(toMatrix4(pl.matrix as unknown as Parameters<typeof toMatrix4>[0]));
+      rec.base.copy(here);
       if (!player.current) rec.obj.matrix.copy(rec.base);
       keep.add(key);
     }
@@ -2297,6 +2352,88 @@ export function CadView({
     handle.current?.invalidate("pose");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placements, loaded, settled]);
+
+  // ---- W4-D: placement verbs from the bridge (MCP view_place_on_face / view_orient_by_face, PB-1187) -------------
+  // Faces are read in the body's own frame and placed by the body's assembled pose (`rec.base`), never by what is
+  // drawn now, so a placement made while exploded is the same as one made assembled (wave 3 carry-forward).
+  const faceInScope = (path: string, face: number): MeshFaceInput | undefined => {
+    const scoped = keyIntoScope(path);
+    if (scoped === undefined) return undefined;
+    const holder = bodies.current.has(scoped)
+      ? scoped
+      : [...bodies.current.keys()].filter((k) => scoped.startsWith(`${k.split("#")[0]}/`)).sort((a, b) => b.length - a.length)[0];
+    const rec = holder !== undefined ? bodies.current.get(holder) : undefined;
+    if (!rec || holder === undefined) return undefined;
+    const wrapper = rec.obj.children.find((c) => c.name === "cad");
+    let mesh: THREE.Mesh | undefined;
+    rec.obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (mesh || !m.isMesh || !m.geometry?.getAttribute("position")) return;
+      if (holder === scoped) mesh = m;
+      else {
+        const own = partInstanceIdOf(m, wrapper);
+        if (own && instancePathIn(holder.split("#")[0], own.id) === scoped) mesh = m;
+      }
+    });
+    if (!mesh) return undefined;
+    const toPart = toPartFrame(mesh);
+    if (!toPart) return undefined;
+    const f = meshFace(mesh, face, { toFrame: toPart });
+    if (!f.patch.positions.length) return undefined;
+    // the body's frame to the scope's assembly, as assembled (or as placed): mm, Z up
+    const m = rec.base;
+    const nm = new THREE.Matrix3().getNormalMatrix(m);
+    const v = new THREE.Vector3();
+    const p = f.patch.positions;
+    const pos = new Float64Array(p.length);
+    for (let i = 0; i < p.length; i += 3) {
+      v.set(p[i], p[i + 1], p[i + 2]).applyMatrix4(m);
+      pos[i] = v.x;
+      pos[i + 1] = v.y;
+      pos[i + 2] = v.z;
+    }
+    let normals: Float64Array | undefined;
+    if (f.patch.normals) {
+      const n = f.patch.normals;
+      normals = new Float64Array(n.length);
+      for (let i = 0; i < n.length; i += 3) {
+        v.set(n[i], n[i + 1], n[i + 2]).applyMatrix3(nm).normalize();
+        normals[i] = v.x;
+        normals[i + 1] = v.y;
+        normals[i + 2] = v.z;
+      }
+    }
+    return { patch: { ...f.patch, positions: pos, ...(normals ? { normals } : {}) }, quantization: f.quantization };
+  };
+  const placeRef = useRef<(op: PlacementVerb, by: string) => { set: SetOp; facts: PlacementFacts } | { error: string }>(() => ({ error: "the 3D view is not ready" }));
+  placeRef.current = (op, by) => {
+    if (op.op === "unplace") return { error: "unplace needs no faces" };
+    const key = keyIntoScope(op.part);
+    const rec = key !== undefined ? bodies.current.get(key) : undefined;
+    if (!rec) return { error: `${op.part} is not a body drawn in this view (a placement moves a whole body; pick its face with view_pick)` };
+    const src: FaceSource = { face: (p, f) => faceInScope(p, f), matrix: (p) => (p === op.part ? toMat4(rec.base) : undefined) };
+    let pl;
+    try {
+      pl =
+        op.op === "placeOnFace"
+          ? placeOnFace(src, op.part, op.face, op.target, op.targetFace, { ...(op.gap !== undefined ? { gap: op.gap } : {}), ...(op.spinDeg !== undefined ? { spinDeg: op.spinDeg } : {}), ...(op.align ? { align: op.align } : {}) })
+          : orientByFace(src, op.part, op.face, op.target, op.targetFace, { ...(op.flip ? { flip: true } : {}) });
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+    // stored relative to the root (W4-D): the same placement shows in every scope that draws the part
+    const s = scopeToRoot();
+    const r9 = (m: number[]) => m.map((x) => Math.round(x * 1e9) / 1e9);
+    const matrix = s ? r9(toMat4(s.multiply(toMatrix4(pl.matrix as unknown as Parameters<typeof toMatrix4>[0])))) : pl.matrix;
+    const value = { matrix, by, method: op.op, faces: { part: op.part, face: op.face, target: op.target, targetFace: op.targetFace }, ...(s ? {} : { frame: at }) };
+    return { set: { op: "set", path: ["placements", op.part], value }, facts: { part: op.part, matrix, delta: pl.delta, turnedDeg: pl.turnedDeg, movedMm: pl.movedMm } };
+  };
+  useEffect(() => {
+    hub.place = (op, by) => placeRef.current(op, by);
+    return () => {
+      hub.place = undefined;
+    };
+  }, [hub]);
 
   // ---- W3-D: tours live (PB-1188) ------------------------------------------------------------------------------
   const tour = useRef<{ playback: TourPlayback; by: string; title: string } | null>(null);
@@ -2529,7 +2666,11 @@ export function CadView({
       toggle: () => {
         if (mine.length) return write(mine.map((r) => ({ op: "set", path: ["annotations", r.id], value: undefined })), "remove a callout");
         const facts = partFacts(path, inst?.def, inst?.child);
-        const { callout, ring } = partCallout(ref, facts);
+        const made = partCallout(ref, facts);
+        // ids are at most 128 characters (schema): a long instance path is hashed into the id (W4-D, wave 3
+        // carry-forward: `user:callout:<path>:<stamp>` broke the cap on paths over about 105 characters)
+        const callout = { ...made.callout, id: shortRecordId(made.callout.id) };
+        const ring = { ...made.ring, id: shortRecordId(made.ring.id) };
         write(
           [ring, callout].map((r) => ({ op: "set", path: ["annotations", r.id], value: r })),
           `callout ${facts.refdes ?? facts.name ?? ref}`,
@@ -2562,6 +2703,10 @@ export function CadView({
     setVis("labelKinds", [...n]);
   };
 
+  // after the last hook (W4-B's mount): a G-code file is shown by its own viewer, with its own toolbar
+  if (gcode) return <GcodeView url={gcode.url} name={gcode.name} />;
+  if (gcodeRaw) return <div role="alert" style={{ padding: 16 }}>G-code not opened: only a file of this page's own origin is read (?gcode=/path/to/file.gcode).</div>;
+
   return (
     <div className={`cad-view${present ? " present" : ""}`}>
       <div className="cad-canvas" ref={host}>
@@ -2587,6 +2732,8 @@ export function CadView({
             onSection={setSection}
             sections={sections as ScopedSectionPlane[]}
             onSections={(s) => write([{ op: "section", sections: s }])}
+            takeOver={{ agents: agentsHere, onTakeOver: () => store.takeOver() }}
+            saveCallouts={{ count: Array.isArray(annotations) ? annotations.length : 0, onSave: () => hub.saveCallouts?.() }}
             scopeCandidate={sel.body ? { path: sel.body.split("#")[0], label: sel.body.split("#")[0].split("/").pop() ?? sel.body } : null}
             sectionMenu={sectionMenu}
             onSectionMenu={setSectionMenu}

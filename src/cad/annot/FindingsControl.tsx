@@ -11,6 +11,7 @@ import { IconButton } from "../../ui/Toolbar";
 import { MAX_OPEN_FINDINGS, severityCounts } from "./drc";
 import { SEVERITY_ORDER, worst, type FindingAnchors, type FindingSeverity } from "./findings-anchors";
 import { SEVERITY_LABEL, markerSvg } from "./style";
+import { svgNode } from "./layer";
 
 export interface FindingsControlProps {
   findings: FindingAnchors[];
@@ -33,7 +34,11 @@ export interface FindingsControlProps {
 
 function Shape({ s, size = 14 }: { s: FindingSeverity; size?: number }) {
   // static markup from ./style.ts (no record text inside)
-  return <span style={{ display: "inline-flex" }} dangerouslySetInnerHTML={{ __html: markerSvg(s, size) }} />;
+  // built as DOM nodes from the constant SVG (W4-D: no HTML string is parsed into the page)
+  return <span style={{ display: "inline-flex" }} ref={(el) => {
+        if (el) el.replaceChildren(svgNode(markerSvg(s, size)));
+      }}
+    />;
 }
 
 export function FindingsControl(p: FindingsControlProps) {

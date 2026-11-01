@@ -1,0 +1,36 @@
+;FLAVOR:Marlin
+;TIME:95
+;Filament used: 0.01m
+;Generated with Cura_SteamEngine 5.7.1 (hand-written test fixture for uhd-viewer; not slicer output)
+;W4-B, 2026-11-01: two layers in the Cura comment style: ;LAYER:n, ;TYPE:WALL-OUTER, ;TYPE:FILL, ;TYPE:SKIN
+M82 ;absolute extrusion mode
+G28
+G92 E0
+;LAYER_COUNT:2
+;LAYER:0
+G0 F3000 X40 Y40 Z0.3
+;TYPE:WALL-OUTER
+G1 F1200 X50 Y40 E0.4
+G1 X50 Y50 E0.8
+G1 X40 Y50 E1.2
+G1 X40 Y40 E1.6
+;TYPE:WALL-INNER
+G0 X40.4 Y40.4
+G1 X49.6 Y40.4 E1.97
+;TYPE:SKIN
+G0 X41 Y41
+G1 X49 Y41 E2.29
+G1 F1500 E-4.71 ; retract
+;LAYER:1
+G0 F3000 Z0.5
+G0 X40 Y40
+G1 F2700 E2.29 ; unretract
+;TYPE:FILL
+G1 F1800 X50 Y50 E2.86
+;TYPE:SUPPORT-INTERFACE
+G1 X50 Y45 E3.06
+;TIME_ELAPSED:95.0
+G91
+G1 Z5 F600 ; relative lift
+G90
+M84

@@ -8,6 +8,35 @@ import { instancePathIn, isPlaceholder } from "./ids";
 import { shown } from "./pick";
 import { sectionsByCamera, type SectionsReport } from "../sections";
 
+/**
+ * DEFAULT (W4-D, wave 3 carry-forward): section polylines one observation carries in all, against the bridge's
+ * 2 MB reply cap (each part is already capped at MAX_POINTS_PER_PART). Past it the rest of the parts keep their
+ * counts and lengths and lose their points (`pointsTruncated` says how many points were left out).
+ */
+export const MAX_SECTION_POINTS_TOTAL = 40_000;
+
+/** The sections report with at most `max` polyline points in all, in plane then part order. */
+export function capSections(report: SectionsReport | undefined, max = MAX_SECTION_POINTS_TOTAL): (SectionsReport & { pointsTruncated?: number }) | undefined {
+  if (!report?.cuts) return report;
+  let left = max;
+  let dropped = 0;
+  const cuts = report.cuts.map((cut) => ({
+    ...cut,
+    parts: cut.parts.map((part) => {
+      const lines = (part as { polylines?: unknown[][] }).polylines;
+      if (!Array.isArray(lines)) return part;
+      const n = lines.reduce((sum, l) => sum + (Array.isArray(l) ? l.length : 0), 0);
+      if (n <= left) {
+        left -= n;
+        return part;
+      }
+      dropped += n;
+      return { ...part, polylines: [] };
+    }),
+  }));
+  return dropped ? { ...report, cuts, pointsTruncated: dropped } : report;
+}
+
 export interface ObservedNode {
   /** Selection key: a body's key (instance path, `#artifact` for a second body of one module), a component's or a harness's instance path. */
   id: string;
@@ -106,7 +135,7 @@ export function observeScene(input: ObserveInput): CadObservation {
     nodes.push({ id: key, instancePath: key, kind: "harness", bounds: boundsOf(obj), visible: shown(obj), placeholder: false });
   }
   const c = input.camera;
-  const sections = input.sections ?? sectionsByCamera.get(c)?.();
+  const sections = capSections(input.sections ?? sectionsByCamera.get(c)?.());
   return {
     seq: input.seq,
     nodes,

@@ -164,7 +164,16 @@ export function toonable(m: THREE.Material | THREE.Material[] | undefined): m is
  */
 export class ToonTwins {
   private twins = new WeakMap<THREE.Material, Map<string, THREE.MeshStandardMaterial>>();
+  /** Every twin made, so `dispose` can give their GPU programs back (W4-D, wave 3 carry-forward). */
+  private made = new Set<THREE.MeshStandardMaterial>();
   constructor(private u: ToonUniforms) {}
+
+  /** Disposes every twin made (the scene is going away); `of` makes new ones if called again. */
+  dispose(): void {
+    for (const t of this.made) t.dispose();
+    this.made.clear();
+    this.twins = new WeakMap();
+  }
 
   /**
    * The twin of `m` for a state, up to date with it: `toon` (the bands) and `clip` (the section planes of a scoped
@@ -192,6 +201,7 @@ export class ToonTwins {
       }
       t.userData = { ...t.userData, twinOf: m.uuid };
       byKey.set(key, t);
+      this.made.add(t);
     }
     // what changes at run time on these materials: colour and glow, fades, the section view's side
     t.color.copy(m.color);

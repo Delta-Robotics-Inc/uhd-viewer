@@ -13,7 +13,8 @@
 import { createViewStore, type Actor, type ViewStore } from "./store";
 import { fromUrlParams, type UrlOpening } from "./serialize";
 import type { WritableKey } from "./schema";
-import type { ViewerSavePoint, ViewerSequenceCommand, ViewerSequenceReply, ViewerSnapshotMessage } from "../../api";
+import type { PlacementFacts, SetOp, ViewerSavePoint, ViewerSequenceCommand, ViewerSequenceReply, ViewerSnapshotMessage } from "../../api";
+import type { PlacementVerb } from "./bridge";
 
 export interface ViewHub {
   store: ViewStore;
@@ -33,6 +34,16 @@ export interface ViewHub {
   quality?: (config: Record<string, unknown>) => unknown;
   /** The host keeps save points (`ViewerOptions.onSavePoint`). */
   savePoint?: (p: ViewerSavePoint) => void;
+  /** What the mounted 3D view draws at a point (`__cad.pick`): the bridge's pick probes (W4-D, the critic). */
+  pick?: (fx: number, fy: number) => unknown;
+  /** The drawn label boxes (`__cad.labels()`): the bridge's label probe (W4-D). */
+  labels?: () => unknown[];
+  /** The 3D canvas in CSS px (the critic measures label boxes against it). */
+  canvas?: () => { width: number; height: number };
+  /** The person's explicit "Save callouts" (W4-D, D10): the host writes the annotations to the display file. */
+  saveCallouts?: () => void;
+  /** Resolves a placement verb against the scene's faces (W4-D, PB-1187): one `set` on `placements` and its facts. */
+  place?: (op: PlacementVerb, by: string) => { set: SetOp; facts: PlacementFacts } | { error: string };
 }
 
 const KEY = "__uhdViewHub";

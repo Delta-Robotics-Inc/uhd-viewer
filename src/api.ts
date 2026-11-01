@@ -10,7 +10,13 @@ import type { UhdBundle, UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 /** The live part of the 3D view's state the host saves per scope (`.protoboard/local/viewer-state.json`). */
 export type ViewerLiveState = Partial<Pick<ViewState, LiveKey>>;
 /** Named views and annotations: deliberate presentation, kept in the display file (`spatial.views`, `spatial.annotations`). */
-export type ViewerPresentation = Pick<ViewState, "namedViews" | "annotations">;
+export type ViewerPresentation = Pick<ViewState, "namedViews" | "annotations"> & {
+  /**
+   * The person asked to save the callouts too (W4-D: the toolbar's "Save callouts", collaboration D10): the host
+   * writes `spatial.annotations` only when this is true; named views are saved either way.
+   */
+  saveAnnotations?: true;
+};
 
 /** URL for a definition's artifact file path, or undefined if it cannot be resolved. */
 export type ArtifactResolver = (definitionId: string, filePath: string) => string | undefined;
@@ -386,6 +392,12 @@ export interface ViewerHandle {
   restoreViewState(file: ViewerStateFile): void;
   /** Apply a live-tab bridge request (an agent's batch the host relays); returns the reply to send back. */
   bridge(request: BridgeRequest): BridgeReplyMessage | undefined;
+  /**
+   * The same, as messages to post (W4-D): the reply whole when its JSON is under `maxChars` (DEFAULT 48 kB), else
+   * in parts (`uhd-viewer:bridgeReplyPart`) the host posts in order and the dev server joins (a dense board's
+   * observation with components stays under any one-request budget).
+   */
+  bridgeParts(request: BridgeRequest, maxChars?: number): (BridgeReplyMessage | BridgeReplyPart)[] | undefined;
   /** The named views and annotations (what an explicit save writes to the display file). */
   presentation(): ViewerPresentation;
   /** Run an assembly sequence command now (the 3D view must be shown); the player's reply. */
@@ -536,6 +548,13 @@ export interface PlacementOverride {
   by: string;
   /** The faces it was placed by, when a face primitive made it. */
   faces?: { part: string; face: number; target: string; targetFace: number };
+  /** Which face primitive made it ("placeOnFace", "orientByFace"). */
+  method?: string;
+  /**
+   * W4-D: absent, `matrix` is part to the ROOT assembly (it shows in every scope that draws the part); a scope's
+   * instance path when the view could not relate that scope to the root (DEFAULT: then it shows only there).
+   */
+  frame?: string;
 }
 
 /**
@@ -763,11 +782,41 @@ export interface BridgeRequest {
   since?: { epoch: string; seq: number };
   /** Return a checkpoint of the store too (the host's journal writes one every so often). */
   checkpoint?: boolean;
+  /**
+   * Probes the 3D view answers in the same reply (W4-D, the critic's pick probes): `picks` are `[fx, fy]` fractions
+   * of the canvas from its top left (at most 64), answered with what `__cad.pick` hits there; `labels: true` adds the
+   * drawn label boxes (`__cad.labels()`).
+   */
+  probe?: { picks?: [number, number][]; labels?: boolean };
+}
+
+/** What a placement verb did (`placeOnFace`, `orientByFace`), in the reply of the batch that carried it. */
+export interface PlacementFacts {
+  part: string;
+  /** Part to the root assembly, row-major, mm (Z up). */
+  matrix: number[];
+  delta: number[];
+  turnedDeg: number;
+  movedMm: number;
 }
 
 export interface BridgeReplyMessage {
   type: "uhd-viewer:bridgeReply";
   id: string;
-  reply: BatchReply & { observation?: unknown; view?: "3d" | "diagram" };
+  reply: BatchReply & { observation?: unknown; view?: "3d" | "diagram"; probe?: { picks?: { at: [number, number]; hit: unknown }[]; labels?: unknown[]; canvas?: { width: number; height: number } }; placements?: PlacementFacts[] };
+}
+
+/**
+ * One part of a bridge reply too large for one message (W4-D: a dense board's observation with components): the
+ * reply's JSON cut into `n` slices; the host joins them in order (`joinBridgeReply`) before it answers the agent.
+ */
+export interface BridgeReplyPart {
+  type: "uhd-viewer:bridgeReplyPart";
+  id: string;
+  /** This slice's index (0-based) and the number of slices. */
+  i: number;
+  n: number;
+  /** The slice of the reply message's JSON text. */
+  data: string;
 }
 

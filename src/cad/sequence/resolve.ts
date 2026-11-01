@@ -19,7 +19,7 @@
  */
 import { flattenSequence, placementKey, structureEnd, worldFrameOf } from "./generate";
 import { expandRefs } from "./patch";
-import { DEFAULTS, type FrameRef, type JointDef, type Motion, type SeqStep, type SequenceDefaults, type SequenceFile, type Vec3 } from "./types";
+import { DEFAULTS, type FrameRef, type JointDef, type JointLimitFlag, type Motion, type SeqStep, type SequenceDefaults, type SequenceFile, type Vec3 } from "./types";
 import type { Assembly, Mat4, MateEdge } from "./uhd";
 
 /** Column-major 4x4 (three.js order). */
@@ -73,6 +73,10 @@ export interface ResolvedStep {
   still: boolean;
   /** Ordered and spaced by the stack planner (no mate places its part). */
   planned: boolean;
+  /** Joint keyframes this step leaves once assembled, already held at the stops (PB-1185). */
+  joints?: Record<string, number>;
+  /** Keyframe values the stops held (from the built file and found here): the step API's limit flag. */
+  limits?: JointLimitFlag[];
 }
 
 export interface ResolvedJoint {
@@ -85,6 +89,8 @@ export interface ResolvedJoint {
   max?: number;
   rest: number;
   limitsFrom?: string;
+  /** Set when the authored rest lay beyond a stop and is held there (PB-1185). */
+  limited?: JointLimitFlag;
 }
 
 export interface ResolvedSequence {
@@ -137,6 +143,8 @@ const endKey = (e: MateEdge["a"]) => placementKey(e.path, e.frame.artifact);
 export function resolveFrame(asm: Assembly, ref: FrameRef, up: Vec3): { origin: Vec3; axis: Vec3 } | undefined {
   if (ref === "up") return { origin: [0, 0, 0], axis: norm(up) };
   if ("world" in ref) return { origin: [0, 0, 0], axis: norm(ref.world) };
+  // a mate line (PB-1185): a point and a direction, assembly mm, Z up
+  if ("at" in ref) return { origin: [ref.at[0], ref.at[1], ref.at[2]], axis: norm(ref.axis) };
   const m = asm.mates.find((x) => x.linkId === ref.mate);
   if (!m) return undefined;
   const placement = new Map(asm.placements.map((p) => [p.key, p]));
@@ -192,6 +200,13 @@ export function resolveSequence(input: ResolveInput, file: SequenceFile, source:
   const parents = new Map<string, string>();
   const unknown: string[] = [];
   const steps: ResolvedStep[] = [];
+  // joints: authored ones (and those mates add) from every sequence in the file, rest held at the stops
+  const joints: ResolvedJoint[] = [];
+  for (const seq of file.sequences)
+    for (const j of seq.joints ?? []) {
+      const r = resolveJoint(asm, j, up);
+      if (r) joints.push(r);
+    }
   const flat = flattenSequence(file, file.main, input.levels ?? "all");
   const named = new Set<string>();
   for (const { step, sequence, depth } of flat) {
@@ -225,6 +240,9 @@ export function resolveSequence(input: ResolveInput, file: SequenceFile, source:
       const share = Math.min(0.5, (stagger * (members.length - 1)) / durationS);
       members.forEach((mm, k) => (mm.delay = (share * k) / (members.length - 1)));
     }
+    // joint keyframes, held at the stops and flagged (a file written by another tool is held too)
+    const keyed = step.joints ? holdKeyframes(joints, step.joints) : undefined;
+    const limits = [...(step.limits ?? []), ...(keyed?.flags ?? [])];
     steps.push({
       id: step.id,
       title: step.title,
@@ -237,8 +255,10 @@ export function resolveSequence(input: ResolveInput, file: SequenceFile, source:
       links: step.links ?? [],
       camera: step.camera,
       callout: step.callout,
-      still: members.every((x) => x.distance === 0 && x.turns === 0),
+      still: members.every((x) => x.distance === 0 && x.turns === 0) && !keyed,
       planned: step.plan === "stack",
+      ...(keyed ? { joints: keyed.values } : {}),
+      ...(limits.length ? { limits } : {}),
     });
   }
   // what the file leaves out but the view still moves: planned parts (row bodies) and named bodies of one artifact
@@ -256,13 +276,6 @@ export function resolveSequence(input: ResolveInput, file: SequenceFile, source:
     else steps.push(step);
   }
   orderPlanned(steps);
-  // joints: authored ones from every sequence in the file
-  const joints: ResolvedJoint[] = [];
-  for (const seq of file.sequences)
-    for (const j of seq.joints ?? []) {
-      const r = resolveJoint(asm, j, up);
-      if (r) joints.push(r);
-    }
   return { steps, parents, joints, defaults, source, unknown, windows: windowsOf(steps) };
 }
 
@@ -274,11 +287,28 @@ function orderPlanned(steps: ResolvedStep[]) {
   slots.forEach((i, k) => (steps[i] = planned[k]));
 }
 
-/** A joint definition against the model. */
+/** A joint definition against the model; a rest beyond a stop is held there and flagged. */
 export function resolveJoint(asm: Assembly, j: JointDef, up: Vec3): ResolvedJoint | undefined {
   const f = resolveFrame(asm, j.along, up);
   if (!f) return undefined;
-  return { id: j.id, type: j.type, part: j.part, origin: f.origin, axis: f.axis, min: j.min, max: j.max, rest: j.rest ?? 0, limitsFrom: j.limitsFrom };
+  const asked = j.rest ?? 0;
+  const rest = clampJoint(j, asked);
+  const limited = j.limited ?? (rest !== asked ? { joint: j.id, asked, held: rest, stop: rest < asked ? ("max" as const) : ("min" as const) } : undefined);
+  return { id: j.id, type: j.type, part: j.part, origin: f.origin, axis: f.axis, min: j.min, max: j.max, rest, limitsFrom: j.limitsFrom, ...(limited ? { limited } : {}) };
+}
+
+/** A step's joint keyframes held at the joints' stops, with a flag per value that moved; unknown joints are left out. */
+export function holdKeyframes(joints: readonly ResolvedJoint[], asked: Readonly<Record<string, number>>): { values: Record<string, number>; flags: JointLimitFlag[] } {
+  const values: Record<string, number> = {};
+  const flags: JointLimitFlag[] = [];
+  for (const [id, v] of Object.entries(asked)) {
+    const j = joints.find((x) => x.id === id);
+    if (!j || typeof v !== "number" || !Number.isFinite(v)) continue;
+    const held = clampJoint(j, v);
+    values[id] = held;
+    if (held !== v) flags.push({ joint: id, asked: v, held, stop: held < v ? "max" : "min" });
+  }
+  return { values, flags };
 }
 
 /**
@@ -357,8 +387,9 @@ export function poseAt(resolved: ResolvedSequence, state: PoseState): Map<string
     }
   });
   const jointDelta = new Map<string, Mat>();
+  const keyed = jointKeyframesAt(resolved, t, state.isolate);
   for (const j of resolved.joints) {
-    const v = state.joints?.[j.id];
+    const v = state.joints?.[j.id] ?? keyed?.[j.id];
     if (v === undefined) continue;
     const q = clampJoint(j, v) - j.rest;
     if (!q) continue;
@@ -384,6 +415,23 @@ export function poseAt(resolved: ResolvedSequence, state: PoseState): Map<string
   };
   const refs = new Set<string>([...own.keys(), ...jointDelta.keys(), ...resolved.parents.keys()]);
   for (const r of refs) total(r);
+  return out;
+}
+
+/**
+ * Joint values the steps' keyframes give at explode amount t (PB-1185): from rest, each keyframed step moves its
+ * joints toward its value as the step goes in (assembly order), so assembled shows the last keyframe and fully
+ * apart shows rest. Undefined when no step carries a keyframe (the common case costs one pass over the steps).
+ */
+export function jointKeyframesAt(resolved: ResolvedSequence, t: number, isolate?: string): Record<string, number> | undefined {
+  let out: Record<string, number> | undefined;
+  resolved.steps.forEach((step, i) => {
+    if (!step.joints) return;
+    out ??= Object.fromEntries(resolved.joints.map((j) => [j.id, j.rest]));
+    const u = isolate !== undefined ? (step.id === isolate ? t : 0) : stepOut(resolved, i, t);
+    const inAmount = 1 - ease(u, step.ease);
+    for (const [id, v] of Object.entries(step.joints)) if (id in out) out[id] = out[id] + (v - out[id]) * inAmount;
+  });
   return out;
 }
 
