@@ -3,15 +3,19 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // The viewer's input is a UHD bundle (docs: protoboard-cli/docs/specs/uhd-boundary.md).
 // It imports UHD itself for types, checks and geometry maths.
 const uhdRoot = fileURLToPath(new URL("../uhd", import.meta.url));
 // Development default: the Protoboard quadcopter project's bundle (`protoboard build`).
 // Any other bundle loads with ?bundle=<url>; absolute artifact bases are served via /@fs.
-const protoboardRoot = fileURLToPath(new URL("../protoboard-cli", import.meta.url));
+// (protoboard-cli is archived: the stack checkout beside this one is the default, wave 0 of the CAD viewer build.)
+const protoboardRoot = fileURLToPath(new URL("../protoboard-stack", import.meta.url));
 const defaultBundle = process.env.UHD_BUNDLE ?? `${protoboardRoot}/examples/quadcopter-5in/.protoboard/build/uhd-bundle.json`;
+// A UHD_BUNDLE outside the sibling checkouts (ClientX): its project folder (<project>/.protoboard/build/uhd-bundle.json)
+// holds the bundle and its artifacts, so the dev server may read it.
+const bundleProject = process.env.UHD_BUNDLE ? fileURLToPath(new URL("../..", pathToFileURL(process.env.UHD_BUNDLE))) : undefined;
 /** `path` and its real path when it exists (in a worktree the sibling checkouts may be symlinks); nothing when it does not. */
 const withRealPath = (path: string) => {
   try {
@@ -38,7 +42,7 @@ export default defineConfig(({ command }) => ({
     port: 5178,
     // bundles may reference artifacts anywhere in the sibling checkouts during development;
     // only the dev server reads this, and neither checkout has to exist (build and tests need ../uhd only)
-    fs: { allow: command === "serve" ? [".", ...withRealPath(uhdRoot), ...withRealPath(protoboardRoot)] : ["."] },
+    fs: { allow: command === "serve" ? [".", ...withRealPath(uhdRoot), ...withRealPath(protoboardRoot), ...(bundleProject ? withRealPath(bundleProject) : [])] : ["."] },
   },
   test: { include: ["test/**/*.test.ts"], environment: "node" },
 }));
