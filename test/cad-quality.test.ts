@@ -912,7 +912,10 @@ describe("loading at the coarse tier, and boxes", () => {
     });
     const c = (await cache.load("/m/body.glb", { tier: "coarse" }))!;
     expect(c.tier).toBe("coarse");
-    expect(c.hash).toBe("sha256:view-coarse");
+    // W3-C (the wave 2 gate): the coarse tier's cache key is the hash of the bytes read, not the name or the
+    // sidecar's declared value (here the fixture's coarse bytes are the fine view's)
+    const { contentHash } = await import("../src/cad/render/glbCache");
+    expect(c.hash).toBe(await contentHash(view));
     expect(c.path).toBe("/m/body.view.coarse.glb");
     expect(log).not.toContain("GET /m/body.view.glb");
     // ids are there; the fine tier's face tables are not applied to coarse triangles

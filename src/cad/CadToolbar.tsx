@@ -4,6 +4,7 @@
  * CadView passes, so a toggle made here, in the URL, by a host or by an
  * agent through the bridge shows the same way.
  */
+import type { ReactNode } from "react";
 import { Icon } from "../canvas/Icon";
 import {
   IconButton,
@@ -14,6 +15,7 @@ import {
 import { DIRECTIONS, type Direction } from "./model";
 import type { LabelKind } from "./labels";
 import type { SectionPlane } from "./state";
+import { MAX_SECTIONS, flipped, nextPlane, type ScopedSectionPlane } from "./sections/planes";
 
 export interface CadToolbarProps {
   exploded: boolean;
@@ -39,6 +41,14 @@ export interface CadToolbarProps {
   onSectionMenu: (open: boolean) => void;
   /** Which side the plane keeps when no side is set: the side away from the camera along `axis`. */
   autoFlip: (axis: 0 | 1 | 2) => boolean;
+  /**
+   * Several planes (PB-1186): when given, the section menu lists every plane (axis, kept side, a slider to drag it,
+   * remove), adds planes (up to three) and sets the scope; `section`/`onSection` are then unused.
+   */
+  sections?: ScopedSectionPlane[];
+  onSections?: (sections: ScopedSectionPlane[]) => void;
+  /** The selected part, offered as the scope of the cut ("Cut only <label>"); null: none selected. */
+  scopeCandidate?: { path: string; label: string } | null;
   /** Bodies that hold another (what x-ray sees through); none: the control is disabled and says so. */
   shells: number;
   xray: boolean;
@@ -46,6 +56,10 @@ export interface CadToolbarProps {
   findings: number;
   showFindings: boolean;
   onFindings: (on: boolean) => void;
+  /** The marker-first Findings control (PB-1184, ./annot/FindingsControl.tsx); replaces the plain toggle when given. */
+  findingsControl?: ReactNode;
+  /** Controls other workstreams mount (W3-C's style toggle, W3-D's measure and tour), after the findings. */
+  extra?: ReactNode;
   direction: Direction;
   onDirection: (d: Direction) => void;
   onFit: () => void;
@@ -145,8 +159,10 @@ export function CadToolbar(p: CadToolbarProps) {
             icon="scissors"
             label="Section"
             tooltipSide="top"
-            pressed={Boolean(section)}
-            onClick={() => p.onSection(section ? null : { axis: 1, at: 0.5 })}
+            pressed={p.onSections ? Boolean(p.sections?.length) : Boolean(section)}
+            onClick={() =>
+              p.onSections ? p.onSections(p.sections?.length ? [] : [{ axis: 1, at: 0.5 }]) : p.onSection(section ? null : { axis: 1, at: 0.5 })
+            }
           />
           <IconButton
             icon="chevron-up"
@@ -157,7 +173,8 @@ export function CadToolbar(p: CadToolbarProps) {
             aria-expanded={p.sectionMenu}
             onClick={() => p.onSectionMenu(!p.sectionMenu)}
           />
-          {p.sectionMenu && (
+          {p.sectionMenu && p.onSections && <SectionPlanes {...p} />}
+          {p.sectionMenu && !p.onSections && (
             <div className="cad-menu cad-section">
               <div className="cad-menu-label">Section plane</div>
               <div className="segmented">
@@ -220,7 +237,7 @@ export function CadToolbar(p: CadToolbarProps) {
           }
           onClick={() => p.shells && p.onXray(!p.xray)}
         />
-        {p.findings > 0 && (
+        {p.findingsControl ?? (p.findings > 0 && (
           <IconButton
             icon="triangle-alert"
             label={`Findings on the model · ${p.findings}`}
@@ -229,7 +246,8 @@ export function CadToolbar(p: CadToolbarProps) {
             badge={p.findings}
             onClick={() => p.onFindings(!p.showFindings)}
           />
-        )}
+        ))}
+        {p.extra}
         <ToolbarSeparator />
         <ToggleGroup
           label="Interface direction"
@@ -257,6 +275,79 @@ export function CadToolbar(p: CadToolbarProps) {
           onClick={p.onFocus}
         />
       </Toolbar>
+    </div>
+  );
+}
+
+const AXES = ["X", "Y", "Z"] as const;
+
+/** The section menu with several planes (PB-1186): one row per plane, add, and the scope. */
+function SectionPlanes(p: CadToolbarProps) {
+  const list = p.sections ?? [];
+  const set = (next: ScopedSectionPlane[]) => p.onSections?.(next);
+  const at = (i: number, change: Partial<ScopedSectionPlane>) => set(list.map((s, j) => (j === i ? { ...s, ...change } : s)));
+  const scope = list[0]?.scope;
+  const add = nextPlane(list);
+  return (
+    <div className="cad-menu cad-section cad-sections">
+      <div className="cad-menu-label">Section planes</div>
+      {list.length === 0 && <div className="cad-section-empty">No plane: add one to cut the model.</div>}
+      {list.map((s, i) => (
+        <div key={i} className="cad-section-row" data-plane={i}>
+          <div className="segmented">
+            {AXES.map((a, k) => (
+              <button key={a} className={s.axis === k ? "on" : ""} onClick={() => at(i, { axis: k as 0 | 1 | 2 })}>
+                {a}
+              </button>
+            ))}
+            <button
+              className={s.flip !== undefined ? "on" : ""}
+              onClick={() => set(list.map((x, j) => (j === i ? flipped(x, p.autoFlip(x.axis)) : x)))}
+              aria-label="Keep the other side"
+              data-tooltip="Keep the other side"
+            >
+              <Icon name="arrow-up-down" size={13} />
+            </button>
+            <button onClick={() => set(list.filter((_, j) => j !== i))} aria-label="Remove this plane" data-tooltip="Remove this plane">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.005}
+            aria-label={`Plane ${i + 1} position along ${AXES[s.axis]}`}
+            value={s.at}
+            onChange={(e) => at(i, { at: Number(e.target.value) })}
+          />
+        </div>
+      ))}
+      <div className="cad-section-foot">
+        <button className="cad-menu-item" disabled={!add} onClick={() => add && set([...list, scope ? { ...add, scope } : add])}>
+          <Icon name="plus" size={12} />
+          {add ? "Add plane" : `At most ${MAX_SECTIONS} planes`}
+        </button>
+        {list.length > 0 && (
+          <div className="segmented cad-section-scope" role="group" aria-label="What the planes cut">
+            <button className={!scope ? "on" : ""} onClick={() => set(list.map(({ scope: _s, ...x }) => x))}>
+              Whole model
+            </button>
+            {(p.scopeCandidate || scope) && (
+              <button
+                className={scope ? "on" : ""}
+                onClick={() => {
+                  const path = scope ?? p.scopeCandidate?.path;
+                  if (path) set(list.map((x) => ({ ...x, scope: path })));
+                }}
+                data-tooltip={scope ? `Cutting only ${scope}` : `Cut only ${p.scopeCandidate?.label}`}
+              >
+                {scope ? `Only ${scope.split("/").pop()}` : `Only ${p.scopeCandidate?.label}`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

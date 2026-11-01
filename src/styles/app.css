@@ -2158,6 +2158,36 @@ body {
   width: 100%;
   accent-color: var(--uhd-accent);
 }
+/* several section planes (PB-1186): one row per plane, then add and scope */
+.cad-sections {
+  min-width: 248px;
+}
+.cad-section-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--uhd-border-subtle);
+}
+.cad-section-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cad-section-foot .cad-menu-item[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.cad-section-empty {
+  color: var(--uhd-text-muted);
+  font-size: 10.5px;
+}
+.cad-section-scope button {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .cad-finding {
   display: flex;
   gap: 8px;

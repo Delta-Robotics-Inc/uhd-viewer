@@ -35,7 +35,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   if (props.viewState) store.restore(props.viewState.scopes, "host");
   const hostActor: { kind: "host"; id: string } = { kind: "host", id: "host" };
   const setState = (state: Partial<ViewState>) => {
-    const keys = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "namedViews", "annotations"].filter((k) => k in state);
+    const keys = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme", "namedViews", "annotations"].filter((k) => k in state);
     const r = store.dispatch(
       keys.map((k) => ({ op: "set", path: [k], value: (state as Record<string, unknown>)[k] })),
       { actor: hostActor, label: "set by the host", source: "host" },
@@ -68,6 +68,10 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       case "uhd-viewer:quality":
         hub.quality?.(message.config);
         return;
+      case "uhd-viewer:takeOver":
+        // the person takes the view back: every agent lease ends, the camera is theirs (PB-1196)
+        store.takeOver();
+        return;
       case "uhd-viewer:snapshot":
         // kept for the 3D view of that level (it paints it, then goes live under it)
         hub.snapshot = message;
@@ -92,11 +96,29 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   const onVisibility = () => document.visibilityState === "hidden" && flush();
   window.addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", onVisibility);
-  // named views and annotations: only an explicit save changes them, and the host writes them to the display file
+  // named views (and annotations a person saves): only an explicit save changes the display file. A change of
+  // annotations alone is not posted (gate 3, W3-A's bullet): agent callouts are live and per user, and the host
+  // writes `spatial.annotations` only on a save that says `saveAnnotations: true` (DEFAULT, collaboration D10).
   const stopPresentation = store.subscribe((c) => {
-    if (c.source === "display" || (c.state.namedViews === c.prev.namedViews && c.state.annotations === c.prev.annotations)) return;
+    if (c.source === "display" || c.state.namedViews === c.prev.namedViews) return;
     if (same(presentation(c.state), presentation(c.prev))) return;
     emit({ type: "uhd-viewer:presentation", presentation: presentation(c.state) });
+  });
+  // presence (PB-1196): who holds the camera, the leases, what each agent is working on; to the host when the
+  // store says presence changed or an agent wrote, at most every 250 ms (DEFAULT), the last one always sent
+  const PRESENCE_THROTTLE_MS = 250;
+  let presenceTimer: ReturnType<typeof setTimeout> | undefined;
+  let presenceAt = 0;
+  const sendPresence = () => {
+    presenceTimer = undefined;
+    presenceAt = Date.now();
+    emit({ type: "uhd-viewer:presence", presence: store.presence() });
+  };
+  const stopPresence = store.subscribe((c) => {
+    if (c.source !== "presence" && c.entry?.actor.kind !== "agent") return;
+    if (presenceTimer) return;
+    const wait = Math.max(0, PRESENCE_THROTTLE_MS - (Date.now() - presenceAt));
+    presenceTimer = setTimeout(sendPresence, wait);
   });
   // one object while what the host takes stays the same (the viewer subscribes to it)
   let host: HostLink | undefined;
@@ -136,10 +158,16 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       live.flush();
       live.stop();
       stopPresentation();
+      stopPresence();
+      if (presenceTimer) clearTimeout(presenceTimer);
       window.removeEventListener("pagehide", flush);
       document.removeEventListener("visibilitychange", onVisibility);
       parent?.close();
       root.unmount();
+      // the hub outlives this mount (one per page): drop what this mount put on it (wave 2 gate item, W3-C's bullet)
+      hub.savePoint = undefined;
+      hub.snapshot = undefined;
+      hub.onSnapshot = undefined;
     },
     focus: (path) => void post({ type: "uhd-viewer:focus", path }),
     select: (ids, options) => void post({ type: "uhd-viewer:select", ids, ...(options?.reveal === false ? { reveal: false } : {}) }),

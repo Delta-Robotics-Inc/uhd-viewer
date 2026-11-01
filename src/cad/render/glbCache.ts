@@ -197,6 +197,13 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
 
+  /** The body, refused before it is read when the server says it is over the GLB cap (checkGlb checks it again after). */
+  const readCapped = async (r: FetchResponse, what: string): Promise<ArrayBuffer> => {
+    const n = lengthOf(r);
+    if (n !== undefined && n > MAX_GLB_BYTES) throw new Error(`${what}: ${n} bytes, over the ${MAX_GLB_BYTES}-byte cap`);
+    return r.arrayBuffer();
+  };
+
   /** Parse bytes once per content hash. */
   const parseOnce = (hash: string, make: () => Promise<{ data: ArrayBuffer; path: string; source: LoadedModel["source"]; sidecar?: ViewSidecar; tier?: "coarse" }>, url: string): Promise<LoadedModel | null> => {
     const have = byHash.get(hash);
@@ -243,15 +250,16 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
       if (tier === "coarse" && sc.coarse) {
         const coarse = sc.coarse;
         const coarseUrl = urls.glb.replace(/[^/?#]*(?=[?#]|$)/, encodeURIComponent(coarse.file));
-        const viaCoarse = await parseOnce(
-          coarse.sha256 ?? `${sc.hash}#coarse`,
-          async () => {
-            const r = await get(coarseUrl);
-            if (!r) throw new Error(`${coarseUrl} missing`);
-            return { data: await r.arrayBuffer(), path: coarseUrl, source: "sidecar", sidecar: sc, tier: "coarse" };
-          },
-          url,
-        ).catch((e) => {
+        // the size is checked before the body is read, and the cache key is the hash of the bytes read (W3-C, the
+        // wave 2 gate): a coarse file rewritten under the same name is never mistaken for the one cached
+        const viaCoarse = await (async () => {
+          const r = await get(coarseUrl);
+          if (!r) throw new Error(`${coarseUrl} missing`);
+          const data = await readCapped(r, coarseUrl);
+          const hash = await hashOf(data);
+          if (coarse.sha256 && !hash.endsWith(coarse.sha256.replace(/^sha256:/, "")) && hash.startsWith("sha256:")) console.warn(`[cad] ${coarseUrl}: bytes differ from the sidecar's coarse sha256 (using the bytes)`);
+          return parseOnce(hash, async () => ({ data, path: coarseUrl, source: "sidecar", sidecar: sc, tier: "coarse" }), url);
+        })().catch((e) => {
           console.warn(`[cad] ${coarseUrl}: coarse tier not used (${e instanceof Error ? e.message : e})`);
           return null;
         });
@@ -262,7 +270,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
         async () => {
           const r = await get(urls.glb);
           if (!r) throw new Error(`${urls.glb} missing`);
-          return { data: await r.arrayBuffer(), path: urls.glb, source: "sidecar", sidecar: sc };
+          return { data: await readCapped(r, urls.glb), path: urls.glb, source: "sidecar", sidecar: sc };
         },
         url,
       )) ?? undefined;
@@ -270,7 +278,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
     // no scene index: the merged GLB alone still beats the original (hashed by its bytes)
     const r = await get(urls.glb);
     if (!r) return undefined;
-    const data = await r.arrayBuffer();
+    const data = await readCapped(r, urls.glb);
     const hash = await hashOf(data);
     return (await parseOnce(hash, async () => ({ data, path: urls.glb, source: "sidecar" }), url)) ?? undefined;
   };
@@ -278,7 +286,7 @@ export function createGlbCache(options: GlbCacheOptions): GlbCache {
   const viaGlb = async (url: string): Promise<LoadedModel | null> => {
     const r = await get(url);
     if (!r) throw new Error(`${url}: not found`);
-    const data = await r.arrayBuffer();
+    const data = await readCapped(r, url);
     const hash = await hashOf(data);
     return parseOnce(hash, async () => ({ data, path: url, source: "glb" }), url);
   };

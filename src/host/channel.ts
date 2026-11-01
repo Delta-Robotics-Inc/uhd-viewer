@@ -87,6 +87,8 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
       return;
     case "uhd-viewer:sequenceState":
       return options.onSequenceState?.(event);
+    case "uhd-viewer:presence":
+      return options.onPresenceChange?.(event.presence);
   }
 }
 
@@ -108,6 +110,14 @@ export interface ParentChannel {
 
 /** Events held while the parent's origin is unknown; past this only the latest are kept. */
 const HELD = 64;
+
+/**
+ * Events that carry the view's state, an agent's reply or who is working where: never posted to `*` (a parent
+ * whose origin is opaque, "null", or a host that allowed any origin), only to a known origin (wave 2 gate: the
+ * channel posted view state to `*` when the parent's origin was null). Telemetry records stay with the host the
+ * same way.
+ */
+export const PRIVATE_EVENTS = new Set(["uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:presence", "uhd-viewer:sequenceState", "uhd-viewer:telemetry"]);
 
 /**
  * The postMessage channel with the parent window. Accepts host messages from
@@ -133,11 +143,19 @@ export function connectParent(win: ChannelWindow, options: { origins?: string[];
           ? "*"
           : undefined;
   let held: (ViewerEvent | TelemetryMessage)[] = [];
+  let warned = false;
   const flush = () => {
     if (!target) return;
     const out = held;
     held = [];
-    for (const e of out) parent.postMessage(e, target);
+    for (const e of out) {
+      if (target === "*" && PRIVATE_EVENTS.has((e as { type: string }).type)) {
+        if (!warned) console.warn("[uhd-viewer] the parent window's origin is not known (opaque or `*`): the view state, agent replies and presence are not posted to it");
+        warned = true;
+        continue;
+      }
+      parent.postMessage(e, target);
+    }
   };
   const listener = (e: MessageEvent) => {
     if (e.source !== parent || !originAllowed(e.origin, allowed)) return;

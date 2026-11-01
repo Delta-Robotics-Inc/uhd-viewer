@@ -6,9 +6,11 @@
  */
 import { onGlbLoad } from "../render/events";
 import type { LoadState } from "../render/observe";
-import { LoadTracker, preflight, sidecarCounts, type LoadSnapshot } from "./stages";
+import { LoadTracker, type LoadSnapshot } from "./stages";
 
 export { LoadingScreen, trianglePoint, type LoadingScreenProps } from "./LoadingScreen";
+export { preflightFromSidecars } from "./preflight";
+export { TierGate, glbPlacements, loadAtTier, useLoadTiers, type LoadTiers } from "./tiers";
 export { LoadTracker, OFFER_LIGHTER_AFTER_MS, PREFLIGHT_LIMITS, SHOW_STAGE_AFTER_MS, preflight, sidecarCounts, type LoadEvent, type LoadSnapshot, type LoadStage, type LoadTier, type Preflight } from "./stages";
 
 export interface AttachedTracker {
@@ -38,27 +40,6 @@ export function attachLoadTracker(tracker = new LoadTracker()): AttachedTracker 
     frame: () => tracker.push({ type: "frame" }),
     detach: off,
   };
-}
-
-/**
- * The pre-flight warning from the view sidecars, fetched before the GLBs:
- * `X.view.json` beside each body GLB (small files), times the placements that
- * draw it. Files without a sidecar count nothing (their cost is unknown until
- * loaded). Never throws.
- */
-export async function preflightFromSidecars(glbs: ReadonlyMap<string, number>, fetcher: typeof fetch = fetch): Promise<ReturnType<typeof preflight>> {
-  const counts = await Promise.all(
-    [...glbs].map(async ([url, placements]) => {
-      try {
-        const res = await fetcher(url.replace(/\.glb(\?.*)?$/i, ".view.json$1"));
-        if (!res.ok) return undefined;
-        return sidecarCounts(await res.json(), placements);
-      } catch {
-        return undefined;
-      }
-    }),
-  );
-  return preflight(counts.filter((c): c is NonNullable<typeof c> => Boolean(c)));
 }
 
 /** A one-line text for logs and `views check`: the stage and its counts. */

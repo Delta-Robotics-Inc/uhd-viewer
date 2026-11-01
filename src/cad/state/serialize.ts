@@ -40,9 +40,12 @@ export function parseViewState(data: unknown): { values: Partial<Pick<ViewState,
   const dropped: string[] = [];
   for (const k of WRITABLE_KEYS) {
     if (!(k in d)) continue;
+    let v = d[k];
+    // a step saved by index (before the wave 2 gate's one type) is not a step id: read as none
+    if (k === "explode" && v && typeof v === "object" && typeof (v as { step?: unknown }).step === "number") v = { ...(v as object), step: null };
     // visibility may be partial: fill it from the defaults' keys the caller keeps
-    if (checkValue(k, d[k])) dropped.push(k);
-    else values[k] = clone(d[k]);
+    if (checkValue(k, v)) dropped.push(k);
+    else values[k] = clone(v);
   }
   return { values: values as Partial<Pick<ViewState, WritableKey>>, dropped };
 }
