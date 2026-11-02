@@ -183,6 +183,16 @@ export function materialFor(def: ModuleDef, bodyPart: string, appearance?: Appea
 }
 const looks = new Map<string, THREE.MeshStandardMaterial>();
 
+/**
+ * The parts of a body's model to colour one by one (wave R5 gate): the top object's children, or the top object itself
+ * when it is one mesh (a merged view sidecar, a one-mesh GLB; `lone`). Walking only the children left a lone mesh with
+ * the colour baked into its sidecar, so a project's display colours (`spatial.appearance`) never showed.
+ */
+export function bodyPartsOf(top: THREE.Object3D): { parts: THREE.Object3D[]; lone: boolean } {
+  const lone = (top as THREE.Mesh).isMesh === true;
+  return { parts: lone ? [top] : [...top.children], lone };
+}
+
 /** Declared material first (UHD `domains[mechanical].material`), then what the part is. */
 function fallbackAppearance(def: ModuleDef, bodyPart: string): Omit<Appearance, "parts"> {
   const mech = (def.domains ?? []).find((d) => d.domain === "mechanical") as { material?: { name?: string } } | undefined;

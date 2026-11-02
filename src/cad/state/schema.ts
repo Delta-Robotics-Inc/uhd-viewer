@@ -175,6 +175,9 @@ export function checkExplode(v: unknown): string | undefined {
   if (v.scope !== undefined && !isPath(v.scope)) return "explode.scope must be an instance path of at most 512 characters";
   // R2-B (H2): radial (Explode, all at once) or sequence (Assemble, the steps); absent reads as step ? sequence : radial
   if (v.mode !== undefined && v.mode !== "radial" && v.mode !== "sequence") return 'explode.mode must be "radial" or "sequence"';
+  // R5-B: the two independent toggles (Explode, Assemble)
+  if (v.on !== undefined && typeof v.on !== "boolean") return "explode.on must be true or false";
+  if (v.assemble !== undefined && typeof v.assemble !== "boolean") return "explode.assemble must be true or false";
   return undefined;
 }
 

@@ -186,7 +186,7 @@ describe("the header and the chip", () => {
     const s = m.steps[1];
     const h = headerText(m, { mode: "sequence", t: tOfAxis((s.x0 + s.x1) / 2), speed: 1, playing: true });
     expect(h.title).toBe(`Step 2 / ${m.steps.length} · ${s.title}`);
-    expect(h.sub).toMatch(new RegExp(`^${s.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · \\d+ parts? · t = \\d+\\.\\d\\d · 1\\.0x$`));
+    expect(h.sub).toMatch(new RegExp(`^${s.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · \\d+ parts? · t = \\d+\\.\\d\\d · 1x$`));
     expect(headerText(m, { mode: "sequence", t: 0, speed: 1, playing: false }).title).toBe(`Assembled · ${m.steps.length} steps`);
     expect(headerText(m, { mode: "radial", t: 0.5, speed: 1, playing: false, radial: { parts: 26, distanceMm: 264.2, ms: 3, from: {} } })).toEqual({ title: "Explode · all parts at once", sub: "radial · 26 parts · 132.1 mm out · amount 0.50" });
     expect(headerText(undefined, { mode: "sequence", t: 0.5, speed: 1, playing: false }).title).toBe("No assembly steps");
@@ -236,10 +236,12 @@ describe("when it shows, the keyboard, the remembered collapse", () => {
 
 describe("the panel as rendered", () => {
   afterEach(() => vi.unstubAllGlobals());
-  const mount = (over: { t?: number; requested?: boolean; contacts?: InterferenceReportLike } = {}) => {
+  const mount = (over: { t?: number; requested?: boolean; contacts?: InterferenceReportLike; off?: boolean } = {}) => {
     const player = new SequencePlayer(resolved());
     player.setMode("sequence", { instant: true });
     player.set({ t: over.t ?? 0.5 });
+    // R5-A: the panel shows while a toggle is on (setMode("sequence") is Assemble on); `off` turns it off again
+    if (over.off) player.setAssemble(false);
     const store = createViewStore();
     if (over.t) store.dispatch([{ op: "explode", t: over.t }]);
     const run = vi.fn(() => ({ ok: true }));
@@ -274,8 +276,9 @@ describe("the panel as rendered", () => {
     expect(html).not.toContain("no sweep run");
   });
 
-  it("renders nothing while neither asked nor apart, and one line when collapsed", () => {
-    expect(mount({ t: 0, requested: false }).html).toBe("");
+  it("renders nothing while neither asked nor a toggle on (R5-A), and one line when collapsed", () => {
+    expect(mount({ t: 0, requested: false, off: true }).html).toBe("");
+    expect(mount({ t: 0, requested: false }).html).toContain('class="cad-timeline"');
     vi.stubGlobal("localStorage", { getItem: (k: string) => (k === COLLAPSED_KEY ? "1" : null), setItem: () => {} });
     const { html } = mount({ t: 0.5 });
     expect(html).toContain("data-collapsed");

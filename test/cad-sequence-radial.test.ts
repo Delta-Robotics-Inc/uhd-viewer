@@ -144,16 +144,23 @@ describe("the radial explode on CadView's records (resolveForCad, the player)", 
     expect(p.snapshot().radial?.parts).toBe(7);
   });
 
-  it("the steps are today's player exactly (Assemble), and a step command switches to them", () => {
+  it("R5-A: Assemble moves the parts along the radial paths (fully out it is the explode), and a step command switches to it", () => {
     const p = new SequencePlayer(resolved);
+    const r = new SequencePlayer(resolved);
     p.setMode("sequence", { instant: true });
-    for (const t of [0, 0.2, 0.55, 1]) {
+    for (const t of [0, 1]) {
       p.set({ t });
-      const want = poseAt(resolved, { t });
-      const got = p.pose();
-      expect([...got.keys()].sort()).toEqual([...want.keys()].sort());
-      for (const [k, m] of want) expect([...got.get(k)!]).toEqual([...m]);
+      r.set({ t });
+      for (const k of resolved.radial!.moves.keys()) near(at(p.pose().get(k)), at(r.pose().get(k)));
     }
+    // part way: each part only along its own path (R2-B's paths, not the steps' own offsets)
+    p.set({ t: 0.55 });
+    for (const [k, m] of p.pose()) {
+      const v = at(m);
+      const mv = resolved.radial!.moves.get(k)!;
+      near(v, mv.dir.map((x) => x * Math.hypot(...v)) as [number, number, number]);
+    }
+    expect(poseAt).toBeTypeOf("function");
     const q = new SequencePlayer(resolved);
     const first = resolved.steps[0]?.id;
     if (first) {
@@ -165,18 +172,18 @@ describe("the radial explode on CadView's records (resolveForCad, the player)", 
     expect(q.run({ action: "mode", mode: "nope" as never }).ok).toBe(false);
   });
 
-  it("a mode change while apart fades over MODE_BLEND_MS from where the parts were", () => {
+  it("R5-A: a mode change while apart keeps every part where it is, paused (no fade, no autostart)", () => {
     const p = new SequencePlayer(resolved);
     let now = 1000;
     p.now = () => now;
-    p.set({ t: 1 });
+    p.set({ t: 0.5 });
     const radialAt = at(p.pose().get("shell/px"));
     p.setMode("sequence");
     near(at(p.pose().get("shell/px")), radialAt);
-    expect(p.tick(0.016)).toBe(true);
-    now += MODE_BLEND_MS + 1;
-    near(at(p.pose().get("shell/px")), at(poseAt(resolved, { t: 1 }).get("shell/px")));
     expect(p.tick(0.016)).toBe(false);
+    now += MODE_BLEND_MS + 1;
+    near(at(p.pose().get("shell/px")), radialAt);
+    expect(p.playing).toBeUndefined();
   });
 
   it("a sub-assembly on its own (R2-A's explode.scope): only its parts move, about its own centre", () => {

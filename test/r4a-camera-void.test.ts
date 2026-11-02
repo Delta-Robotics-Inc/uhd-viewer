@@ -265,17 +265,18 @@ describe("R4-A void menu", () => {
     expect(voidMenuFor({ ...base, hidden: 1 })[0].disabled).toBeUndefined();
     expect(voidMenuFor({ ...base, isolated: true })[0].disabled).toBeUndefined();
   });
-  it("mirrors the toolbar's Explode and Assemble", () => {
+  it("mirrors the toolbar's Explode and Assemble (R5-B: two checkbox items, one per toggle)", () => {
     const at = (o: Partial<VoidMenuInput>, id: string) => voidMenuFor({ ...base, ...o }).find((i) => i.id === id)!;
-    expect(at({}, "explode")).toMatchObject({ label: "Explode (all parts at once)" });
-    expect(at({ exploded: true, mode: "radial" }, "explode")).toMatchObject({ label: "Explode off", checked: true });
-    expect(at({}, "assemble").label).toBe("Take apart in order");
-    expect(at({ exploded: true, mode: "sequence" }, "assemble").label).toBe("Assemble in order");
+    expect(at({}, "explode")).toMatchObject({ label: "Explode", checked: false });
+    expect(at({ exploded: true, mode: "radial" }, "explode")).toMatchObject({ label: "Explode", checked: true });
+    expect(at({}, "assemble")).toMatchObject({ label: "Assemble", checked: false });
+    expect(at({ exploded: true, mode: "sequence" }, "assemble")).toMatchObject({ label: "Assemble", checked: true });
   });
   it("names the grid and the scale reference's current choice; leaves them out when R4-B reports none", () => {
     const m = voidMenuFor({ ...base, grid: { on: false }, scaleRef: { on: true, choice: "Benchy" } });
-    expect(m.find((i) => i.id === "grid")!.label).toBe("Grid on");
-    expect(m.find((i) => i.id === "scaleRef")!).toMatchObject({ label: "Scale reference off (Benchy)", checked: true });
+    // wave R5 gate: checkbox items are named by what they show; the check mark says on or off
+    expect(m.find((i) => i.id === "grid")!).toMatchObject({ label: "Grid", checked: false });
+    expect(m.find((i) => i.id === "scaleRef")!).toMatchObject({ label: "Scale reference (Benchy)", checked: true });
     expect(ids({})).not.toContain("grid");
   });
   it("disables Capture image with a reason when the view cannot be captured", () => {

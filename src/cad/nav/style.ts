@@ -24,6 +24,7 @@ export const NAV_CSS = `
 .cad-part-menu button[aria-disabled="true"]:hover { background: transparent; }
 .cad-part-menu button[aria-disabled="true"] .context-menu-icon { color: var(--uhd-text-faint); }
 .cad-part-menu button[aria-checked="true"] .context-menu-icon { color: var(--uhd-accent); }
+.cad-part-menu .context-menu-check { margin-left: auto; padding-left: 10px; display: inline-flex; color: var(--uhd-accent); }
 .cad-tip {
   position: absolute; z-index: 30; pointer-events: none; max-width: 300px;
   padding: 4px 8px; border-radius: var(--uhd-radius, 6px);

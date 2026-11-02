@@ -122,7 +122,9 @@ export function resolveForCad(input: CadResolveInput): ResolvedSequence {
   const base = new Set(file?.sequences.find((s) => s.id === file.main)?.base ?? []);
   const planned = new Map([...rises].filter(([k]) => plannedKeys.has(k) && !base.has(k)));
   const resolveInput = { assembly: model.assembly, gap: input.gap, up: v3(axis), planned, parts: partsOff, levels: input.levels };
-  if (!file) return Object.assign(resolveSequence(resolveInput, sequenceFromPlan(planned), "planner"), { radial });
+  // R5-A: the sequence's base (placed first, never a step of its own) goes first in the shared motion's step order
+  const baseParts = [...base];
+  if (!file) return Object.assign(resolveSequence(resolveInput, sequenceFromPlan(planned), "planner"), { radial, baseParts });
   const resolved = resolveSequence(resolveInput, file, input.file ? "file" : "generated");
   reparentHardwareToParts(resolved, model.assembly, input.hardware, bodies);
   // hardware that rides a named body in the sequence rides it in the radial explode too
@@ -130,7 +132,7 @@ export function resolveForCad(input: CadResolveInput): ResolvedSequence {
     const host = radial.moves.get(parent);
     if (host && radial.moves.has(k) && radial.moves.get(k)!.from !== "sequence") radial.moves.set(k, { ...host, from: "rides" });
   }
-  return Object.assign(resolved, { radial });
+  return Object.assign(resolved, { radial, baseParts });
 }
 
 /**

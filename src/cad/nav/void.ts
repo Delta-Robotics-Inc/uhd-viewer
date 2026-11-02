@@ -4,6 +4,7 @@
  * everything. Something not specific to the model." Pure: what the menu lists for the view as it is now.
  */
 import type { MenuItem } from "./target";
+import { toggleTip, togglesOf, type MotionToggles } from "./toggles";
 
 /** What the void menu needs to know about the view now. */
 export interface VoidMenuInput {
@@ -15,6 +16,8 @@ export interface VoidMenuInput {
   exploded: boolean;
   /** How the parts come apart now (the toolbar's two controls). */
   mode: "radial" | "sequence";
+  /** R5-B: the toolbar's two independent toggles as shown. Absent: read from `exploded` and `mode` (./toggles.ts). */
+  toggles?: MotionToggles;
   /** A section view is on. */
   section: boolean;
   /** The floor grid (R4-B's state), when it reports one. */
@@ -30,31 +33,33 @@ export const VOID_MENU_TITLE = "View";
 
 /**
  * The universal items, in order (R4-A): Show all, Unisolate (only while isolated), Fit, Reset view, Explode and
- * Assemble (as the toolbar's two controls read now), Section view off (only while on), Grid, Scale reference,
+ * Assemble (R5-B: two checkbox items, as the toolbar's two independent toggles read now), Section view off (only while on), Grid, Scale reference,
  * Capture image. None of them names a part.
  */
 export function voidMenuFor(o: VoidMenuInput): MenuItem[] {
-  const explodeOn = o.exploded && o.mode === "radial";
-  const assembled = !o.exploded;
+  // R5-B: two checkbox items matching the toolbar's two independent toggles
+  const t = o.toggles ?? togglesOf({ t: o.exploded ? 1 : 0, mode: o.mode });
   const items: MenuItem[] = [
     { id: "showAll", label: "Show all", icon: "eye", ...(o.hidden || o.isolated ? {} : { disabled: "Nothing is hidden or isolated" }) },
   ];
   if (o.isolated) items.push({ id: "unisolate", label: "Unisolate", icon: "focus" });
   items.push({ id: "fit", label: "Fit", icon: "scan", rule: true }, { id: "reset", label: "Reset view", icon: "rotate-ccw" });
   items.push(
-    { id: "explode", label: explodeOn ? "Explode off" : "Explode (all parts at once)", icon: "move-diagonal", rule: true, checked: explodeOn },
-    { id: "assemble", label: assembled ? "Take apart in order" : "Assemble in order", icon: "layers" },
+    { id: "explode", label: toggleTip("explode"), icon: "move-diagonal", rule: true, checked: t.explode },
+    { id: "assemble", label: toggleTip("assemble"), icon: "layers", checked: t.assemble },
   );
   if (o.section) items.push({ id: "sectionOff", label: "Section view off", icon: "scissors" });
   // the on/off items are checkboxes whether on or off (wave R4 gate: the role flipped between menuitem and menuitemcheckbox)
   let ruled = false;
   if (o.grid) {
-    items.push({ id: "grid", label: o.grid.on ? "Grid off" : "Grid on", icon: "grid-3x3", rule: true, checked: o.grid.on });
+    // wave R5 gate: a checkbox item is named by what it shows (its check mark says whether it is on), as Explode and
+    // Assemble are; "Grid off" with a check mark read as "the grid is off"
+    items.push({ id: "grid", label: "Grid", icon: "grid-3x3", rule: true, checked: o.grid.on });
     ruled = true;
   }
   if (o.scaleRef) {
     const what = o.scaleRef.choice ? ` (${o.scaleRef.choice})` : "";
-    items.push({ id: "scaleRef", label: `${o.scaleRef.on ? "Scale reference off" : "Scale reference on"}${what}`, icon: "ruler", ...(ruled ? {} : { rule: true }), checked: o.scaleRef.on });
+    items.push({ id: "scaleRef", label: `Scale reference${what}`, icon: "ruler", ...(ruled ? {} : { rule: true }), checked: o.scaleRef.on });
   }
   items.push({ id: "capture", label: "Capture image", icon: "camera", rule: true, ...(o.capture === true ? {} : { disabled: o.capture }) });
   return items;
