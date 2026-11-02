@@ -44,6 +44,27 @@ describe("the two token sets", () => {
       for (const t of [set.modelToneLit, set.modelToneMid, set.modelToneShade]) expect(contrastRatio(set.inkSilhouette, t)).toBeGreaterThanOrEqual(CONTRAST_GRAPHIC);
     });
 
+    it(`${name}: dimensions, angles and explode paths (R3-C) hold their thresholds`, () => {
+      const g = set.sceneBackground;
+      // the chip's text and its tier tag, and the hard stop's red, read as text on the chip
+      expect(contrastRatio(set.dimText, set.dimChip)).toBeGreaterThanOrEqual(CONTRAST_TEXT);
+      expect(contrastRatio(set.dimText, set.dimTierSurface)).toBeGreaterThanOrEqual(CONTRAST_TEXT);
+      expect(contrastRatio(set.drcError, set.dimChip)).toBeGreaterThanOrEqual(CONTRAST_TEXT);
+      // the angle labels sit on the ground (with a halo of it)
+      expect(contrastRatio(set.dimText, g)).toBeGreaterThanOrEqual(CONTRAST_TEXT);
+      // a 1 px dimension line is as strong as the silhouette ink; the dashed extension lines are graphics
+      expect(contrastRatio(set.dimLine, g)).toBeGreaterThanOrEqual(CONTRAST_TEXT);
+      expect(contrastRatio(set.dimExtension, g)).toBeGreaterThanOrEqual(CONTRAST_GRAPHIC);
+      // the chip is set off the ground by its outline
+      expect(contrastRatio(set.dimChipBorder, set.dimChip)).toBeGreaterThan(1.3);
+      // explode paths: low contrast on purpose (Kevin: "in the ink colour at low contrast"), but visible on the ground
+      // and on the body's mid band, and always fainter than the extension lines
+      const p = contrastRatio(set.explodePath, g);
+      expect(p).toBeGreaterThanOrEqual(1.8);
+      expect(p).toBeLessThan(contrastRatio(set.dimExtension, g));
+      expect(contrastRatio(set.explodePath, set.modelToneMid)).toBeGreaterThanOrEqual(1.3);
+    });
+
     it(`${name}: three bands, lit brightest, close together (matte, not hazard-hard)`, () => {
       const [lit, mid, shade] = [set.modelToneLit, set.modelToneMid, set.modelToneShade].map((h) => luminance(parseHex(h)!));
       expect(lit).toBeGreaterThan(mid);

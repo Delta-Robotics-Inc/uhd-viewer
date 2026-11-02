@@ -43,6 +43,7 @@ Which one shows:
 | Selection | `accent` | The one accent: selection blue (DEFAULT), the UI's existing blue. A selected part glows in it. Nothing else on the model uses it. |
 | Findings | `drcError`, `drcWarning`, `drcInfo`, `drcRisk`, `drcPass`, `drcUnknown` | Red, yellow, blue, orange, green, grey. Each one is at least 4.5:1 against its theme's ground and against a callout card (the test computes it). Colour is never the only signal: each severity has its own marker shape (red octagon, yellow triangle, orange diamond, green circle with a check, grey dashed circle). Orange belongs to "risk" alone. |
 | Callouts | `calloutSurface`, `calloutBorder`, `calloutText`, `calloutLabel`, `calloutLeader`, `calloutLeaderWidth`, `calloutDot`, `calloutGhost` | The card, its outline, its sentence text, the mono uppercase id on the shelf, the leader line and its width, the terminal dot on the part, and the ghosted form of a marker whose anchor is hidden behind a part. |
+| Dimensions, angles, paths | `dimLine`, `dimExtension`, `dimChip`, `dimChipBorder`, `dimText`, `dimTierSurface`, `explodePath` | The dimension line and an angle's arc and ticks (as strong as the silhouette ink), the dashed extension lines (at least 3:1), the label chip, its outline and text, the tier tag inside it, and the explode path lines (low contrast on purpose: at least 1.8:1 on the ground, always fainter than the extension lines). An angle's NOW is the accent and a hard stop the fail red, as on a finding. The test computes every pair. |
 | Sections | `sectionCap`, `sectionLine` | The flat fill where a plane cuts through solid material, and the exact cut outline drawn on it once the view is still. |
 
 The brand colour is not a token of the 3D view. It belongs to the host's chrome and to exported stills, never to
@@ -125,6 +126,100 @@ comments and can be revisited.
 - **Refdes and MPN labels.** A board's parts: the id in the label face, a muted end bar (an MPN's doubled); they are
   the labels that usually go compact.
 
+### The card, after the concepts (R3-C, 2026-11-02)
+
+Kevin, 2026-11-02: "I also like the dimensions, the callout style, the angles, and the dashed path lines coming from
+the components." The leader stays option A. The card moves closer to concept A's risk card and concept B's agent pill:
+
+- **Title row.** A finding: its severity glyph, the severity word in its colour and a dot ("RISK ·"), then the title
+  in the card's label colour (it was all in the severity colour; the card's outline keeps the severity, walkthrough
+  D4). A callout an agent, a host or a check wrote: a small inverted pill first ("AGENT" with the agent's star,
+  "HOST", "CHECK"; the full "claude (agent)" is its tooltip) instead of the old "by ..." line; a person's own callout
+  has no pill.
+- **VALUE row and tier chips.** When a finding states a `value` ("3.1 mm ±0.2") and a `tier`, or a callout has VALUE
+  and TIER rows, they show as `VALUE  3.1 mm ±0.2` (the number in mono) and one segmented strip NOMINAL | MESH |
+  EXACT | MEASURED with the one that holds lit and bold (never colour alone).
+- **Actions on the pinned card.** LOOK AT (accent, frame corners: frames the part), DETAILS (opens the raw diagnostic,
+  which stays folded below), and P / N "Next" (the previous or next marker's card is pinned in its place). A pinned
+  card with actions is at least 256 px wide (DEFAULT) so the row fits on one line.
+
+## Dimensions and angles (R3-C, 2026-11-02)
+
+After concept B (image 1). A dimension and an angle are records in the view state's `annotations` (kinds `dimension`
+and `angle`, additive to `uhd-viewer.annotation/v0`), so they follow their parts, are saved with the callouts, undone,
+and read and written by agents (`view_dimension`, `view_angle`: stack handoff).
+
+- **A dimension.** Two small dots on the parts, dashed extension lines from them past a thin solid dimension line,
+  two dots at the line's ends, and a chip on the line's middle pushed off it: `158.4 mm` and a tier tag `NOMINAL`.
+  The line sits below the parts (away from the assembly's up) by 15 % of the distance, at least 6 mm (DEFAULT), unless
+  the record gives an `offset`; the extension lines run 6 px past it (DEFAULT). The lines are in the scene and
+  depth-tested, with a 22 % ghost where a part hides them (DEFAULT); the chip is on the page, so it stays upright and
+  readable while the view orbits.
+- **The number** is the distance as assembled, in mm (1 decimal from 10 mm up, 2 under it, DEFAULT), so taking the
+  model apart never changes it; the drawing follows the parts. The tier says how it was taken: NOMINAL from the design
+  frames (no picked points), MESH from points picked on the display mesh (the tolerance from the faces hit, shown as
+  a `±`), EXACT from the B-rep (the CLI's geometry service), MEASURED from a bench.
+- **Measure.** The ruler button in the 3D toolbar: click a point, then a second (a dot and a hint show the first);
+  Escape drops a first pick, then ends the tool. A drag still orbits; the selection does not change. The record is
+  the person's (`author: "user"`), MESH tier; the exact tier replaces the number when the host has the geometry
+  service.
+- **An angle.** About a revolute joint with its limits (the mates trait, the sequence's `joints`): a thin arc from 0°
+  to the far stop at 1.25 times the arm, outside the part (never under 44 px on screen, DEFAULT), ticks at 0°, REST
+  and each HARD STOP (red), the arm at the current angle in the accent (seen through the part as the ghost), and a
+  dashed accent line on past the arc along it. Labels past the arc, each on a faint chip so it reads over a light
+  part: `NOW 62°` (accent), `HARD STOP 95°` (red, with a small square), `REST 90°` and `0°` (muted). A label that
+  lands on another moves a line down or up, else is left out. NOW is read from the part's pose on every frame, so it
+  follows a drive, a motion clip and the Assemble play.
+
+## Explode path lines (R3-C, 2026-11-02)
+
+In an exploded view (Explode or Assemble), a thin dashed line from each moved part back to where it sits assembled
+(concept B, the dashed lines under the arms and motors): `explodePath`, low contrast, depth-tested, drawn under the
+callouts and dimensions; every line is one draw. None while assembled (explode under 0.2 %, DEFAULT) and none for a
+move under 0.5 mm or 4 px (DEFAULT). A part inside a board draws only its own move relative to the board. Dashes are
+5 px on, 4 px off at the lines' mean depth (DEFAULT).
+
+## Assembly timeline
+
+Built in wave R3 (R3-B, 2026-11-02) from Kevin's chosen concept (concept B, the panel at the bottom of its view): "the
+assembly timeline is actually really nice. I think it should pop up underneath the toolbar when it's selected, or when
+the exploded view or the assembly view is selected." Code: `src/cad/timeline/`. Values marked DEFAULT are in code
+comments.
+
+- **Where.** Docked under the floating toolbar, between it and the bottom of the view: while it shows, the 3D view gets
+  shorter by its height (the renderer resizes; nothing covers the model), and it leaves the floating inspector's width
+  on the right and the host's inset on the left. It shows while Explode or Assemble is on (the toolbar asks, the parts
+  are apart, or a play runs) and stays 1.2 s after the parts come to rest together (DEFAULT), then goes.
+- **The card.** `surface` with a 1 px `border` and the app's `radius`, the scene's ground (`sceneBackground`) around it;
+  every label in the label face (`fontLabel`), uppercase, wide tracking. It collapses to one line (play, the title,
+  the expand chevron); the choice is remembered per viewer in local storage (`uhd-viewer.timeline.collapsed`).
+- **The header.** A round play/pause button (a `text`-coloured disc), loop (pressed: `accent` outline on
+  `accentTint`), the title "STEP 6 / 9 · FASTEN TOP PLATE" with the step id, its parts, the time into the assembly and
+  the speed under it ("Explode · all parts at once" in Explode mode), the EXPLODE slider with its value, and a chip:
+  a replay clip's size ("replay loop · 12 joints × 120 samples · 5.6 KB": 4 bytes per joint per sample), else what
+  plays (steps and joints, or the radial plan).
+- **One time axis.** Assembly reads left to right: everything apart on the left, together on the right (the explode
+  amount reversed). The playhead is the `accent`: a 2 px line across every track with a dot on top.
+- **STEPS.** One chip per step that takes time, as wide as its share of the play: done steps on the `muted` fill,
+  the current one an `accent` outline on `accentTint` with its words in `text` (the accent on its own wash is under
+  4.5:1 in both themes), steps to come outlined only; a sub-assembly's step dashed; a narrow chip shows its number
+  only (DEFAULT under 64 px). In Explode mode every part moves at once, so no chip is current; a click goes to that
+  step and plays the steps.
+- **Joints.** One row per joint (revolute, slider): hollow diamond keyframes (rest at the far left, each step's
+  keyframe where that step ends), the segment the joint moves in, the moving one in the `accent`; a keyframe the hard
+  stop held has a `drcWarning` ring. Its words: type, range in degrees or mm, easing, "clip" when a replay clip drives
+  it ("revolute · 0° → 90° · ease in-out").
+- **CONTACTS.** From the interference sweep (`protoboard interference --json`): one marker per pair of bodies that
+  touch or overlap where no mate intends it, in `drcError`, at the first place it happens, with a red span to where it
+  is last seen; an overlap is a filled octagon with a cross, a touch a ring (colour is never the only signal). The
+  marker nearest the playhead carries its words ("prop touches camera hood · t 7.55 · from sweep"). No sweep run: the
+  row says so.
+- **Gestures.** Play/pause and loop drive the sequence player; the slider writes `explode.t` through the view state
+  (the op log shows the person's gesture); a press on a step chip goes to that step; dragging on the tracks scrubs;
+  Space plays or pauses and Left/Right step when the panel has focus.
+- **Contrast** (test `cad-timeline-r3b.test.ts`, both themes): labels (`text`, `textMuted`) and the contacts'
+  `drcError` at least 4.5:1 on the card; the playhead, the held ring and the play disc at least 3:1.
+
 ## What is deliberately not done
 
 - **No grain, no scanlines, no film noise at runtime.** They flicker under live animation and fight annotations.
@@ -151,6 +246,8 @@ comments and can be revisited.
 | Sections | `src/cad/sections/` |
 | Callouts and DRC markers (look, layout, wheel) | `src/cad/annot/style.ts`, `layer.ts`, `place.ts`, `leader.ts`, `wheel.ts` |
 | Exploded-view labels | `src/cad/labels.ts` |
+| Assembly timeline (panel, model, sheet) | `src/cad/timeline/` |
+| Dimensions, angles, the Measure tool, explode path lines | `src/cad/dims/` (`record.ts`, `geometry.ts`, `layer.ts`, `paths.ts`, `measure.ts`, `style.ts`) |
 
 ## Open for review
 
@@ -158,3 +255,6 @@ comments and can be revisited.
 - The dark bands are the round-2 proposal; coloured parts get dark in the shaded band.
 - The ink thresholds were tuned on the drone and ClientX at 1440x900; other scales may want other values.
 - Whether the web app should follow the system by default or stay dark until a person chooses.
+- R3-C: dimension and path dashes are sized in the world at the lines' mean depth (a long line in steep perspective
+  has uneven dashes); whether a dimension should hide while the model is apart; the 7 px-per-character boxes the
+  angle labels use to stay off each other.

@@ -66,6 +66,8 @@ export function packageLine(def: ModuleDef | undefined): string | undefined {
  */
 export function shortTip(t: PartTip): string {
   const name = t.name && t.name !== t.refdes ? t.name : undefined;
+  // wave R3 gate: a board component's name often starts with its designator ("C25 100 uF electrolytic"): said once
+  if (name && t.refdes && name.startsWith(`${t.refdes} `)) return name;
   const parts = [t.refdes, name].filter(Boolean);
   return parts.length ? parts.join(" ") : (t.key.split("/").pop() ?? t.key);
 }

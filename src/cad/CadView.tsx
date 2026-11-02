@@ -19,6 +19,7 @@ import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { LoadedSource } from "../source/source";
 import type { ScopedDiagnostic } from "../model/diagnostics";
 import { anchorOf, findingAnchors } from "./findings";
+import { DimsLayer, ExplodePaths, MeasureControl, MeasureTool, dimRecordsOf, pathMovers, type DimsHost } from "./dims";
 import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, findingForHost, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode, type FindingText } from "./annot";
 import { DIRECTIONS, defAt, explodeParts, glbFor, interfaceRows, loadManifests, type CadBody, type CadModel, type Direction, type InterfaceRow } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
@@ -30,7 +31,7 @@ import { instancePathIn, isPlaceholder, partInstanceIdOf } from "./render/ids";
 import { observeScene, type CadObservation, type LoadState } from "./render/observe";
 import { attachSceneTelemetry } from "../telemetry";
 import { LabelLayer, partSubtitle, type LabelItem, type LabelKind } from "./labels";
-import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measurePointFace, measurePointPoint, meshFace, objectFace, orientByFace, pickRef, placeOnFace, refFace, toMat4, toPartFrame, type FaceSource, type MeasureKind, type MeasureRef, type MeshFaceInput } from "./measure";
+import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measurePointFace, measurePointPoint, meshFace, objectFace, orientByFace, pickRef, placeOnFace, refFace, refFromHit, toMat4, toPartFrame, type FaceSource, type MeasureKind, type MeasureRef, type MeshFaceInput } from "./measure";
 import { TourPlayback, parseTour, tourOps, type Tour } from "./tour";
 import { LoadingScreen, attachLoadTracker, glbPlacements, useLoadTiers, type LoadSnapshot, type LoadTier } from "./loading";
 import { resolvePlanes, type ScopedSectionPlane } from "./sections/planes";
@@ -40,6 +41,7 @@ import { layOutRow } from "./row";
 import { intoScope, outOfScope, scopeRef, scopedModel, scopedPlacements, shownSummary } from "./scope";
 import { CadInspector } from "./CadInspector";
 import { CadToolbar, toolbarAvailability } from "./CadToolbar";
+import { TimelinePanel } from "./timeline";
 import { GcodeView } from "./GcodeView";
 import { gcodeEntry } from "../gcode/entry";
 import { cableSummary, harnessMaterial, routeManifest } from "./harness";
@@ -51,6 +53,7 @@ import type { LabelKind as ViewLabelKind, ViewerHistoryEntry } from "../api";
 import type { ThemeToken } from "../theme/tokens";
 import { baseMaterialOf } from "./render/looks";
 import { longHoverMs, viewerSettings } from "./viewerSettings";
+import { applyBoardPose, boardGroups, componentTarget, measureBoard, planBoard, splitBoard, withBoard, type BoardAssembly, type BoardComponent, type BoardPartInput } from "./assembly";
 import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, goBack, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
 
 /** Render knobs from the page URL (read when the view mounts, so importing the library touches no window). */
@@ -118,6 +121,11 @@ interface BodyRec {
   nodes?: SceneNode[];
   /** Definition, GLB and appearance hints it was drawn with. */
   look: string;
+  /**
+   * R3-A: the level's own model drawn as an assembly (a board opened on its own): its components, each a movable,
+   * selectable object (./assembly). Absent where the board is one part of a larger assembly.
+   */
+  assembly?: BoardAssembly;
 }
 
 interface HardwareRec {
@@ -346,7 +354,9 @@ export function CadView({
   const hidden = vis.hidden;
   const section: SectionPlane | null = sections[0] ?? null;
   const setSection = (s: SectionPlane | null) => write([{ op: "section", sections: s ? [s] : [] }]);
-  const exploded = explodeT > 0.5;
+  // R3-B's handoff (applied by R3-A): apart at all is "exploded" (the timeline's slider can rest anywhere between; with
+  // R2-B's old 0.5 threshold a click on Explode under half way turned it on again instead of off)
+  const exploded = explodeT > 0;
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   const labelsRef = useRef<LabelLayer | null>(null);
@@ -355,6 +365,8 @@ export function CadView({
   const harnessGroup = useRef(new THREE.Group());
   const harnessObjs = useRef(new Map<string, THREE.Group>());
   const [params] = useState(urlParams);
+  // R3-B (handoff applied by R3-A): the toolbar asked for the assembly timeline (Explode on, Assemble clicked)
+  const [timelineAsked, setTimelineAsked] = useState(false);
   /** The G-code tab (PB-1192, W4-B; DEFAULT entry point `?gcode=<url>`): the G-code viewer instead of the model. */
   const gcodeRaw = params.get("gcode");
   // same origin or a blob: of this page only, the name decoded without throwing (wave 4 gate, src/gcode/entry.ts)
@@ -431,6 +443,9 @@ export function CadView({
   );
   /** What the view shows of the module, and what nothing places (the caption, and the empty state). */
   const summary = useMemo(() => (model ? shownSummary(model, shown, lookup) : null), [model, shown, lookup]);
+  // wave R3 gate: the components of the level's own body when it is drawn as an assembly (a board on its own level),
+  // counted as the explode plan counts them (those with geometry); read at render (each body landing re-renders)
+  const ownComponents = bodies.current.get("")?.assembly?.components.filter((c) => !c.box.isEmpty()).length ?? 0;
   // a module on its own whose parts nothing joins: one part alone is not a picture of it
   const nothing = !!summary && !!at && summary.loose;
   const tiers = useLoadTiers(model, () => (model ? glbPlacements(model.bodies.map((b) => (b.glb?.filePath ? resolve(b.def.id, b.glb.filePath) : undefined))) : undefined), () => tracker.current?.tracker);
@@ -509,6 +524,12 @@ export function CadView({
   }, [store]);
   const annotations = useViewSlice(store, (s) => s.annotations);
   const annotRef = useRef<AnnotLayer | null>(null);
+  // R3-C (handoff applied by R3-A): dimensions and angles, the explode path lines, the Measure tool
+  const dimsRef = useRef<DimsLayer | null>(null);
+  const pathsRef = useRef<ExplodePaths | null>(null);
+  const measureTool = useRef(new MeasureTool());
+  const [measuring, setMeasuring] = useState(false);
+  const dimsHost = useRef<DimsHost>({ resolve: () => null });
   const annotFindingsRef = useRef(annotFindings);
   annotFindingsRef.current = annotFindings;
   /** Whether the layer has anything to draw (it runs on frames while it has, and once after). */
@@ -555,7 +576,24 @@ export function CadView({
     annot.onSceneChange = () => h.invalidate("scene");
     h.overlay.add(annot.group);
     annotRef.current = annot;
+    const dims = new DimsLayer(host.current!, { resolve: (ref) => dimsHost.current.resolve(ref), bodyRest: (key) => dimsHost.current.bodyRest?.(key), joints: () => dimsHost.current.joints?.() ?? [], rootMatrix: () => dimsHost.current.rootMatrix?.() });
+    dims.onChange = () => h.invalidate("view");
+    h.overlay.add(dims.group);
+    dimsRef.current = dims;
+    const paths = new ExplodePaths();
+    h.overlay.add(paths.group);
+    pathsRef.current = paths;
+    measureTool.current.layer = dims;
+    measureTool.current.onChange = (on) => {
+      setMeasuring(on);
+      h.invalidate("view");
+    };
     return () => {
+      measureTool.current.setActive(false);
+      dimsRef.current?.dispose();
+      dimsRef.current = null;
+      pathsRef.current?.dispose();
+      pathsRef.current = null;
       annotRef.current?.dispose();
       annotRef.current = null;
       labelsRef.current?.dispose();
@@ -585,6 +623,8 @@ export function CadView({
     // the annotation layer's dot, ring and marker colours (selection blue, the DRC set) for this theme
     const ground = new THREE.Color(tokenColor(el, "sceneBackground"));
     annotRef.current?.refreshColours(ground.r * 0.2126 + ground.g * 0.7152 + ground.b * 0.0722 < 0.5);
+    dimsRef.current?.refreshColours();
+    pathsRef.current?.refreshColours(el);
     h.invalidate();
   }, [theme]);
 
@@ -611,6 +651,11 @@ export function CadView({
     const vendorModel = body.glb!.id.startsWith("cad_vendor");
     const vendor = vendorModel || ownColours;
     const top = scene.children.length === 1 ? scene.children[0] : scene;
+    // R3-A: the level's own model whose GLB names its components (a board opened on its own level) is drawn as an
+    // assembly: each component its own object, wrapped and de-instanced here (./assembly/board.ts). A board placed
+    // in a larger assembly (key not "") stays one part, exactly as before (Kevin: "the simple version is in the large
+    // assembly, and then the PCB becomes its own assembly that can explode"). DEFAULT: only the level's own body.
+    const assembly = body.key === "" && (body.def.children?.length ?? 0) > 0 && !explodeParts(body.def, body.glb, manifest) ? splitBoard(top) : undefined;
     for (const part of top.children) {
       // feature pads show only while their interface is selected
       if (!vendorModel && featureNames.has(part.name) && !components.has(part.name)) {
@@ -653,6 +698,11 @@ export function CadView({
     // precise bounds (every vertex, not the loose boxes of each mesh's own bounds): a body drawn from its view sidecar and
     // from its plain GLB gets the same box, so a hot swap between them moves no label, explode offset or observe() bound
     const box = new THREE.Box3().setFromObject(w, true);
+    // R3-A: each component's box, side of the board and height (the body's CAD frame, mm, Z up)
+    if (assembly) {
+      measureBoard(assembly, w, top);
+      rec.assembly = assembly;
+    }
     // a cad standard output's named bodies come apart when exploded: each moves away from the largest
     const parts = explodeParts(body.def, body.glb, manifest);
     const node = (n: string) => top.children.find((c) => c.name === n);
@@ -949,6 +999,33 @@ export function CadView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explodeStep]);
 
+  /** R3-A: a board assembly's components as explode-path movers (R3-C's `pathMovers`): each at its assembled local place. */
+  const boardMovers = () => {
+    const out: { obj: THREE.Object3D; base: THREE.Matrix4 }[] = [];
+    for (const rec of bodies.current.values()) for (const c of rec.assembly?.components ?? []) out.push({ obj: c.obj, base: new THREE.Matrix4().compose(c.base, c.obj.quaternion, c.obj.scale) });
+    return out;
+  };
+  /** R3-A: a board component's key in the level (its instance path in the view's scope). */
+  const componentKey = (rec: BodyRec) => {
+    const holder = rec.body.key.split("#")[0];
+    return (c: BoardComponent) => instancePathIn(holder, c.id);
+  };
+  /** R3-A: how a board drawn as an assembly comes apart: its components' sides, heights and boxes, its UHD groups. */
+  const boardPlanOf = (rec: BodyRec) => {
+    const asm = rec.assembly!;
+    const keyOf = componentKey(rec);
+    const v3 = (v: THREE.Vector3): [number, number, number] => [v.x, v.y, v.z];
+    // body CAD (mm, Z up) to the level's CAD frame: the body's assembled placement
+    const parts: BoardPartInput[] = asm.components
+      .filter((c) => !c.box.isEmpty())
+      .map((c) => {
+        const b = c.box.clone().applyMatrix4(rec.base);
+        return { key: keyOf(c), side: c.side, height: c.height, box: [v3(b.min), v3(b.max)] };
+      });
+    const normal = asm.normal.clone().transformDirection(rec.base);
+    const size = asm.substrateBox.isEmpty() ? rec.box.getSize(new THREE.Vector3()) : asm.substrateBox.getSize(new THREE.Vector3());
+    return planBoard(parts, boardGroups(rec.body.def, lookup, rec.body.key.split("#")[0]), v3(normal), Math.max(size.x, size.y, size.z));
+  };
   /** Explode step at "exploded" (mm): a small assembly (a board in its enclosure) comes apart in proportion to its size. */
   const explodeScale = () => {
     const size = assembledBounds().getSize(new THREE.Vector3()).length();
@@ -980,7 +1057,11 @@ export function CadView({
   const seqUrl = useMemo(() => sequenceUrlState(typeof window === "undefined" ? "" : window.location.search), []);
   /** Put the model where the player says. */
   const poseNow = () => {
-    if (player.current && model) applyCadPose(player.current.pose(), model, bodies.current, hardware.current);
+    if (!player.current || !model) return;
+    const pose = player.current.pose();
+    applyCadPose(pose, model, bodies.current, hardware.current);
+    // R3-A: a board drawn as an assembly: its components where the pose puts them
+    for (const rec of bodies.current.values()) if (rec.assembly) applyBoardPose(rec.assembly, pose, rec.base, componentKey(rec));
   };
   const applyExplode = useMemo(() => {
     /**
@@ -1011,7 +1092,12 @@ export function CadView({
   const resolveSequence = () => {
     const h = handle.current;
     if (!h || !model) return;
-    const resolved = resolveForCad({ model, bodies: bodies.current, hardware: hardware.current, file: seqFile, up: upRef.current, gap: explodeScale(), root: h.root, levels: seqUrl.levels });
+    // R3-A: a board's components at their assembled places while the planner samples the bodies
+    for (const rec of bodies.current.values()) if (rec.assembly) applyBoardPose(rec.assembly, new Map(), rec.base, componentKey(rec));
+    let resolved = resolveForCad({ model, bodies: bodies.current, hardware: hardware.current, file: seqFile, up: upRef.current, gap: explodeScale(), root: h.root, levels: seqUrl.levels });
+    // R3-A: a board drawn as an assembly stays put and its components come off it (Explode: all at once along the
+    // board's normal, staggered by height; Assemble: one step per UHD group of the board)
+    for (const rec of bodies.current.values()) if (rec.assembly) resolved = withBoard(resolved, boardPlanOf(rec), rec.body.key, [upRef.current.x, upRef.current.y, upRef.current.z]);
     if (player.current) player.current.replace(resolved);
     else {
       player.current = new SequencePlayer(resolved);
@@ -1151,8 +1237,12 @@ export function CadView({
         annotBusy = annot.update(h.camera, size.x, size.y);
         annotWas.current = annotActive.current;
       }
+      const dimsBusy = dimsRef.current?.update(h.camera, size.x, size.y) ?? false;
+      // R3-C's path lines; R3-A: a board assembly's components are movers too (assembled at their wrapper's base)
+      // wave R3 gate (review): the board's movers (one matrix per component) only while apart; assembled, no path shows
+      pathsRef.current?.update(pathMovers(bodies.current.values(), hardware.current, ex.value > 0 ? boardMovers() : []), h.camera, size.y, ex.value);
       // still moving: the next frame is drawn too; otherwise the view goes idle
-      return moving || seqMoving || ex.value !== ex.target || easing || annotBusy || turning;
+      return moving || seqMoving || ex.value !== ex.target || easing || annotBusy || turning || dimsBusy;
     };
     h.beforeRender.add(f);
     return () => {
@@ -1325,6 +1415,10 @@ export function CadView({
     for (const rec of bodies.current.values()) if (!rec.box.isEmpty()) box.union(rec.box.clone().applyMatrix4(rec.base));
     return box;
   };
+  /** R3-A: a board assembly's components where they are now (level CAD mm), into `box`; `drawnOnly`: visible ones. */
+  const componentBoxes = (rec: BodyRec, m: THREE.Matrix4, box: THREE.Box3, drawnOnly = false) => {
+    for (const c of rec.assembly?.components ?? []) if (!c.box.isEmpty() && (!drawnOnly || c.obj.visible)) box.union(c.box.clone().applyMatrix4(m).translate(c.travel));
+  };
   /** Bounds of the model as drawn now (exploded or not). */
   const currentBounds = () => {
     const box = new THREE.Box3();
@@ -1333,6 +1427,7 @@ export function CadView({
       box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
       // its named bodies where they went (a lid lifted off)
       for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrix).translate(part.travel));
+      componentBoxes(rec, rec.obj.matrix, box);
     }
     return box;
   };
@@ -1344,6 +1439,14 @@ export function CadView({
     const box = new THREE.Box3();
     for (const rec of bodies.current.values()) {
       if (rec.box.isEmpty() || !rec.obj.visible) continue;
+      if (rec.assembly) {
+        // R3-A: what of the assembly is drawn (an isolated component is framed alone)
+        const own = new THREE.Box3();
+        if (rec.assembly.substrate.some((o) => o.visible)) own.union(rec.assembly.substrateBox.clone().applyMatrix4(rec.obj.matrix));
+        componentBoxes(rec, rec.obj.matrix, own, true);
+        box.union(own);
+        continue;
+      }
       box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
       for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrix).translate(part.travel));
     }
@@ -1429,8 +1532,9 @@ export function CadView({
       if (!mesh.isMesh || o.userData.bodyKey === undefined) return;
       // a highlight is a shared variant of the mesh's material: under the batcher, an instance attribute
       setMeshLook(mesh, { emissive: glow });
-      // DEFAULT (M5): a selected body is drawn in the theme's accent surface, as a selected component is
-      if (selected) swapMaterial(mesh, focusMaterial(selColour), restore);
+      // DEFAULT (M5): a selected body is drawn in the theme's accent surface, as a selected component is; R3-A: the
+      // board of an assembly is its own sheets (its components are parts of their own, selected one by one)
+      if (selected && (!rec.assembly || o.userData.component === undefined)) swapMaterial(mesh, focusMaterial(selColour), restore);
     });
     if (plan.component?.holder === key) {
       const objs = componentObjects(rec, plan.component.path);
@@ -1631,7 +1735,17 @@ export function CadView({
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
-    for (const [key, rec] of bodies.current) rec.obj.visible = shownBy(key, isolation, hidden);
+    for (const [key, rec] of bodies.current) {
+      rec.obj.visible = shownBy(key, isolation, hidden);
+      if (!rec.assembly) continue;
+      // R3-A: a board's components are hidden and isolated one by one; the board itself shows unless only some of
+      // its components (or groups) are isolated (DEFAULT: an isolated component is shown alone, without the board)
+      const holder = key.split("#")[0];
+      const keyOf = componentKey(rec);
+      for (const c of rec.assembly.components) c.obj.visible = shownBy(keyOf(c), isolation, hidden);
+      const boardShown = !isolation || isolation.some((p) => matchesPath(holder, p));
+      for (const o of rec.assembly.substrate) o.visible = boardShown;
+    }
     for (const [key, obj] of harnessObjs.current) obj.visible = shownBy(key, isolation, hidden);
     for (const hw of hardware.current) hw.obj.visible = showHardware && shownBy(hw.harness, isolation, hidden);
     h.invalidate();
@@ -1693,6 +1807,26 @@ export function CadView({
     nav.remember(placeNow());
     nav.push({ scope: at, label, kind, selection, isolation: isolation !== undefined ? isolation : store.get().isolation });
   };
+  /** R3-A: the board assembly drawing the component under the pointer (the board opened on its own level), if any. */
+  const assemblyOf = (u: PartUnder): BoardAssembly | undefined => (u.key !== undefined && u.component !== undefined ? bodies.current.get(u.key)?.assembly : undefined);
+  /**
+   * What opening a part opens (R2-A, F3; R3-A): a component of a board shown as an assembly opens its own model
+   * (`target.model`, ./assembly/target.ts); a component of a board drawn as one part (the board inside the system)
+   * opens the board's own level, its assembly, one level down ("at the scope that it needs to"); anything else as R2.
+   */
+  const openingOf = (u: PartUnder): { full: string; def?: ModuleDef; target?: ReturnType<typeof navigateTarget>; component: boolean } => {
+    const asm = assemblyOf(u);
+    const rec = u.key !== undefined ? bodies.current.get(u.key) : undefined;
+    const viaBoard = u.component !== undefined && !asm && rec !== undefined && u.holder !== undefined && u.holder !== "" && !u.key!.includes("#");
+    const full = outOfScope(viaBoard ? u.holder! : u.path, at);
+    const def = full ? defAt(system, lookup, full.split("/")) : undefined;
+    const target = !def || full === at ? undefined : asm ? componentTarget(def, full) : navigateTarget(def, full);
+    return { full, ...(def ? { def } : {}), ...(target ? { target } : {}), component: Boolean(asm) };
+  };
+  /** R3-A: "has no 3D model of its own", said in the level card when a component without one is opened. */
+  const [noModel, setNoModel] = useState<{ path: string; text: string } | null>(null);
+  // wave R3 gate (review): the line belongs to the level it was said on
+  useEffect(() => setNoModel(null), [at]);
   /** The facts a tooltip and the menu's title show for a part (R2-A, A3). */
   const tipFor = (u: PartUnder): PartTip => {
     const full = outOfScope(u.path, at);
@@ -1706,7 +1840,8 @@ export function CadView({
     const order = ["fail", "risk", "warn", "info", "unknown", "pass"];
     const hits = annotFindingsRef.current.filter((x) => x.refs.some(under) || x.anchors.some((a) => (a.component !== undefined ? under(a.component) : u.component === undefined && a.body === u.key)));
     const worst = hits.map((x) => x.severity as string).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
-    const opens = Boolean(navigateTarget(def, full)) && full !== at && (hostNavigates(hub) || Boolean(openModuleRef.current && (def?.children?.length || (def && glbFor(def)))));
+    const op = openingOf(u);
+    const opens = Boolean(op.target) && op.full !== at && (hostNavigates(hub) || Boolean(openModuleRef.current && (op.component || op.def?.children?.length || (op.def && glbFor(op.def)))));
     return {
       key: u.path,
       ...(f.refdes ? { refdes: f.refdes } : {}),
@@ -1736,10 +1871,8 @@ export function CadView({
    */
   const openPart = (u: PartUnder, how: "replace" | "newTab") => {
     if (u.key === undefined || u.mate) return;
-    const full = outOfScope(u.path, at);
-    const def = full ? defAt(system, lookup, full.split("/")) : undefined;
+    const { full, def, target, component } = openingOf(u);
     if (!def || full === at) return;
-    const target = navigateTarget(def, full);
     const link = hub.navLink;
     if (target && link && hostNavigates(hub)) {
       const nav = navOf(hub);
@@ -1749,7 +1882,18 @@ export function CadView({
       return;
     }
     const open = openModuleRef.current;
-    if (open && (def.children?.length || glbFor(def))) return open(full, "3d");
+    // wave R3 gate: a board component with a model of its own (`target`) opens on its own level when the host opens
+    // modules but does not navigate (the browser's dev page): its own 3D model, Back returns (DEFAULT; before, it was
+    // only framed there, and only a navigating host such as VS Code opened the model)
+    if (open && (component ? Boolean(target) : def.children?.length || glbFor(def))) return open(full, "3d");
+    // R3-A: a board's component with no model of its own (only the board export's shape): selected and framed here,
+    // and the level card says so
+    if (component && !target) {
+      const tip = tipFor(u);
+      // "C25 100 uF electrolytic", not "C25 C25 100 uF ..." (shortTip says the designator once, wave R3 gate)
+      const who = shortTip(tip);
+      setNoModel({ path: u.path, text: `${who} has no 3D model of its own: shown on the board` });
+    }
     // no host to open it: select it here and look at it
     frameHere(u);
   };
@@ -1854,7 +1998,7 @@ export function CadView({
         // one instance of a GPU-instanced node: a twin in the hover colour of the instance's own (./render/glow.ts)
         if (objs?.length === 1 && (objs[0] as THREE.InstancedMesh).isInstancedMesh) paintComponent(rec, u.component, "select", { ...h.colors, focus: hoverColour(ownColour(objs) ?? accent, accent, dark) }, hv.restore);
         else if (objs) paintMeshes(objs);
-      } else paintMeshes([rec.obj]);
+      } else paintMeshes(rec.assembly ? rec.assembly.substrate : [rec.obj]);
     }
     hv.painted = true;
     h.invalidate();
@@ -1923,11 +2067,11 @@ export function CadView({
   const openMenu = (x: number, y: number, u: PartUnder) => {
     if (u.mate) return;
     hoverOff();
-    const full = outOfScope(u.path, at);
-    const def = full ? defAt(system, lookup, full.split("/")) : undefined;
-    const target = full !== at ? navigateTarget(def, full) : undefined;
+    const op = openingOf(u);
+    const target = op.full !== at ? op.target : undefined;
     const canOpenTab = hostNavigates(hub) || Boolean(openModuleRef.current);
-    const items = menuFor({ target, component: u.component !== undefined, canExplode: explodeScopeOf(u) !== undefined, canOpenTab, isolated: Boolean(isolation) });
+    // R3-A: a component of a board shown as an assembly is a part of its own (isolate and hide it alone)
+    const items = menuFor({ target, component: u.component !== undefined && !op.component, canExplode: explodeScopeOf(u) !== undefined, canOpenTab, isolated: Boolean(isolation) });
     // a host with no navigate opens in place by framing (the old double-click); a new tab needs a host
     const fixed = items.map((it) => (it.id === "open" && target && !hostNavigates(hub) && !openModuleRef.current ? { ...it, label: "Frame its 3D model here" } : it));
     menuOpen.current = true;
@@ -1961,7 +2105,8 @@ export function CadView({
   const runMenu = (id: MenuItem["id"], m: { under: PartUnder; title: string }) => {
     const u = m.under;
     const full = outOfScope(u.path, at);
-    const drawnAs = u.harness ?? u.holder ?? u.path;
+    // R3-A: a component of a board shown as an assembly is drawn as itself
+    const drawnAs = u.harness ?? (u.component !== undefined && assemblyOf(u) ? u.component : u.holder) ?? u.path;
     switch (id) {
       case "inspect":
         // the host's Inspector when it has one (`uhd-viewer:inspect`); selected here either way (the card follows)
@@ -2019,6 +2164,10 @@ export function CadView({
       const d = down;
       down = null;
       if (!d || Math.max(d.far, Math.hypot(e.clientX - d.x, e.clientY - d.y)) > 4) return;
+      if (measureTool.current.active) {
+        if (d.button === 0) measureTool.current.click(e.clientX, e.clientY);
+        return;
+      }
       // a person's pick never frames: a focus still waiting to frame (a host's, on what had nothing drawn) is dropped
       look.current = false;
       const u = live.current.partUnder(e.clientX, e.clientY);
@@ -2042,6 +2191,8 @@ export function CadView({
      * the host takes navigation; an older host opens it in a new tab; with none, the part is selected and framed.
      */
     const onDouble = (e: MouseEvent) => {
+      // wave R3 gate (review): two quick Measure picks are a double-click too: they must not open the part
+      if (measureTool.current.active) return;
       const u = live.current.partUnder(e.clientX, e.clientY);
       if (!u || u.key === undefined || u.mate) return;
       live.current.openPart(u, e.ctrlKey || e.metaKey ? "newTab" : "replace");
@@ -2223,6 +2374,14 @@ export function CadView({
    * change of that envelope (`explodeCamera`), never a fresh fit. Nothing moves (a model with no steps, or steps
    * that move nothing): the camera stays and the model info card says so.
    */
+  // wave R3 gate: the M11 note follows the mode and scope in force (the timeline, a host or an agent can change
+  // them while apart without passing the toolbar): shown only when nothing comes apart in the mode now in force
+  useEffect(() => {
+    if (!exploded) return;
+    const reach = player.current?.reach();
+    if (reach !== undefined) setExplodeNote(reach < EXPLODE_STILL_MM ? "nothing to explode in this model" : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exploded, explodeMode, explodeScope]);
   const explodeWith = (mode: "radial" | "sequence", on: boolean) => {
     runSequence({ action: "mode", mode } as SequenceCommand);
     toggleExploded(on, undefined, mode);
@@ -2240,6 +2399,7 @@ export function CadView({
         for (const rec of bodies.current.values()) {
           out.push(new THREE.Vector3().setFromMatrixPosition(rec.obj.matrixWorld));
           for (const part of rec.parts) out.push(new THREE.Vector3().setFromMatrixPosition(part.obj.matrixWorld));
+          for (const c of rec.assembly?.components ?? []) out.push(new THREE.Vector3().setFromMatrixPosition(c.obj.matrixWorld));
         }
         for (const hw of hardware.current) out.push(new THREE.Vector3().setFromMatrixPosition(hw.obj.matrixWorld));
         return out;
@@ -2255,7 +2415,11 @@ export function CadView({
       const moved = before.reduce((m, p, i) => Math.max(m, after[i] ? p.distanceTo(after[i]) : 0), 0);
       const next = explodeCamera({ from: fromBox, to: toBox, moved, position: h.camera.position, target: h.controls.target });
       if (next) cameraTween.current = { from: [h.camera.position.clone(), h.controls.target.clone()], to: [next.position, next.target], start: ex.value };
-      setExplodeNote(on && (steps === 0 || moved < EXPLODE_STILL_MM) ? "nothing to explode in this model" : null);
+      // wave R3 gate: judged from the player's reach in the mode asked for (radial or the steps), not from a pose
+      // sampled mid-fade (a mode change fades from where the parts are, so a sample at once moved nothing and the
+      // note showed while the drone came apart in Assemble)
+      const reach = player.current?.reach();
+      setExplodeNote(on && (reach !== undefined ? reach < EXPLODE_STILL_MM : steps === 0 || moved < EXPLODE_STILL_MM) ? "nothing to explode in this model" : null);
     }
     // R2-A: the part menu's "Explode this sub-assembly" names it (`explode.scope`; R2-B draws it)
     write([{ op: "explode", t: on ? 1 : 0, ...(scope ? { scope } : {}), ...(mode ? { mode } : {}) } as never], on ? (scope ? `explode ${scope}`.slice(0, 120) : "explode the assembly") : "assemble the parts");
@@ -2396,6 +2560,7 @@ export function CadView({
     rec.obj.updateMatrixWorld(true);
     const box = rec.box.clone().applyMatrix4(rec.obj.matrixWorld);
     for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrixWorld).translate(part.travel));
+    componentBoxes(rec, rec.obj.matrixWorld, box);
     return [box.min.toArray().map(r3) as [number, number, number], box.max.toArray().map(r3) as [number, number, number]];
   };
   /** The assembly's root as a path from the root system (the body nothing placed: `""` is the system itself). */
@@ -2556,6 +2721,8 @@ export function CadView({
       bvh: () => buildAll([h.root, harnessGroup.current]),
       /** The assembly sequence player's state (W2-C, PB-1183): steps with ids and titles, t, the current step, joints. */
       sequence: () => player.current?.snapshot(),
+      /** R3-A: boards drawn as assemblies: their components, what the split did and how long it and the measuring took. */
+      assembly: () => [...bodies.current.values()].filter((r) => r.assembly).map((r) => ({ body: r.body.key, components: r.assembly!.components.length, top: r.assembly!.components.filter((c) => c.side === "top").length, bottom: r.assembly!.components.filter((c) => c.side === "bottom").length, normal: r.assembly!.normal.toArray(), stats: r.assembly!.stats })),
       /** The quality curve (W2-B, PB-1176): its state, knobs, bottleneck and attention, read-only. */
       quality: () => h.quality.report(),
       /** Configure the quality curve (`{ enabled, tauMs, budgetMs, ... }`, as `createScene`'s `quality`). */
@@ -2573,6 +2740,8 @@ export function CadView({
        * their 3D anchors ("no location" ones have none and a reason); the layer's placement times (ms).
        */
       annotations: () => ({ records: annotRef.current?.report() ?? [], findings: annotFindingsRef.current, timing: annotRef.current?.timing(), placement: annotRef.current?.debug }),
+      /** R3-C: what each dimension and angle shows (status, number, tier, label), the path lines drawn. */
+      dims: () => ({ records: dimsRef.current?.report() ?? [], draws: dimsRef.current?.drawStats(), paths: pathsRef.current?.count ?? 0 }),
       /**
        * Measure in the page (W3-D, PB-1187): picks are `[fx, fy]` fractions of the canvas; the mesh tier's result,
        * the exact tier's request for the CLI, and the refs picked.
@@ -3273,7 +3442,18 @@ export function CadView({
       const rel = holder && key.startsWith(`${holder}/`) ? key.slice(holder.length + 1) : key;
       const c = componentIn(holderRec.obj, rel, key);
       holderRec.obj.updateWorldMatrix(true, false);
-      return c ? { ...c, frame: holderRec.obj.matrixWorld.clone(), body: holder, ...(drawnObj(holderRec.obj) ? {} : { hidden: true }) } : null;
+      // wave R3 gate (R3-A's handoff): a component of a board drawn as an assembly moves on its own when the board
+      // explodes; its frame carries that move (world delta of its wrapper from its assembled place), so a DRC marker
+      // or a callout found once on it follows it as body markers follow their body
+      let frame = holderRec.obj.matrixWorld.clone();
+      const comp = holderRec.assembly?.byId.get(rel);
+      if (comp?.obj.parent) {
+        comp.obj.updateWorldMatrix(true, false);
+        const rest = comp.obj.parent.matrixWorld.clone().multiply(new THREE.Matrix4().compose(comp.base, comp.obj.quaternion, comp.obj.scale));
+        frame = comp.obj.matrixWorld.clone().multiply(rest.invert()).multiply(frame);
+      }
+      const shown = drawnObj(holderRec.obj) && (!comp || drawnObj(comp.obj));
+      return c ? { ...c, frame, body: holder, ...(shown ? {} : { hidden: true }) } : null;
     }
     // a module drawn by its parts (an FC + ESC stack): every body under it
     // (and a part drawn as named artifact bodies only: "battery#cad_glb")
@@ -3288,6 +3468,25 @@ export function CadView({
   };
   const drawnMeshes = useRef<{ mesh: THREE.Mesh; sphere: THREE.Sphere }[]>([]);
   const annotHost = useRef<AnnotHost>(null as unknown as AnnotHost);
+  dimsHost.current = {
+    resolve: (ref) => annotHost.current.resolve(ref),
+    bodyRest: (key) => {
+      const r = bodies.current.get(key);
+      return r?.obj.parent ? r.obj.parent.matrixWorld.clone().multiply(r.base) : undefined;
+    },
+    joints: () => (player.current?.joints ?? []).map((j) => ({ ...j, path: keyOutOfScope(j.part) })),
+    rootMatrix: () => handle.current?.root.matrixWorld,
+  };
+  measureTool.current.host = {
+    pickAt: (x, y) => {
+      const u = partUnder(x, y);
+      if (!u || u.key === undefined || u.harness !== undefined) return undefined;
+      const ref = keyOutOfScope(u.component ?? u.key);
+      const hit = annotHost.current.resolve(ref);
+      return hit ? { ref, point: u.hit.point.clone(), hit, measure: refFromHit(u.hit) } : undefined;
+    },
+    commit: (rec) => write([{ op: "set", path: ["annotations", rec.id], value: rec }], "measure a distance"),
+  };
   annotHost.current = {
     resolve: (ref) => {
       if (ref.startsWith("link:")) {
@@ -3339,9 +3538,10 @@ export function CadView({
         return n;
       });
       if (action === "open") {
-        // a click on a marker opens the finding in the Findings control
+        // a click on a marker makes it the Findings control's current finding. Wave R3 gate (DEFAULT): it no longer
+        // opens the control's list as well: the pinned card has its own LOOK AT / DETAILS / P / N row (R3-C), and the
+        // list opened over it, so a press on DETAILS landed on the list's Fail filter and hid the card
         setCurrentFinding(id);
-        setFindingsMenu(true);
       }
     },
     onLookAt: (ref) => lookAtRef(ref),
@@ -3413,6 +3613,7 @@ export function CadView({
     if (!layer) return;
     const list = store.get().annotations;
     const { records } = recordsOf(Array.isArray(list) ? list : []);
+    dimsRef.current?.setRecords(dimRecordsOf(Array.isArray(list) ? list : []));
     const scoped = showFindings && model ? drcMarkers(annotFindings, shownSev) : [];
     // wave R2 gate: the anchors are scope keys, the layer resolves refs from the root (as for records) and sends them
     // to the host's Inspector: inside a module's level (a board opened on its own) the markers were all dropped
@@ -3575,6 +3776,8 @@ export function CadView({
             onFocus={lookAlongNormal}
             availability={toolbarAvail}
             canFocus={sel.body !== undefined}
+            onTimeline={setTimelineAsked}
+            extra={<MeasureControl active={measuring} onToggle={(on) => measureTool.current.setActive(on)} />}
           />
         )}
         {!model && <div className="cad-loading">Loading manifests…</div>}
@@ -3605,7 +3808,10 @@ export function CadView({
                   : model.placedBy?.kind === "ancestor"
                     ? `its ${summary.parts} parts, placed as in ${placedByName(model.placedBy.from)}`
                     : summary.ownBody
-                  ? summary.parts
+                  ? ownComponents
+                    ? // wave R3 gate: a board opened on its own level is drawn as an assembly of its components
+                      `with its ${ownComponents} components`
+                    : summary.parts
                     ? `with its ${summary.parts} parts`
                     : "on its own"
                   : summary.parts === 0
@@ -3616,6 +3822,12 @@ export function CadView({
                         ? `its ${summary.parts} parts, assembled`
                         : "the whole assembly"}
               </span>
+              {noModel && (sel.component === noModel.path || sel.body === noModel.path) && (
+                // R3-A: a double-clicked component with no model of its own (the board export's shape is all there is)
+                <span className="cad-scope-what cad-scope-nomodel" data-nomodel={noModel.path}>
+                  {noModel.text}
+                </span>
+              )}
               {explodeNote && exploded && (
                 // R1-A (M11): "Exploded" on a model whose parts have nowhere to go
                 <span className="cad-scope-what cad-scope-explode" data-explode="none">
@@ -3679,6 +3891,7 @@ export function CadView({
           />
         )}
       </div>
+      {model && !present && !noChrome && <TimelinePanel store={store} source={{ player: () => player.current, run: runSequence }} requested={timelineAsked} onRequested={setTimelineAsked} />}
       {model && !present && !noChrome && inspector && hub.opening.panel !== "none" && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} findings={findings} resolve={resolve} {...(calloutTarget ? { callout: calloutTarget } : {})} />}
     </div>
   );

@@ -177,6 +177,15 @@ export const TERMINAL_R = 2;
 
 const sev = (s: FindingSeverity) => `var(${SEVERITY_VAR[s]}, ${DRC_COLOURS[s].dark})`;
 
+/** The tiers a card's chips show, in the concept's order (R3-C; the same as ../dims/record.ts DIM_TIERS). */
+export const TIER_ORDER = ["nominal", "mesh", "exact", "measured"] as const;
+/** The agent's four-point star before "AGENT" on a callout's pill (R3-C, concept A), constant markup. */
+export const SPARK_SVG = `<svg xmlns="${SVG_NS}" class="annot-spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.4 6.1 3.9 9.6 5 6.1 6.1 5 9.6 3.9 6.1 0.4 5 3.9 3.9z" fill="currentColor"/></svg>`;
+/** The frame corners before "Look at" (R3-C, concept A), constant markup. */
+export const FRAME_SVG = `<svg xmlns="${SVG_NS}" class="annot-frame" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
+/** A pinned card with its action row is at least this wide, CSS px (DEFAULT, R3-C: the row fits on one line). */
+export const CALLOUT_ACTIONS_MIN_W = 256;
+
 export const ANNOT_CSS = `
 .cad-annot { position: absolute; inset: 0; pointer-events: none; z-index: 21; font-family: var(--uhd-font-label, ui-monospace, monospace); }
 .cad-annot svg.annot-ink { position: absolute; inset: 0; overflow: visible; }
@@ -187,7 +196,7 @@ export const ANNOT_CSS = `
 .cad-annot .annot-arrow { fill: none; stroke: var(--uhd-accent, #5aa9ff); stroke-width: ${LEADER_PX}; }
 .cad-annot .annot-arrowhead { fill: var(--uhd-accent, #5aa9ff); }
 ${(["fail", "risk", "warn", "info", "pass", "unknown"] as FindingSeverity[])
-  .map((s) => `.cad-annot .tone-${s} .annot-leader, .cad-annot .annot-leader.tone-${s}, .cad-annot .annot-ring.tone-${s} { stroke: ${sev(s)}; } .cad-annot .annot-terminal.tone-${s} { fill: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} .annot-title { color: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} { border-color: ${sev(s)}; }`)
+  .map((s) => `.cad-annot .tone-${s} .annot-leader, .cad-annot .annot-leader.tone-${s}, .cad-annot .annot-ring.tone-${s} { stroke: ${sev(s)}; } .cad-annot .annot-terminal.tone-${s} { fill: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} .annot-sev-word { color: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} { border-color: ${sev(s)}; }`)
   .join("\n")}
 .cad-annot .annot-leader.tone-neutral, .cad-annot .annot-ring.tone-neutral { stroke: var(--uhd-text-muted, #8b949e); }
 .cad-annot .annot-sheet {
@@ -225,6 +234,36 @@ ${(["fail", "risk", "warn", "info", "pass", "unknown"] as FindingSeverity[])
 .cad-annot .annot-details { margin-top: 4px; }
 .cad-annot .annot-details > summary { cursor: pointer; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--uhd-text-muted, #8b949e); }
 .cad-annot .annot-details > summary:focus-visible { outline: 1.5px solid var(--uhd-focus-ring, #5aa9ff); outline-offset: 1px; }
+/* R3-C (concept A): the severity word before a finding's title, the author's pill before a callout's */
+.cad-annot .annot-sev-word { flex: none; font-family: var(--uhd-font-label, ui-monospace, monospace); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.cad-annot .annot-pill {
+  flex: none; display: inline-flex; align-items: center; gap: 3px; height: 15px; padding: 0 5px; margin-top: 0;
+  border-radius: 4px; font-size: 9px; line-height: 15px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
+  color: var(--uhd-callout-surface, #242424); background: var(--uhd-callout-text, #e5e5e5);
+}
+.cad-annot .annot-pill .annot-spark { flex: none; }
+/* VALUE  3.1 mm ±0.2, then the tier strip (NOMINAL | MESH | EXACT | MEASURED) */
+.cad-annot .annot-value { display: flex; gap: 10px; align-items: baseline; margin-top: 5px; }
+.cad-annot .annot-value-v { font-family: var(--uhd-font-label, ui-monospace, monospace); font-size: 11.5px; color: var(--uhd-callout-text, var(--uhd-text, #e5e5e5)); }
+.cad-annot .annot-tiers { display: inline-flex; margin-top: 5px; border: 1px solid var(--uhd-callout-border, #4a4a4a); border-radius: 4px; overflow: hidden; }
+.cad-annot .annot-tier { padding: 1px 6px; font-size: 9px; line-height: 14px; letter-spacing: 0.1em; color: var(--uhd-text-muted, #8b949e); border-left: 1px solid var(--uhd-callout-border, #4a4a4a); }
+.cad-annot .annot-tier:first-child { border-left: 0; }
+.cad-annot .annot-tier.on { color: var(--uhd-callout-text, #e5e5e5); font-weight: 700; background: color-mix(in oklab, var(--uhd-callout-text, #e5e5e5) 12%, transparent); }
+/* the pinned card's actions: LOOK AT, DETAILS, previous and next */
+.cad-annot .annot-sheet.has-actions { min-width: ${CALLOUT_ACTIONS_MIN_W}px; }
+.cad-annot .annot-sheet.has-actions .annot-details > summary { display: none; }
+.cad-annot .annot-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.cad-annot .annot-spacer { flex: 1; }
+.cad-annot .annot-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 5px; cursor: pointer;
+  font: inherit; font-size: 10px; line-height: 14px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--uhd-callout-text, #e5e5e5); background: transparent; border: 1px solid var(--uhd-callout-border, #4a4a4a);
+}
+.cad-annot .annot-btn:hover { background: color-mix(in oklab, var(--uhd-callout-text, #e5e5e5) 8%, transparent); }
+.cad-annot .annot-btn:focus-visible { outline: 1.5px solid var(--uhd-focus-ring, #5aa9ff); outline-offset: 1px; }
+.cad-annot .annot-btn.primary { color: var(--uhd-accent, #5aa9ff); border-color: color-mix(in oklab, var(--uhd-accent, #5aa9ff) 55%, transparent); background: var(--uhd-accent-tint, rgba(90,169,255,.12)); }
+.cad-annot .annot-btn.annot-kbd { padding: 3px 0; min-width: 20px; justify-content: center; letter-spacing: 0; }
+.cad-annot .annot-next-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--uhd-text-muted, #8b949e); }
 /* a plain title (R2-D's words) reads as a sentence, not as an uppercase code */
 .cad-annot .annot-sheet.plain .annot-title { text-transform: none; letter-spacing: 0.01em; font-family: var(--uhd-font-sans, system-ui, sans-serif); font-size: 11px; font-weight: 600; }
 .cad-annot .annot-sheet.ghost { opacity: 0.3; }

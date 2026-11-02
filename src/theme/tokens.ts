@@ -193,6 +193,22 @@ export interface ThemeTokens {
   /** A marker or leader whose anchor is hidden behind a part (drawn ghosted). */
   calloutGhost: string;
 
+  // ---- dimensions, angles and explode paths (R3-C; src/cad/dims reads these by name) ---------------
+  /** A dimension line, an angle's arc and ticks (thin, solid). */
+  dimLine: string;
+  /** A dimension's extension lines (dashed, from the measured points past the dimension line). */
+  dimExtension: string;
+  /** A dimension's label chip ("158.4 mm"). */
+  dimChip: string;
+  /** The chip's 1 px outline. */
+  dimChipBorder: string;
+  /** The chip's text and the angle labels. */
+  dimText: string;
+  /** The tier tag inside the chip (NOMINAL, MESH, EXACT, MEASURED). */
+  dimTierSurface: string;
+  /** Explode path lines: a moved part back to its assembled place (dashed, low contrast on purpose). */
+  explodePath: string;
+
   // ---- shape and type -----------------------------------------------------
   radius: string;
   shadowSm: string;
@@ -242,6 +258,7 @@ export const TOKEN_NAMES: readonly ThemeToken[] = [
   "modelToneLit", "modelToneMid", "modelToneShade", "inkSilhouette", "inkCrease", "inkFaint", "inkWidth", "sectionCap", "sectionLine",
   "drcError", "drcWarning", "drcInfo", "drcRisk", "drcPass", "drcUnknown",
   "calloutSurface", "calloutBorder", "calloutText", "calloutLabel", "calloutLeader", "calloutLeaderWidth", "calloutDot", "calloutGhost",
+  "dimLine", "dimExtension", "dimChip", "dimChipBorder", "dimText", "dimTierSurface", "explodePath",
   "radius", "shadowSm", "shadowMd", "shadowLg", "fontUi", "fontLabel", "fontMono",
 ];
 

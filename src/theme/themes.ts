@@ -105,6 +105,14 @@ export const PAPER_SCENE_TOKENS = {
   calloutLeaderWidth: "1.75px",
   calloutDot: "#26262a",
   calloutGhost: "#b4b4b8",
+  // R3-C dimensions and angles (concept B; DEFAULT): ink lines, a white chip with the callout outline, a grey path
+  dimLine: "#26262a",
+  dimExtension: "#7a7a80",
+  dimChip: "#ffffff",
+  dimChipBorder: "#c4c2be",
+  dimText: "#262626",
+  dimTierSurface: "#e6e6e2",
+  explodePath: "#9a9aa0",
 } satisfies Partial<ThemeTokens>;
 
 /**
@@ -140,6 +148,14 @@ export const DARK_SCENE_TOKENS = {
   calloutLeaderWidth: "1.75px",
   calloutDot: "#d4d4d4",
   calloutGhost: "#5a5a5a",
+  // R3-C dimensions and angles (concept B; DEFAULT): light ink lines, a dark chip a step off the void, a dim path
+  dimLine: "#d4d4d4",
+  dimExtension: "#8a8a8a",
+  dimChip: "#1f1f1f",
+  dimChipBorder: "#4a4a4a",
+  dimText: "#e5e5e5",
+  dimTierSurface: "#333333",
+  explodePath: "#5c5c5c",
 } satisfies Partial<ThemeTokens>;
 
 /** The viewer's dark theme: the anatomy dark token set (PB-1189) on the viewer's dark surfaces. */

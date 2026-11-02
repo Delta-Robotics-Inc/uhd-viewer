@@ -93,6 +93,13 @@
   --uhd-callout-leader-width: 1.75px;
   --uhd-callout-dot: #d4d4d4;
   --uhd-callout-ghost: #5a5a5a;
+  --uhd-dim-line: #d4d4d4;
+  --uhd-dim-extension: #8a8a8a;
+  --uhd-dim-chip: #1f1f1f;
+  --uhd-dim-chip-border: #4a4a4a;
+  --uhd-dim-text: #e5e5e5;
+  --uhd-dim-tier-surface: #333333;
+  --uhd-explode-path: #5c5c5c;
   --uhd-radius: 8px;
   --uhd-shadow-sm: 0px 2px 0px 0px hsl(0 0% 20% / 0.15), 0px 1px 2px -1px hsl(0 0% 20% / 0.15);
   --uhd-shadow-md: 0px 2px 0px 0px hsl(0 0% 0% / 0.35), 0px 2px 4px -1px hsl(0 0% 0% / 0.35);

@@ -23,7 +23,8 @@ export type { SetOp };
 
 /** The fields an `annotate` verb may set (W3-B's record without id and author: those come from the store). */
 export interface AnnotateFields {
-  kind?: "callout" | "mark" | "arrow";
+  /** R3-C (applied by R3-A, additive): "dimension" and "angle" records go to the dims layer (../dims). */
+  kind?: "callout" | "mark" | "arrow" | "dimension" | "angle";
   ref?: string;
   point?: [number, number, number];
   to?: string;
@@ -35,6 +36,12 @@ export interface AnnotateFields {
   tone?: string;
   visibility?: "on" | "hover" | "off";
   n?: number;
+  /** R3-C: a dimension's tier, value and tolerance (mm), its label offset (mm, the root's frame), an angle's joint. */
+  tier?: "nominal" | "mesh" | "exact" | "measured";
+  valueMm?: number;
+  toleranceMm?: number;
+  offset?: [number, number, number];
+  joint?: string;
 }
 
 export type ViewOp =
@@ -172,7 +179,7 @@ export function expandOp(state: ViewState, raw: unknown, ctx: OpContext = {}): S
   }
 }
 
-const ANNOTATE_FIELDS = ["kind", "ref", "point", "to", "toPoint", "shape", "title", "rows", "text", "tone", "visibility", "n"] as const;
+const ANNOTATE_FIELDS = ["kind", "ref", "point", "to", "toPoint", "shape", "title", "rows", "text", "tone", "visibility", "n", "tier", "valueMm", "toleranceMm", "offset", "joint"] as const;
 
 /** `annotate`: a new record with an issued id, or fields changed on an existing one; normalised by W3-B's parser. */
 function expandAnnotate(state: ViewState, op: { handle?: string; id?: string } & AnnotateFields, ctx: OpContext): SetOp[] | { error: string } {
@@ -188,7 +195,7 @@ function expandAnnotate(state: ViewState, op: { handle?: string; id?: string } &
   } else {
     if (op.handle !== undefined && (typeof op.handle !== "string" || !HANDLE.test(op.handle))) return { error: "annotate.handle must be 1 to 64 letters, digits, '.', ':', '_' or '-'" };
     if (!ctx.issueId) return { error: "annotate: this writer cannot create records (no owner to issue an id)" };
-    if (!fields.kind) return { error: "annotate needs kind: callout, mark or arrow" };
+    if (!fields.kind) return { error: "annotate needs kind: callout, mark, arrow, dimension or angle" };
     if (typeof fields.ref !== "string") return { error: "annotate needs ref: the instance path it points at" };
     const id = ctx.issueId();
     if (op.handle && ctx.ids) ctx.ids[op.handle] = id;
