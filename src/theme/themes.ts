@@ -96,12 +96,13 @@ export const PAPER_SCENE_TOKENS = {
   drcRisk: "#b4400a",
   drcPass: "#157a3b",
   drcUnknown: "#57606a",
-  calloutSurface: "#ffffff",
-  calloutBorder: "#e2e0de",
+  // a step darker than the paper ground and a visible outline (walkthrough D4, R1-C DEFAULT; was #ffffff / #e2e0de)
+  calloutSurface: "#efefec",
+  calloutBorder: "#c4c2be",
   calloutText: "#262626",
   calloutLabel: "#262626",
   calloutLeader: "#26262a",
-  calloutLeaderWidth: "1px",
+  calloutLeaderWidth: "1.75px",
   calloutDot: "#26262a",
   calloutGhost: "#b4b4b8",
 } satisfies Partial<ThemeTokens>;
@@ -130,12 +131,13 @@ export const DARK_SCENE_TOKENS = {
   drcRisk: "#ff8a3d",
   drcPass: "#34d399",
   drcUnknown: "#9ba3ad",
-  calloutSurface: "#1c1c1c",
-  calloutBorder: "#333333",
+  // a step lighter than the void and a visible outline (walkthrough D4, R1-C DEFAULT; was #1c1c1c / #333333)
+  calloutSurface: "#242424",
+  calloutBorder: "#4a4a4a",
   calloutText: "#e5e5e5",
   calloutLabel: "#e5e5e5",
   calloutLeader: "#d4d4d4",
-  calloutLeaderWidth: "1.25px",
+  calloutLeaderWidth: "1.75px",
   calloutDot: "#d4d4d4",
   calloutGhost: "#5a5a5a",
 } satisfies Partial<ThemeTokens>;

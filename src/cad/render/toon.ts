@@ -4,7 +4,10 @@
  * **Bands.** Every lit surface the 3D view draws through MeshStandardMaterial (the batcher's shared instanced
  * materials and the meshes drawn as themselves) is shaded by one key light fixed to the camera: the cosine
  * between the view-space normal and the key picks one of three bands, and the surface's own colour (the
- * per-instance colour, a map) is scaled by that band's factor. No specular, no environment, no tone mapping:
+ * per-instance colour, a map) is scaled by that band's factor. The key is a constant in VIEW space (three's
+ * fragment `normal` is the view-space normal), so the light turns with the camera and no scene light is read.
+ * Each band edge is a short smoothstep ramp (`TOON_SOFT`, R1-D C2): a flat face crossing an edge as the model
+ * turns fades from one tone to the next over a few frames instead of snapping (Kevin's walkthrough, 11:43). No specular, no environment, no tone mapping:
  * the tones on screen are the theme's tones. A body with no colour of its own (the neutral fallback grey that
  * `materialFor` gives an unhinted part) takes the theme's lit tone instead, so on paper it reads as paper.
  * Highlight (per-instance emissive) is added on top, so selection keeps working.
@@ -88,11 +91,31 @@ export const NEUTRAL_FALLBACK = "#8b8b8b";
 export const TOON_KEY = new THREE.Vector3(-0.35, 0.75, 0.56).normalize();
 /** Cosine thresholds between the bands [shade|mid, mid|lit] (DEFAULT, look-tested on the drone and ClientX). */
 export const TOON_EDGES = new THREE.Vector2(0.0, 0.45);
+/**
+ * Width of each band edge's ramp in N·L (the cosine), centred on the edge: a smoothstep from `edge - w/2` to
+ * `edge + w/2` (DEFAULT 0.06, R1-D C2: about 3.4 degrees of turn at the shade|mid edge, 3.9 at mid|lit, so a face
+ * turning at an orbit's usual 1-2 degrees a frame fades over 2-4 frames). 0 is the hard cel step of wave 3.
+ */
+export const TOON_SOFT = 0.06;
+
+/** The band factor for a cosine `k` (the shader's sum, in TypeScript for the tests and the docs). */
+export function toonBand(k: number, bands: readonly [number, number, number], edges: readonly [number, number] = [TOON_EDGES.x, TOON_EDGES.y], soft = TOON_SOFT): number {
+  const step = (e: number) => {
+    if (soft <= 0) return k > e ? 1 : 0;
+    const t = Math.min(1, Math.max(0, (k - (e - soft / 2)) / soft));
+    return t * t * (3 - 2 * t);
+  };
+  const a = step(edges[0]);
+  const b = step(edges[1]);
+  return bands[0] + (bands[1] - bands[0]) * a + (bands[2] - bands[1]) * b;
+}
 
 /** Uniforms one scene's toon materials share (a theme change writes them; no recompile). */
 export interface ToonUniforms {
   uToonKey: { value: THREE.Vector3 };
   uToonEdges: { value: THREE.Vector2 };
+  /** Ramp width at each band edge (N·L), `TOON_SOFT`. */
+  uToonSoft: { value: number };
   uToonBands: { value: THREE.Vector3 };
   uToonNeutral: { value: THREE.Color };
   uToonFallback: { value: THREE.Color };
@@ -102,6 +125,7 @@ export function toonUniforms(): ToonUniforms {
   return {
     uToonKey: { value: TOON_KEY.clone() },
     uToonEdges: { value: TOON_EDGES.clone() },
+    uToonSoft: { value: TOON_SOFT },
     uToonBands: { value: new THREE.Vector3(...DEFAULT_LOOK.bands) },
     uToonNeutral: { value: new THREE.Color(DEFAULT_LOOK.neutral) },
     uToonFallback: { value: new THREE.Color(NEUTRAL_FALLBACK) },
@@ -129,6 +153,7 @@ export function patchToon(shader: THREE.WebGLProgramParametersWithUniforms, u: T
 #ifdef UHD_TOON
 uniform vec3 uToonKey;
 uniform vec2 uToonEdges;
+uniform float uToonSoft;
 uniform vec3 uToonBands;
 uniform vec3 uToonNeutral;
 uniform vec3 uToonFallback;
@@ -138,8 +163,13 @@ uniform vec3 uToonFallback;
       "#include <opaque_fragment>",
       `#ifdef UHD_TOON
 {
+  // N.L against a key fixed in view space (normal is the view-space normal here): the light turns with the camera
   float k = dot( normalize( normal ), uToonKey );
-  float band = k > uToonEdges.y ? uToonBands.z : ( k > uToonEdges.x ? uToonBands.y : uToonBands.x );
+  // three bands, each edge a short ramp (a face crossing it fades instead of snapping; uToonSoft 0 is a hard step)
+  float hw = max( uToonSoft * 0.5, 1e-5 );
+  float toMid = smoothstep( uToonEdges.x - hw, uToonEdges.x + hw, k );
+  float toLit = smoothstep( uToonEdges.y - hw, uToonEdges.y + hw, k );
+  float band = uToonBands.x + ( uToonBands.y - uToonBands.x ) * toMid + ( uToonBands.z - uToonBands.y ) * toLit;
   vec3 base = diffuseColor.rgb;
   // an unhinted part (the neutral fallback grey) takes the theme's lit tone
   if ( distance( base, uToonFallback ) < 0.004 ) base = uToonNeutral;

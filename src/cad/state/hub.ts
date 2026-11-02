@@ -42,6 +42,16 @@ export interface ViewHub {
   canvas?: () => { width: number; height: number };
   /** The person's explicit "Save callouts" (W4-D, D10): the host writes the annotations to the display file. */
   saveCallouts?: () => void;
+  /**
+   * The mounted 3D view's camera controls (R1-A, E1): `zoomToCursor` (wheel zoom toward the pointer, DEFAULT on).
+   * Returns what is in force. A host's settings page (R1-E) calls it; the choice also holds for a view mounted later.
+   */
+  controls?: (options: { zoomToCursor?: boolean }) => { zoomToCursor: boolean };
+  /**
+   * The controls a host chose (kept by `controls`, which exists only while a 3D view is mounted); a view mounted
+   * later starts with them. A host may also set this object directly before the first mount.
+   */
+  controlOptions?: { zoomToCursor?: boolean };
   /** Resolves a placement verb against the scene's faces (W4-D, PB-1187): one `set` on `placements` and its facts. */
   place?: (op: PlacementVerb, by: string) => { set: SetOp; facts: PlacementFacts } | { error: string };
 }

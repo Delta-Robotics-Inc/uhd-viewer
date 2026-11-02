@@ -258,7 +258,10 @@ describe("focus, select and drill on the model", () => {
 
   it("reports 3D selections by instance path", () => {
     const defAt = (path: string[]) => (path.join("/") === "board/u2" ? lookup("fixture-imu-lga12") : path.length === 0 ? root : lookup("sample-imu-board"));
-    expect(cadHostSelection({ body: "board#board_glb", component: "board/u2" }, defAt)).toEqual({ kind: "node", id: "board/u2", defId: "fixture-imu-lga12" });
+    // R1-A (M2): the picked component and the body that draws it ride along (additive: id and defId unchanged)
+    expect(cadHostSelection({ body: "board#board_glb", component: "board/u2" }, defAt)).toEqual({ kind: "node", id: "board/u2", defId: "fixture-imu-lga12", component: "board/u2", holder: "board", holderDefId: "sample-imu-board" });
+    // a component given by its id in the body (the inspector card's rows did) is named from the root
+    expect(cadHostSelection({ body: "board#board_glb", component: "u2" }, defAt)).toMatchObject({ id: "board/u2", component: "board/u2", holder: "board" });
     expect(cadHostSelection({ body: "board#board_glb" }, defAt)).toEqual({ kind: "node", id: "board", defId: "sample-imu-board" });
     // a mate carries its owner's definition, as the same link does in the diagram
     const mate = cadHostSelection({ mate: "board_mount" }, defAt);

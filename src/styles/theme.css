@@ -85,12 +85,12 @@
   --uhd-drc-risk: #ff8a3d;
   --uhd-drc-pass: #34d399;
   --uhd-drc-unknown: #9ba3ad;
-  --uhd-callout-surface: #1c1c1c;
-  --uhd-callout-border: #333333;
+  --uhd-callout-surface: #242424;
+  --uhd-callout-border: #4a4a4a;
   --uhd-callout-text: #e5e5e5;
   --uhd-callout-label: #e5e5e5;
   --uhd-callout-leader: #d4d4d4;
-  --uhd-callout-leader-width: 1.25px;
+  --uhd-callout-leader-width: 1.75px;
   --uhd-callout-dot: #d4d4d4;
   --uhd-callout-ghost: #5a5a5a;
   --uhd-radius: 8px;

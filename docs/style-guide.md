@@ -76,6 +76,36 @@ the model.
   the CPU, drawn as an outline in `sectionLine`, and returned as data (polylines per part, in mm) by `observe()`.
 - Sections and tours agree by default: a tour step that sets planes uses the same planes a person would.
 
+## Callouts, DRC markers and exploded-view labels
+
+Revised in fix wave R1 (R1-C, 2026-11-01) from Kevin's walkthrough (items D1 to D5, M10, M12). Values marked
+DEFAULT are in code comments and can be revisited.
+
+- **The card.** Rounded with the app's `radius` (8 px), not chamfered; a fill one step off the ground
+  (`calloutSurface`: `#242424` on the `#131313` void, `#efefec` on the `#fbfbfa` paper) and a 1 px outline
+  (`calloutBorder`, or the finding's severity colour on a DRC card). The DRC set stays at least 4.5:1 on the card
+  (the test computes it). The card wraps at 320 px (DEFAULT) and never clips mid-token: instance paths break at
+  `/`, `.` and `_`; a value or sentence ends in an ellipsis after four lines (DEFAULT).
+- **The leader.** Option A as before (Kevin liked it): horizontal, vertical or 45-degree legs, the window-aware
+  side flip, a shelf under the card that tucks under its rounded corner. 1.75 px in both themes (DEFAULT, was 1.25
+  and 1), in the card's tone.
+- **The DRC marker.** Attached to the part, not over its bounds: a terminal dot on the part's surface nearest the
+  top centre of its bounds (found on its meshes, straight down first, then along the camera's ray), a 12 px stem up
+  the screen (DEFAULT), the severity marker on top. All three are depth-tested; the ghost copy shows a hidden
+  marker. The marker grows with the part on screen, never under 16 px and never over 26 px (DEFAULT).
+- **Hover tiers.** A short hover (the 80 ms intent delay) shows the title; a hover held 600 ms (DEFAULT) adds a
+  one-line description (the message's first clause, parentheticals dropped, at most 120 characters); a click pins
+  the card with the raw rows (AT path, BY validator, MORE n) and the full message and asks the host to open the
+  finding in the Inspector. Keyboard focus shows both tiers at once.
+- **The wheel.** Over a card, pin, marker or exploded-view label the wheel zooms the view (the event is forwarded
+  to the canvas); hover and click stay on the label.
+- **Exploded-view labels.** The coloured end bar is on the side the leader enters. A label keeps its column until
+  its anchor has been past the midline by more than 8 % of the view's width for 150 ms (DEFAULT); a slot change
+  eases over 120 ms, ease-out (DEFAULT), while ordinary motion follows the anchor in the same frame; labels are
+  clamped to the view and never push a neighbour off it. Labels whose anchor is behind the model's centre are drawn
+  at 60 % (DEFAULT). A subtitle is the part's refdes or MPN, or nothing; how the viewer placed a part ("placed by a
+  display hint") is never shown.
+
 ## What is deliberately not done
 
 - **No grain, no scanlines, no film noise at runtime.** They flicker under live animation and fight annotations.
@@ -100,6 +130,8 @@ the model.
 | Bands, twins, ink thresholds | `src/cad/render/toon.ts` |
 | The ink pass and caps in the frame | `src/cad/scene.ts` |
 | Sections | `src/cad/sections/` |
+| Callouts and DRC markers (look, layout, wheel) | `src/cad/annot/style.ts`, `layer.ts`, `place.ts`, `leader.ts`, `wheel.ts` |
+| Exploded-view labels | `src/cad/labels.ts` |
 
 ## Open for review
 

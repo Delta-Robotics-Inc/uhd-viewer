@@ -173,9 +173,12 @@ export interface ThemeTokens {
   drcUnknown: string;
 
   // ---- callouts (W3-B reads these by name) ------------------------------------------------------
-  /** A callout card's fill. */
+  /**
+   * A callout card's fill: one step off the scene's ground (lighter in the dark, darker on paper) so a card reads
+   * against the void (Kevin's walkthrough D4, R1-C). The card's corners use `radius`.
+   */
   calloutSurface: string;
-  /** A callout card's outline. */
+  /** A callout card's 1 px outline (a finding's card takes its severity colour instead, walkthrough D4). */
   calloutBorder: string;
   /** Sentence text on a callout card. */
   calloutText: string;
@@ -183,7 +186,7 @@ export interface ThemeTokens {
   calloutLabel: string;
   /** The leader line (horizontal, vertical or 45° legs, a 45° chamfer, a horizontal shelf). */
   calloutLeader: string;
-  /** The leader's width in CSS px (a length), constant on screen. */
+  /** The leader's width in CSS px (a length), constant on screen (1.75 px in both themes since R1-C, walkthrough D4). */
   calloutLeaderWidth: string;
   /** The leader's terminal dot on the part. */
   calloutDot: string;

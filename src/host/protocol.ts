@@ -55,6 +55,14 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
       const config = parseQualityConfig(m.config);
       return config ? { type: m.type, config } : undefined;
     }
+    // a check row clicked in the host's Inspector (gate R1, R1-E's D7): pin that finding's callout in the 3D view
+    case "uhd-viewer:openFinding": {
+      const short = (v: unknown): v is string => isString(v) && v.length > 0 && v.length <= 1024;
+      if (!short(m.id) || !short(m.code)) return undefined;
+      const path = m.path === undefined ? undefined : pathOf(m.path) ?? null;
+      if (path === null || (path !== undefined && path.length > 1024)) return undefined;
+      return path === undefined ? { type: m.type, id: m.id, code: m.code } : { type: m.type, id: m.id, code: m.code, path };
+    }
     // the person takes everything back from the agents (PB-1196, D9)
     case "uhd-viewer:takeOver":
       return { type: m.type };

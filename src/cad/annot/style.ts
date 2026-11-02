@@ -40,6 +40,24 @@ export const SEVERITY_SHAPE: Record<FindingSeverity, string> = { fail: "octagon"
  */
 export const REVEAL_MS = { intent: 80, leader: 180, card: 120, retract: 120 } as const;
 
+export const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * A constant SVG string (markerSvg) as DOM nodes, parsed as XML by DOMParser (no HTML parsing into the page, no
+ * script runs; W4-D: the textContent rule). An unparsable string gives an empty span. Here rather than in
+ * ./layer.ts so the Findings control does not pull in the annotation layer (wave 4 gate item).
+ */
+export function svgNode(svg: string): Node {
+  try {
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    const root = doc.documentElement;
+    if (root && root.nodeName === "svg" && !doc.getElementsByTagName("parsererror").length) return document.importNode(root, true);
+  } catch {
+    /* no DOMParser */
+  }
+  return document.createElement("span");
+}
+
 /** A severity marker as SVG markup in a 20 x 20 box (shape + glyph), for the DOM (the Findings control, cards). */
 export function markerSvg(s: FindingSeverity, size = 14): string {
   const c = `var(${SEVERITY_VAR[s]}, ${DRC_COLOURS[s].dark})`;
@@ -51,7 +69,9 @@ export function markerSvg(s: FindingSeverity, size = 14): string {
   else if (s === "pass") body = `<circle cx="10" cy="10" r="9" fill="${c}"/><path d="M6 10.5l2.8 2.8L14.5 7.5" ${glyph}/>`;
   else if (s === "unknown") body = `<circle cx="10" cy="10" r="8.2" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.6 2.2"/><path d="M8 8a2 2 0 1 1 2.6 1.9c-.5.2-.6.6-.6 1.1" stroke="${c}" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="10" cy="14.2" r="1" fill="${c}"/>`;
   else body = `<circle cx="10" cy="10" r="9" fill="${c}"/><path d="M10 9v5" ${glyph}/><circle cx="10" cy="6.3" r="1.1" fill="var(--uhd-drc-glyph, #111)"/>`;
-  return `<svg class="annot-sev sev-${s}" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true">${body}</svg>`;
+  // the SVG namespace: parsed as image/svg+xml (svgNode) an <svg> without it lands in no namespace and draws nothing
+  // (R1-D's G4 finding: the Findings button showed an empty square)
+  return `<svg xmlns="${SVG_NS}" class="annot-sev sev-${s}" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true">${body}</svg>`;
 }
 
 /** Draws a severity marker on a 2D canvas (the depth-tested sprite's texture), `px` square. */
@@ -134,8 +154,23 @@ export function ensureAnnotStyles(doc: Document = document): void {
   doc.head.appendChild(el);
 }
 
-/** Leader and ring stroke in CSS px: constant on screen (round-2 note §E.3: 1.25 dark, 1 light; DEFAULT 1.25). */
-export const LEADER_PX = 1.25;
+/**
+ * Leader stroke in CSS px, constant on screen. Kevin (walkthrough D4): "make the line a little bit thicker": 1.75 in
+ * both themes (DEFAULT, R1-C; it was 1.25 dark, 1 paper). The theme token `calloutLeaderWidth` carries the same value.
+ */
+export const LEADER_PX = 1.75;
+/** A callout card's widest (walkthrough M10): the body wraps here and never clips mid-token. DEFAULT 320 px (R1-C). */
+export const CALLOUT_MAX_W = 320;
+/** Lines a row value or a card's sentence shows before an ellipsis (long instance paths). DEFAULT 4 (R1-C). */
+export const CALLOUT_MAX_LINES = 4;
+/**
+ * Hover tiers on a DRC marker (walkthrough D3): a short hover (the intent delay, REVEAL_MS.intent) shows the title;
+ * a hover held this long adds the one-line description; a click pins the card with its raw rows and asks the host
+ * to open the finding in the Inspector. DEFAULT 600 ms (R1-C).
+ */
+export const LONG_HOVER_MS = 600;
+/** The app's corner radius when the theme sets none (tokens `radius`: 8 px in both themes). */
+export const CALLOUT_RADIUS_PX = 8;
 /** The leader's terminal dot radius (4 px diameter, the sheet's terminal). DEFAULT. */
 export const TERMINAL_R = 2;
 
@@ -151,31 +186,43 @@ export const ANNOT_CSS = `
 .cad-annot .annot-arrow { fill: none; stroke: var(--uhd-accent, #5aa9ff); stroke-width: ${LEADER_PX}; }
 .cad-annot .annot-arrowhead { fill: var(--uhd-accent, #5aa9ff); }
 ${(["fail", "risk", "warn", "info", "pass", "unknown"] as FindingSeverity[])
-  .map((s) => `.cad-annot .tone-${s} .annot-leader, .cad-annot .annot-leader.tone-${s}, .cad-annot .annot-ring.tone-${s} { stroke: ${sev(s)}; } .cad-annot .annot-terminal.tone-${s} { fill: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} .annot-title { color: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} { border-bottom-color: ${sev(s)}; }`)
+  .map((s) => `.cad-annot .tone-${s} .annot-leader, .cad-annot .annot-leader.tone-${s}, .cad-annot .annot-ring.tone-${s} { stroke: ${sev(s)}; } .cad-annot .annot-terminal.tone-${s} { fill: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} .annot-title { color: ${sev(s)}; } .cad-annot .annot-sheet.tone-${s} { border-color: ${sev(s)}; }`)
   .join("\n")}
 .cad-annot .annot-leader.tone-neutral, .cad-annot .annot-ring.tone-neutral { stroke: var(--uhd-text-muted, #8b949e); }
 .cad-annot .annot-sheet {
-  position: absolute; left: 0; top: 0; pointer-events: auto; cursor: default;
-  min-width: 96px; max-width: 280px; padding: 4px 8px 5px 8px;
+  position: absolute; left: 0; top: 0; pointer-events: auto; cursor: default; box-sizing: border-box;
+  min-width: 96px; max-width: ${CALLOUT_MAX_W}px; padding: 5px 9px 6px 9px;
   color: var(--uhd-callout-text, var(--uhd-text, #e5e5e5));
+  /* one step off the void (walkthrough D4), a 1 px outline in the tone (a finding's severity), the app's radius */
   background: var(--uhd-callout-surface, color-mix(in oklab, var(--uhd-surface, #1c1c1c) 90%, transparent));
-  outline: 1px solid var(--uhd-callout-border, transparent);
-  border-bottom: var(--uhd-callout-leader-width, ${LEADER_PX}px) solid var(--uhd-callout-leader, var(--uhd-accent, #5aa9ff));
+  border: 1px solid var(--uhd-callout-border, #3a3a3a);
+  border-radius: var(--uhd-radius, ${CALLOUT_RADIUS_PX}px);
+  box-shadow: var(--uhd-shadow-sm, 0 1px 2px rgba(0,0,0,.25));
   font-size: 10.5px; line-height: 1.35;
   will-change: transform; transform-origin: 0 100%;
   transition: opacity 120ms ease-out, clip-path ${REVEAL_MS.card}ms ease-out;
-  clip-path: inset(0 0 0 0);
+  clip-path: inset(-4px -4px -4px -4px round var(--uhd-radius, ${CALLOUT_RADIUS_PX}px));
 }
 .cad-annot .annot-sheet.side-l { transform-origin: 100% 100%; }
-.cad-annot .annot-title { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--uhd-callout-label, var(--uhd-text, #e5e5e5)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
-.cad-annot .annot-rows { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; margin-top: 2px; }
+.cad-annot .annot-title { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--uhd-callout-label, var(--uhd-text, #e5e5e5)); display: flex; gap: 6px; align-items: flex-start; }
+.cad-annot .annot-title .annot-sev { margin-top: 1px; }
+/* wrapped text: breaks at the zero-width spaces put after "/" "." "_" (./layer.ts breakable), then anywhere a
+   token is still too long; an ellipsis after CALLOUT_MAX_LINES lines (walkthrough M10) */
+.cad-annot .annot-title-text, .cad-annot .annot-v, .cad-annot .annot-text, .cad-annot .annot-desc {
+  min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cad-annot .annot-title-text { -webkit-line-clamp: 2; }
+.cad-annot .annot-v, .cad-annot .annot-text { -webkit-line-clamp: ${CALLOUT_MAX_LINES}; }
+.cad-annot .annot-desc { -webkit-line-clamp: 2; margin-top: 2px; font-family: var(--uhd-font-sans, system-ui, sans-serif); color: var(--uhd-callout-text, var(--uhd-text, #e5e5e5)); }
+.cad-annot .annot-rows { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; margin-top: 3px; }
 .cad-annot .annot-k { color: var(--uhd-text-muted, #8b949e); letter-spacing: 0.06em; font-size: 9.5px; }
-.cad-annot .annot-v { color: var(--uhd-text, #e5e5e5); font-family: var(--uhd-font-sans, system-ui, sans-serif); overflow-wrap: anywhere; }
+.cad-annot .annot-v { color: var(--uhd-text, #e5e5e5); font-family: var(--uhd-font-sans, system-ui, sans-serif); }
 .cad-annot .annot-text { font-family: var(--uhd-font-sans, system-ui, sans-serif); margin-top: 2px; color: var(--uhd-text, #e5e5e5); }
 .cad-annot .annot-by { margin-top: 2px; font-size: 9px; letter-spacing: 0.06em; color: var(--uhd-text-muted, #8b949e); text-transform: uppercase; }
+.cad-annot .annot-hint { margin-top: 3px; font-size: 9px; letter-spacing: 0.04em; color: var(--uhd-text-muted, #8b949e); }
 .cad-annot .annot-sheet.ghost { opacity: 0.3; }
-.cad-annot .annot-sheet.closed { opacity: 0; clip-path: inset(0 100% 0 0); pointer-events: none; transition: opacity ${REVEAL_MS.retract}ms ease-in, clip-path ${REVEAL_MS.retract}ms ease-in; }
-.cad-annot .annot-sheet.side-l.closed { clip-path: inset(0 0 0 100%); }
+.cad-annot .annot-sheet.closed { opacity: 0; clip-path: inset(0 100% 0 0 round var(--uhd-radius, ${CALLOUT_RADIUS_PX}px)); pointer-events: none; transition: opacity ${REVEAL_MS.retract}ms ease-in, clip-path ${REVEAL_MS.retract}ms ease-in; }
+.cad-annot .annot-sheet.side-l.closed { clip-path: inset(0 0 0 100% round var(--uhd-radius, ${CALLOUT_RADIUS_PX}px)); }
 .cad-annot .annot-sheet.reveal { transition-delay: ${REVEAL_MS.intent + REVEAL_MS.leader}ms; }
 .cad-annot path.annot-leader.reveal { transition: stroke-dashoffset ${REVEAL_MS.leader}ms ease-out ${REVEAL_MS.intent}ms; }
 .cad-annot path.annot-leader.retract { transition: stroke-dashoffset ${REVEAL_MS.retract}ms ease-in; }

@@ -64,17 +64,40 @@ export function drillTarget(root: ModuleDef, lookup: ModuleLookup, path: string)
   return out;
 }
 
+/**
+ * The 3D view's selection as the host hears it (`uhd-viewer:selectionChanged`). Additive to `ViewerSelection`
+ * (R1-A, M2; old fields unchanged, `id` is still the component's path when one is picked):
+ * - `component`: the picked component's instance path from the root (a board's part drawn inside the board's body);
+ * - `holder`: the instance path of the body that draws it (the board), so a host can show the component and keep
+ *   the board as its context;
+ * - `holderDefId`: that body's definition id.
+ * Absent when no component is picked.
+ */
+export type CadHostSelection = ViewerSelection & { component?: string; holder?: string; holderDefId?: string };
+
 /** A selection in the 3D view (by instance path), as the host sees it. */
 export function cadHostSelection(
   sel: { body?: string; component?: string; harness?: string; mate?: string },
   defAt: (path: string[]) => ModuleDef | undefined,
-): ViewerSelection | null {
+): CadHostSelection | null {
   // a mate is named `owner/link`: its definition is the owner's, as for a link in the diagram
   if (sel.mate) return { kind: "link", id: sel.mate, ...withDef(defAt(sel.mate.split("/").slice(0, -1))?.id) };
-  const path = sel.component ?? sel.harness ?? sel.body?.split("#")[0];
+  const holder = sel.body?.split("#")[0];
+  // a component given by its id in the body (an older caller) is named from the root, under its holder
+  const component = sel.component === undefined ? undefined : holder && sel.component !== holder && !sel.component.startsWith(`${holder}/`) ? `${holder}/${sel.component}` : sel.component;
+  const path = component ?? sel.harness ?? holder;
   if (path === undefined) return null;
   const def = defAt(path ? path.split("/") : []);
-  return { kind: "node", id: path, ...withDef(def?.id) };
+  const out: CadHostSelection = { kind: "node", id: path, ...withDef(def?.id) };
+  if (component !== undefined) {
+    out.component = component;
+    if (holder !== undefined) {
+      out.holder = holder;
+      const hd = defAt(holder ? holder.split("/") : [])?.id;
+      if (hd) out.holderDefId = hd;
+    }
+  }
+  return out;
 }
 
 /**
@@ -204,7 +227,7 @@ export function linkOwner(vm: ViewModel, linkId: string, levelDefId?: string): s
 const withDef = (defId?: string) => (defId ? { defId } : {});
 
 /** Selections compare by content (the host hears each change once). */
-export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}|${s.ids?.join(",") ?? ""}` : "");
+export const selectionKey = (s: ViewerSelection | null) => (s ? `${s.kind}|${s.id}|${s.defId ?? ""}|${s.ids?.join(",") ?? ""}|${(s as CadHostSelection).holder ?? ""}` : "");
 
 /**
  * Whether the host hears the selection now: when it changed, and when a module or link was picked again while it

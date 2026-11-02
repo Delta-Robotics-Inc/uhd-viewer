@@ -3,8 +3,14 @@
  * reads the view state it shows and writes it back through the handlers
  * CadView passes, so a toggle made here, in the URL, by a host or by an
  * agent through the bridge shows the same way.
+ *
+ * R1-D (2026-11-01, Kevin's walkthrough G4/G5): no control changes nothing silently. Each one acts, or is shown
+ * disabled with a tooltip that says why (no interface frames, no geometry of a kind, no findings). The menus open
+ * above the bar; the bar scrolls sideways on a narrow view (`overflow-x: auto` in app.css), which also clipped every
+ * menu above it to nothing (the chevrons "did nothing"), so while a menu is open the bar lets its content overflow
+ * (`useMenusVisible`).
  */
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { Icon } from "../canvas/Icon";
 import {
   IconButton,
@@ -12,7 +18,7 @@ import {
   Toolbar,
   ToolbarSeparator,
 } from "../ui/Toolbar";
-import { DIRECTIONS, type Direction } from "./model";
+import { DIRECTIONS, interfaceRows, type CadModel, type Direction } from "./model";
 import type { LabelKind } from "./labels";
 import type { SectionPlane } from "./state";
 import { MAX_SECTIONS, flipped, nextPlane, type ScopedSectionPlane } from "./sections/planes";
@@ -72,6 +78,11 @@ export interface CadToolbarProps {
   saveCallouts?: { count: number; onSave: () => void };
   direction: Direction;
   onDirection: (d: Direction) => void;
+  /**
+   * What the model has for the frame and interface-geometry controls (`toolbarAvailability(model)`): a control with
+   * nothing to show is disabled and says why. Absent: unknown, every control enabled (as before R1-D).
+   */
+  availability?: ToolbarAvailability;
   onFit: () => void;
   onFocus: () => void;
   canFocus: boolean;
@@ -83,11 +94,108 @@ const LABEL_KINDS: [LabelKind, string][] = [
   ["interface", "Interfaces (mates)"],
 ];
 
+/** What the model offers the toolbar's frame and interface-geometry controls. */
+export interface ToolbarAvailability {
+  /** Interface frames the "Every interface frame" toggle would draw (on placed bodies). */
+  frames: number;
+  /** Interfaces with geometry bound in each direction (D1 feature, D2 artifact, D3 procedural). */
+  byDirection: Record<Direction, number>;
+}
+
+/**
+ * Counts what the frame toggle and the D1/D2/D3 choice can show in `model`: the bodies and interfaces CadView's
+ * overlay walks (an interface frame on a body drawn here; a binding of each kind on a body's interfaces). A board's
+ * components, drawn inside the board's own mesh, are not bodies: their frames are not drawn, so not counted.
+ */
+export function toolbarAvailability(model: Pick<CadModel, "bodies" | "manifests">): ToolbarAvailability {
+  const keys = new Set(model.bodies.map((b) => b.key));
+  let frames = 0;
+  const byDirection: Record<Direction, number> = { feature: 0, artifact: 0, procedural: 0 };
+  const seen = new Set<string>();
+  for (const b of model.bodies) {
+    for (const i of b.def.interfaces) {
+      const f = i.geometry?.frame;
+      if (!f) continue;
+      // as CadView's frame loop: a frame on an artifact of its own is drawn when that artifact is a drawn body
+      const target = f.artifact ? `${b.path.join("/")}#${f.artifact}` : b.key;
+      if (f.artifact ? target === b.key || keys.has(target) : !b.key.includes("#")) frames++;
+    }
+    const rowsKey = `${b.key.split("#")[0]}|${b.def.id}`;
+    if (seen.has(rowsKey)) continue;
+    seen.add(rowsKey);
+    for (const row of interfaceRows(b.def, model.manifests))
+      for (const d of DIRECTIONS) if (row.byDirection[d.id].length) byDirection[d.id]++;
+  }
+  return { frames, byDirection };
+}
+
+/** Tooltip of the "Every interface frame" toggle. */
+export function framesLabel(a: ToolbarAvailability | undefined): string {
+  if (a && a.frames === 0) return "No interface frames in this model";
+  return a ? `Every interface frame · ${a.frames}` : "Every interface frame";
+}
+
+/** Tooltip of one interface-geometry choice, disabled when the model has no geometry of that kind. */
+export function directionOption(d: (typeof DIRECTIONS)[number], a: ToolbarAvailability | undefined): { label: string; disabled: boolean } {
+  const name = `Interface geometry by ${d.label.toLowerCase().replace(/^d/, "D")}`;
+  const n = a?.byDirection[d.id];
+  if (n === 0) return { label: `${name}: none in this model`, disabled: true };
+  return { label: `${name}: ${d.hint}. Drawn on the selected interface${n ? ` (${n} in this model)` : ""}`, disabled: false };
+}
+
+/**
+ * Menus above a bar that scrolls sideways: while one is open (an `aria-expanded="true"` button inside), the bar
+ * shows what overflows it, so the menu is seen. Run after every render (the findings menu's state lives in CadView,
+ * which renders this bar again when it changes).
+ */
+function useMenusVisible(wrap: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const bar = wrap.current?.querySelector<HTMLElement>(".cad-toolbar");
+    if (!bar) return;
+    const open = Boolean(bar.querySelector('[aria-expanded="true"]'));
+    bar.style.overflow = open ? "visible" : "";
+  });
+}
+
+/** Close a menu on Escape or on a press outside `wrap`. */
+function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: () => void) {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    // gate R1: an Escape that closes a menu is taken (the view's own Escape, take over, skips a handled one)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      closeRef.current();
+    };
+    const onDown = (e: PointerEvent) => {
+      if (wrap.current && e.target instanceof Node && !wrap.current.contains(e.target)) closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [open, wrap]);
+}
+
+const DISABLED = "cursor-default opacity-40 hover:bg-transparent";
+
 export function CadToolbar(p: CadToolbarProps) {
   const { section } = p;
+  const wrap = useRef<HTMLDivElement>(null);
+  const labelWrap = useRef<HTMLDivElement>(null);
+  const sectionWrap = useRef<HTMLDivElement>(null);
+  useMenusVisible(wrap);
+  useDismiss(p.labelMenu, labelWrap, () => p.onLabelMenu(false));
+  useDismiss(p.sectionMenu, sectionWrap, () => p.onSectionMenu(false));
+  const noFrames = p.availability?.frames === 0;
+  const cutOn = p.onSections ? Boolean(p.sections?.length) : Boolean(section);
   return (
     // `data-chrome` marks what document mode (`?chrome=none`, W2-D's captures) leaves out; `display: contents` keeps the layout
-    <div data-chrome="toolbar" style={{ display: "contents" }}>
+    <div data-chrome="toolbar" style={{ display: "contents" }} ref={wrap}>
       <Toolbar label="3D tools" className="cad-toolbar">
         <ToggleGroup
           label="Assembly"
@@ -100,7 +208,7 @@ export function CadToolbar(p: CadToolbarProps) {
           onChange={(v) => p.onExploded(v === "exploded")}
         />
         <ToolbarSeparator />
-        <div className="cad-menu-wrap">
+        <div className="cad-menu-wrap" ref={labelWrap}>
           <IconButton
             icon="tag"
             label="Callout labels"
@@ -115,16 +223,26 @@ export function CadToolbar(p: CadToolbarProps) {
             label="Label types"
             tooltipSide="top"
             aria-expanded={p.labelMenu}
-            onClick={() => p.onLabelMenu(!p.labelMenu)}
+            aria-haspopup="menu"
+            onClick={() => {
+              if (!p.labelMenu) p.onSectionMenu(false);
+              p.onLabelMenu(!p.labelMenu);
+            }}
           />
           {p.labelMenu && (
-            <div className="cad-menu">
+            <div className="cad-menu" role="menu" aria-label="Label types">
               <div className="cad-menu-label">Show labels for</div>
               {LABEL_KINDS.map(([k, label]) => (
                 <button
                   key={k}
                   className="cad-menu-item"
-                  onClick={() => p.onLabelKind(k)}
+                  role="menuitemcheckbox"
+                  aria-checked={p.labelKinds.has(k)}
+                  onClick={() => {
+                    p.onLabelKind(k);
+                    // DEFAULT: turning a type on shows the labels (a choice made with labels off would change nothing on screen)
+                    if (!p.labels && !p.labelKinds.has(k)) p.onLabels(true);
+                  }}
                 >
                   <span
                     className={`cad-check${p.labelKinds.has(k) ? " on" : ""}`}
@@ -135,6 +253,24 @@ export function CadToolbar(p: CadToolbarProps) {
                   {label}
                 </button>
               ))}
+              {/* findings are markers of their own layer (annot/): this row is the same switch as the findings button */}
+              <button
+                className="cad-menu-item"
+                role="menuitemcheckbox"
+                aria-checked={p.findings > 0 && p.showFindings}
+                aria-disabled={!p.findings || undefined}
+                data-tooltip={p.findings ? undefined : "No findings in this model"}
+                style={p.findings ? undefined : { opacity: 0.5, cursor: "default" }}
+                onClick={() => {
+                  if (p.findings) p.onFindings(!p.showFindings);
+                }}
+              >
+                <span className={`cad-check${p.findings > 0 && p.showFindings ? " on" : ""}`}>
+                  {p.findings > 0 && p.showFindings && <Icon name="check" size={12} />}
+                </span>
+                <Icon name="triangle-alert" size={12} />
+                {p.findings ? `Findings · ${p.findings}` : "Findings (none)"}
+              </button>
             </div>
           )}
         </div>
@@ -158,18 +294,22 @@ export function CadToolbar(p: CadToolbarProps) {
         )}
         <IconButton
           icon="move-3d"
-          label="Every interface frame"
+          label={framesLabel(p.availability)}
           tooltipSide="top"
-          pressed={p.frames}
-          onClick={() => p.onFrames(!p.frames)}
+          pressed={p.frames && !noFrames}
+          aria-disabled={noFrames || undefined}
+          className={noFrames ? DISABLED : undefined}
+          onClick={() => {
+            if (!noFrames) p.onFrames(!p.frames);
+          }}
         />
         <ToolbarSeparator />
-        <div className="cad-menu-wrap">
+        <div className="cad-menu-wrap" ref={sectionWrap}>
           <IconButton
             icon="scissors"
-            label="Section"
+            label={cutOn ? "Section view: on (click to remove the cut)" : "Section view"}
             tooltipSide="top"
-            pressed={p.onSections ? Boolean(p.sections?.length) : Boolean(section)}
+            pressed={cutOn}
             onClick={() =>
               p.onSections ? p.onSections(p.sections?.length ? [] : [{ axis: 1, at: 0.5 }]) : p.onSection(section ? null : { axis: 1, at: 0.5 })
             }
@@ -178,14 +318,18 @@ export function CadToolbar(p: CadToolbarProps) {
             icon="chevron-up"
             size="sm"
             className="w-5"
-            label="Section plane"
+            label="Section plane: axis, position, side, scope"
             tooltipSide="top"
             aria-expanded={p.sectionMenu}
-            onClick={() => p.onSectionMenu(!p.sectionMenu)}
+            aria-haspopup="dialog"
+            onClick={() => {
+              if (!p.sectionMenu) p.onLabelMenu(false);
+              p.onSectionMenu(!p.sectionMenu);
+            }}
           />
           {p.sectionMenu && p.onSections && <SectionPlanes {...p} />}
           {p.sectionMenu && !p.onSections && (
-            <div className="cad-menu cad-section">
+            <div className="cad-menu cad-section" role="dialog" aria-label="Section plane">
               <div className="cad-menu-label">Section plane</div>
               <div className="segmented">
                 {(["X", "Y", "Z"] as const).map((a, i) => (
@@ -240,11 +384,7 @@ export function CadToolbar(p: CadToolbarProps) {
           tooltipSide="top"
           pressed={p.xray && p.shells > 0}
           aria-disabled={!p.shells || undefined}
-          className={
-            p.shells
-              ? undefined
-              : "cursor-default opacity-40 hover:bg-transparent"
-          }
+          className={p.shells ? undefined : DISABLED}
           onClick={() => p.shells && p.onXray(!p.xray)}
         />
         {p.findingsControl ?? (p.findings > 0 && (
@@ -276,17 +416,27 @@ export function CadToolbar(p: CadToolbarProps) {
           />
         )}
         <ToolbarSeparator />
-        <ToggleGroup
-          label="Interface direction"
-          tooltipSide="top"
-          options={DIRECTIONS.map((d) => ({
-            id: d.id,
-            icon: d.icon,
-            label: `Interface geometry by ${d.label.toLowerCase().replace(/^d/, "D")}: ${d.hint}`,
-          }))}
-          value={p.direction}
-          onChange={p.onDirection}
-        />
+        <div role="radiogroup" aria-label="Interface geometry" className="flex items-center gap-0.5">
+          {DIRECTIONS.map((d) => {
+            const o = directionOption(d, p.availability);
+            return (
+              <IconButton
+                key={d.id}
+                icon={d.icon}
+                label={o.label}
+                tooltipSide="top"
+                role="radio"
+                aria-checked={p.direction === d.id}
+                pressed={p.direction === d.id && !o.disabled}
+                aria-disabled={o.disabled || undefined}
+                className={o.disabled ? DISABLED : undefined}
+                onClick={() => {
+                  if (!o.disabled) p.onDirection(d.id);
+                }}
+              />
+            );
+          })}
+        </div>
         <ToolbarSeparator />
         <IconButton
           icon="maximize"
@@ -296,7 +446,7 @@ export function CadToolbar(p: CadToolbarProps) {
         />
         <IconButton
           icon="crosshair"
-          label="Look along normal"
+          label={p.canFocus ? "Look along normal: face the selected part" : "Look along normal: select a part first"}
           tooltipSide="top"
           disabled={!p.canFocus}
           onClick={p.onFocus}
@@ -316,14 +466,14 @@ function SectionPlanes(p: CadToolbarProps) {
   const scope = list[0]?.scope;
   const add = nextPlane(list);
   return (
-    <div className="cad-menu cad-section cad-sections">
+    <div className="cad-menu cad-section cad-sections" role="dialog" aria-label="Section planes">
       <div className="cad-menu-label">Section planes</div>
       {list.length === 0 && <div className="cad-section-empty">No plane: add one to cut the model.</div>}
       {list.map((s, i) => (
         <div key={i} className="cad-section-row" data-plane={i}>
           <div className="segmented">
             {AXES.map((a, k) => (
-              <button key={a} className={s.axis === k ? "on" : ""} onClick={() => at(i, { axis: k as 0 | 1 | 2 })}>
+              <button key={a} className={s.axis === k ? "on" : ""} onClick={() => at(i, { axis: k as 0 | 1 | 2 })} aria-label={`Cut across ${a}`} data-tooltip={`Cut across ${a}`}>
                 {a}
               </button>
             ))}

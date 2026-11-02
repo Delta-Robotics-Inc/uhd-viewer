@@ -11,11 +11,19 @@
  * - over the pre-flight thresholds (more than 20,000 draws or 5 M triangles,
  *   from the sidecar counts) the view warns and offers "load coarse" or
  *   "boxes", and never refuses (decision 15);
- * - the stage line appears after 1 s; after 10 s it offers boxes or coarse.
+ * - the stage line appears after 1 s; after 10 s it offers boxes or coarse;
+ * - (R1-B, review 2026-11-01 B1) the screen shows on the first load of a model and when the model shown changes,
+ *   never on a rebuild of the same model: there the old bodies stay on screen and each is swapped when its
+ *   replacement is ready, so a screen over them only flashed (every 4.4 s in the rebuild storm).
  */
 
 export type LoadStage = "idle" | "preflight" | "fetch" | "parse" | "merge" | "upload" | "first-frame" | "ready";
 export type LoadTier = "fine" | "coarse" | "boxes";
+/** A load of a model not yet shown ("load"), or a rebuild of the one on screen swapped in place ("update"). */
+export type LoadMode = "load" | "update";
+
+/** The screen's title for a mode: plain words, never a file name (Kevin, 2026-11-01). */
+export const LOAD_TITLES: Record<LoadMode, string> = { load: "Loading model", update: "Updating model" };
 
 /** Above these, one frame of the model is heavy: warn and offer lighter tiers (never refuse). */
 export const PREFLIGHT_LIMITS = { draws: 20_000, triangles: 5_000_000 } as const;
@@ -36,6 +44,12 @@ export interface Preflight {
 
 export interface LoadSnapshot {
   stage: LoadStage;
+  /** A first load or a model change ("load"), or a rebuild of the model on screen ("update"). */
+  mode: LoadMode;
+  /** "Loading model" or "Updating model". */
+  title: string;
+  /** Counts the loads begun: a new id is a new load (the screen's Escape release lasts one load). */
+  loadId: number;
   /** ms since the load began. */
   ms: number;
   /** ms each finished stage took. */
@@ -54,8 +68,10 @@ export interface LoadSnapshot {
   progress?: number;
   /** Offer boxes or coarse now (heavy model, or a long wait). */
   offerLighter: boolean;
-  /** The screen should show (it stays until the first frame). */
+  /** The screen should show (a load, not an update; it stays until the first frame). */
   visible: boolean;
+  /** An update is under way (no screen: at most a small note, the host's pill says it). */
+  updating: boolean;
   /** Show the stage line (after 1 s). */
   showStage: boolean;
   failedUrls: string[];
@@ -94,7 +110,7 @@ export function sidecarCounts(index: unknown, placements = 1): { draws?: number;
 
 /** The progress events a load produces, in any order (late ones after `ready` are ignored). */
 export type LoadEvent =
-  | { type: "begin"; files: number; bytesTotal?: number; tier?: LoadTier }
+  | { type: "begin"; files: number; bytesTotal?: number; tier?: LoadTier; mode?: LoadMode }
   | { type: "preflight"; preflight: Preflight }
   | { type: "choose"; tier: LoadTier }
   /** Bytes arrived for some file (fetch progress). */
@@ -116,6 +132,8 @@ export type LoadEvent =
 /** The load stage state machine. `now` is injectable for tests. */
 export class LoadTracker {
   private stage: LoadStage = "idle";
+  private mode: LoadMode = "load";
+  private loads = 0;
   private began = 0;
   private stageAt = 0;
   private timings: Partial<Record<LoadStage, number>> = {};
@@ -144,6 +162,8 @@ export class LoadTracker {
   push(e: LoadEvent): LoadSnapshot {
     switch (e.type) {
       case "begin":
+        this.mode = e.mode ?? "load";
+        this.loads++;
         this.began = this.now();
         this.stage = "idle";
         this.timings = {};
@@ -239,7 +259,7 @@ export class LoadTracker {
   snapshot(): LoadSnapshot {
     const ms = this.stage === "idle" ? 0 : this.now() - this.began;
     const f = this.files;
-    let message = "Getting your model ready";
+    let message = LOAD_TITLES[this.mode];
     let progress: number | undefined;
     switch (this.stage) {
       case "preflight":
@@ -273,6 +293,9 @@ export class LoadTracker {
     const loading = this.stage !== "ready" && this.stage !== "idle";
     return {
       stage: this.stage,
+      mode: this.mode,
+      title: LOAD_TITLES[this.mode],
+      loadId: this.loads,
       ms,
       timings: { ...this.timings },
       files: { ...f },
@@ -285,7 +308,8 @@ export class LoadTracker {
       message,
       progress,
       offerLighter: loading && this.tier === "fine" && (this.stage === "preflight" || Boolean(this.pre?.over) || ms > OFFER_LIGHTER_AFTER_MS),
-      visible: loading,
+      visible: loading && this.mode === "load",
+      updating: loading && this.mode === "update",
       showStage: this.stage === "preflight" || (loading && ms > SHOW_STAGE_AFTER_MS),
       failedUrls: [...this.failedUrls],
     };

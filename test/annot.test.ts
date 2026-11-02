@@ -10,6 +10,15 @@ import { findingInputs, locationOf } from "../src/cad/annot/sources";
 import { componentIn, surfacePoint } from "../src/cad/annot/resolve";
 import { markerSvg, REVEAL_MS } from "../src/cad/annot/style";
 import type { ModuleDef } from "@uhd/types/module.js";
+import { afterEach, beforeEach, vi } from "vitest";
+import { summarise, findingSummary, SUMMARY_MAX } from "../src/cad/annot/drc";
+import { anchorOnPart, markerPx } from "../src/cad/annot/resolve";
+import { ANNOT_CSS, CALLOUT_MAX_W, LEADER_PX, LONG_HOVER_MS } from "../src/cad/annot/style";
+import { AnnotLayer, MARKER_MAX_PX, MARKER_PX, STEM_PX, breakable, type AnnotHost } from "../src/cad/annot/layer";
+import { attachWheelForward, canvasIn, forwardWheel, wheelInit } from "../src/cad/annot/wheel";
+import { contrastRatio, luminance, parseHex } from "../src/theme/contrast";
+import { DARK_SCENE_TOKENS, PAPER_SCENE_TOKENS } from "../src/theme/themes";
+import { FakeWheelEvent, installFakeDom, type FakeEl } from "./labels-fakedom";
 
 describe("leaders, option A (PB-1184)", () => {
   it("routes a 45° leg then a shelf, a vertical leg with a 45° chamfer, or a flat run; never another angle", () => {
@@ -255,5 +264,221 @@ describe("refs to what is drawn (PB-1184)", () => {
     const part = { objects: [], box, frame: new THREE.Matrix4(), body: "b" };
     expect(surfacePoint(camera, part, () => new THREE.Vector3(0, 0, 1)).toArray()).toEqual([0, 0, 1]);
     expect(surfacePoint(camera, part, () => undefined).toArray()).toEqual([0, 0, 1]);
+  });
+});
+
+// ---- R1-C: Kevin's walkthrough 2026-11-01 (D1 to D4, M10) --------------------------------------------------------
+
+describe("wheel over a callout zooms the view (D2)", () => {
+  it("copies the wheel event to the canvas and stops the original", () => {
+    const layer = new EventTarget();
+    const canvas = new EventTarget();
+    const got: FakeWheelEvent[] = [];
+    canvas.addEventListener("wheel", (e) => got.push(e as FakeWheelEvent));
+    const off = attachWheelForward(layer, () => canvas, FakeWheelEvent);
+    const e = new FakeWheelEvent("wheel", { deltaY: 53, deltaMode: 1, clientX: 410, clientY: 222, shiftKey: true, bubbles: true, cancelable: true });
+    layer.dispatchEvent(e);
+    expect(got).toHaveLength(1);
+    expect(got[0]).not.toBe(e);
+    expect([got[0].deltaY, got[0].deltaMode, got[0].clientX, got[0].clientY, got[0].shiftKey]).toEqual([53, 1, 410, 222, true]);
+    expect(e.defaultPrevented).toBe(true);
+    // no target: nothing forwarded, the page keeps its own behaviour
+    expect(forwardWheel(new FakeWheelEvent("wheel", { cancelable: true }) as unknown as WheelEvent, null, FakeWheelEvent)).toBe(false);
+    off();
+    layer.dispatchEvent(new FakeWheelEvent("wheel", { deltaY: 1 }));
+    expect(got).toHaveLength(1);
+    expect(wheelInit(e as unknown as WheelEvent)).toMatchObject({ deltaY: 53, bubbles: true, cancelable: true });
+  });
+});
+
+describe("DRC markers attach to the part (D1)", () => {
+  it("finds the part's surface under the top centre of its bounds, not the air above a tilted model", () => {
+    // a tilted slab: its bounds' top centre is in the air (the ClientX USB-C case)
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(40, 10, 4));
+    slab.rotation.y = 0.6;
+    slab.position.set(0, 0, 10);
+    slab.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(slab);
+    const part = { objects: [slab], box, frame: new THREE.Matrix4(), body: "pcb" };
+    const camera = new THREE.PerspectiveCamera(40, 1, 1, 2000);
+    camera.position.set(0, -300, 200);
+    camera.lookAt(0, 0, 10);
+    camera.updateMatrixWorld();
+    const pick = (ray: THREE.Ray, roots: THREE.Object3D[]) => new THREE.Raycaster(ray.origin, ray.direction).intersectObjects(roots, true)[0]?.point;
+    const p = anchorOnPart(camera, part, pick);
+    const top = new THREE.Vector3((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.max.z);
+    // on the slab's surface (a hit on its meshes), below the bounds' top
+    expect(p.z).toBeLessThan(top.z - 1);
+    const down = new THREE.Raycaster(new THREE.Vector3(p.x, p.y, 100), new THREE.Vector3(0, 0, -1)).intersectObject(slab)[0];
+    expect(down.point.distanceTo(p)).toBeLessThan(1e-6);
+    // nothing to hit: the bounds' top centre as before
+    expect(anchorOnPart(camera, { ...part, objects: [] }, () => undefined).toArray()).toEqual(top.toArray());
+  });
+
+  it("sizes markers from the part on screen, never under the minimum", () => {
+    expect(markerPx(undefined, MARKER_PX, MARKER_MAX_PX)).toBe(16);
+    expect(markerPx(10, MARKER_PX, MARKER_MAX_PX)).toBe(16);
+    expect(markerPx(70, MARKER_PX, MARKER_MAX_PX)).toBe(21);
+    expect(markerPx(900, MARKER_PX, MARKER_MAX_PX)).toBe(26);
+    expect(MARKER_PX).toBe(16);
+    expect(STEM_PX).toBeGreaterThan(0);
+  });
+});
+
+describe("callout cards (D3, D4, M10)", () => {
+  it("summarises a diagnostic in one clause, parentheticals dropped", () => {
+    expect(summarise("controller/sensors/pspin_4 is linked 2 times (controller/sensors/i2c0_sda.ps.pin_4+i2c0_sda.controller.i2c0_sda) but supports 1.")).toBe(
+      "controller/sensors/pspin_4 is linked 2 times but supports 1.",
+    );
+    expect(summarise("12 V DC output (plug centre) ↔ CENTER (+): incompatible – no compatible protocol/role between psu:dc_12v_out and pcb/power/power_in/n12v_dc:pin_1")).toBe("12 V DC output ↔ CENTER: incompatible");
+    const long = summarise("word ".repeat(80));
+    expect(long.length).toBeLessThanOrEqual(SUMMARY_MAX);
+    expect(long.endsWith("…")).toBe(true);
+    expect(findingSummary({ code: "A_B", message: "m (x).", severity: "warn", rows: [] } as never).description).toBe("m.");
+  });
+
+  it("breaks long tokens at their separators", () => {
+    const b = breakable("pcb/controller/sensors/i2c0_sda.ps.pin_4");
+    expect(b.replace(/​/g, "")).toBe("pcb/controller/sensors/i2c0_sda.ps.pin_4");
+    expect(b.split("​")).toHaveLength(8);
+    expect(breakable("a / b.")).toBe("a / b.");
+  });
+
+  it("styles the card: app radius, a 1 px outline in the tone, wrap at 320 px, line clamps, a thicker leader", () => {
+    expect(LEADER_PX).toBe(1.75);
+    expect(CALLOUT_MAX_W).toBe(320);
+    expect(ANNOT_CSS).toMatch(/\.annot-sheet \{[^}]*border-radius: var\(--uhd-radius/);
+    expect(ANNOT_CSS).toMatch(/\.annot-sheet \{[^}]*border: 1px solid var\(--uhd-callout-border/);
+    expect(ANNOT_CSS).toMatch(/\.annot-sheet \{[^}]*max-width: 320px/);
+    expect(ANNOT_CSS).toContain(".cad-annot .annot-sheet.tone-warn { border-color: var(--uhd-drc-warning");
+    expect(ANNOT_CSS).toContain("-webkit-line-clamp: 4");
+    expect(ANNOT_CSS).not.toMatch(/border-bottom: var\(--uhd-callout-leader-width/);
+    for (const set of [PAPER_SCENE_TOKENS, DARK_SCENE_TOKENS]) {
+      expect(set.calloutLeaderWidth).toBe("1.75px");
+      // the card is a step off the void, and its outline reads on it
+      const [card, ground] = [luminance(parseHex(set.calloutSurface)!), luminance(parseHex(set.sceneBackground)!)];
+      expect(Math.abs(card - ground)).toBeGreaterThan(0.005);
+      expect(contrastRatio(set.calloutSurface, set.sceneBackground)).toBeGreaterThan(1.05);
+      expect(contrastRatio(set.calloutBorder, set.calloutSurface)).toBeGreaterThan(1.3);
+    }
+  });
+});
+
+describe("hover tiers on a marker, in a page (D3, stand-in DOM)", () => {
+  let dom: ReturnType<typeof installFakeDom>;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    dom = installFakeDom();
+  });
+  afterEach(() => {
+    dom.restore();
+    vi.useRealTimers();
+  });
+
+  it("short hover: the title; long hover: the description; click: pinned with the raw rows, and the Inspector asked", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 4));
+    mesh.position.set(0, 0, 2);
+    mesh.updateMatrixWorld(true);
+    const part = { objects: [mesh], box: new THREE.Box3().setFromObject(mesh), frame: new THREE.Matrix4(), body: "pcb" };
+    const calls: string[] = [];
+    const host: AnnotHost = {
+      resolve: (ref) => (ref === "pcb" ? part : null),
+      pickOn: (ray, roots) => new THREE.Raycaster(ray.origin, ray.direction).intersectObjects(roots, true)[0]?.point,
+      firstHit: () => undefined,
+      onFinding: (id, a) => calls.push(`${a}:${id}`),
+      onInspect: (id, ref) => calls.push(`inspect:${id}:${ref}`),
+    };
+    const [f] = findingsAnchors(
+      [{ code: "UHD_INTERFACE_REUSE", severity: "error", message: "controller/sensors/pspin_4 is linked 2 times (a.b+c.d) but supports 1.", entity: { kind: "instance", id: "pcb" }, validator: "uhd-viewer/system" } as never],
+      [{ key: "pcb" }],
+    );
+    const markers = drcMarkers([f], new Set(DEFAULT_SHOWN));
+    expect(markers).toHaveLength(1);
+    const layer = new AnnotLayer(dom.host as unknown as HTMLElement, host);
+    const open = new Set<string>();
+    layer.setInput({ records: [], markers, open, presence: [], ghosts: true, motion: false });
+    const camera = new THREE.PerspectiveCamera(40, 1440 / 900, 1, 2000);
+    camera.position.set(0, -120, 160);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    layer.update(camera, 1440, 900);
+    const root = layer.root as unknown as FakeEl;
+    const hit = root.find("annot-hit")[0];
+    expect(hit).toBeDefined();
+    // the marker's terminal dot sits on the part's top face (z 4): a sprite in the overlay group at the surface
+    const dot = layer.group.children.find((o) => (o as THREE.Sprite).isSprite && Math.abs(o.position.z - 4) < 2);
+    expect(dot).toBeDefined();
+    const sheet = () => root.find("annot-sheet").find((e) => !e.classList.contains("closed"));
+    hit.dispatchEvent(new Event("pointerenter"));
+    vi.advanceTimersByTime(60);
+    layer.update(camera, 1440, 900);
+    expect(layer.hoverState()).toEqual({ key: markers[0].key, tier: "short" });
+    expect(sheet()!.text()).toContain("UHD INTERFACE REUSE");
+    expect(sheet()!.find("annot-desc")).toHaveLength(0);
+    expect(sheet()!.find("annot-rows")).toHaveLength(0);
+    vi.advanceTimersByTime(LONG_HOVER_MS);
+    layer.update(camera, 1440, 900);
+    expect(layer.hoverState().tier).toBe("long");
+    const desc = sheet()!.find("annot-desc");
+    expect(desc).toHaveLength(1);
+    expect(desc[0].textContent.replace(/​/g, "")).toBe("controller/sensors/pspin_4 is linked 2 times but supports 1.");
+    expect(sheet()!.find("annot-rows")).toHaveLength(0);
+    // click: pinned and the host's Inspector asked
+    hit.dispatchEvent(new Event("click"));
+    expect(calls).toContain(`open:${f.id}`);
+    expect(calls).toContain(`inspect:${f.id}:pcb`);
+    open.add(f.id);
+    hit.dispatchEvent(new Event("pointerleave"));
+    layer.update(camera, 1440, 900);
+    const pinned = sheet()!;
+    expect(pinned.find("annot-rows")).toHaveLength(1);
+    expect(pinned.text()).toContain("AT");
+    expect(pinned.text()).toContain("BY");
+    layer.dispose();
+  });
+
+  it("a wheel over the layer reaches the canvas", () => {
+    const g = globalThis as { WheelEvent?: unknown };
+    const had = g.WheelEvent;
+    g.WheelEvent = FakeWheelEvent;
+    try {
+      const host: AnnotHost = { resolve: () => null, pickOn: () => undefined, firstHit: () => undefined };
+      const layer = new AnnotLayer(dom.host as unknown as HTMLElement, host);
+      const canvas = canvasIn(dom.host as unknown as Element) as unknown as FakeEl;
+      expect(canvas.tagName).toBe("CANVAS");
+      let n = 0;
+      canvas.addEventListener("wheel", () => n++);
+      // the stand-in has no bubbling from children, so the event starts on the root; the browser check is in progress.md
+      (layer.root as unknown as FakeEl).dispatchEvent(new FakeWheelEvent("wheel", { deltaY: -100, cancelable: true }));
+      expect(n).toBe(1);
+      layer.dispose();
+    } finally {
+      g.WheelEvent = had;
+    }
+  });
+});
+
+describe("the Findings button's glyph and empty state (R1-D handoff, G4)", () => {
+  it("every marker glyph carries the SVG namespace (without it the parsed <svg> draws nothing)", async () => {
+    const { SVG_NS } = await import("../src/cad/annot/style");
+    for (const s of ["fail", "risk", "warn", "info", "pass", "unknown"] as const) {
+      const svg = markerSvg(s, 15);
+      expect(svg.startsWith(`<svg xmlns="${SVG_NS}"`)).toBe(true);
+      expect(SVG_NS).toBe("http://www.w3.org/2000/svg");
+      // one root element, closed
+      expect(svg.match(/<svg\b/g)).toHaveLength(1);
+      expect(svg.endsWith("</svg>")).toBe(true);
+    }
+  });
+
+  it("says when no finding is placed in this view", async () => {
+    const { findingsPlacement } = await import("../src/cad/annot/drc");
+    const none = findingsAnchors([{ code: "X", severity: "error", message: "m", entity: { kind: "project", id: "p" } } as never], [{ key: "pcb" }]);
+    expect(findingsPlacement(none)).toEqual({ total: 1, placed: 0, empty: true, note: "No findings placed in this view" });
+    const some = findingsAnchors([{ code: "X", severity: "error", message: "m", entity: { kind: "instance", id: "pcb" } } as never], [{ key: "pcb" }]);
+    expect(findingsPlacement(some)).toMatchObject({ placed: 1, empty: false });
+    // the layer's drawn count wins (anchored, but its part not drawn in this scope)
+    expect(findingsPlacement(some, 0).empty).toBe(true);
+    expect(findingsPlacement([]).empty).toBe(false);
   });
 });

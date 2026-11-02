@@ -303,6 +303,16 @@ export interface ViewerSelection {
    * path from the root. `id` is the first of them.
    */
   ids?: string[];
+  /**
+   * 3D view only (R1-A, M2), present only when a component drawn inside a body (a part on a board) is picked: the
+   * component's instance path from the root (`pcb/controller/usb/usbc`; `id` is the same path). A pick of a whole
+   * body has none of these three.
+   */
+  component?: string;
+  /** With `component`: the instance path of the body that draws it (`pcb`). */
+  holder?: string;
+  /** With `component`: that body's definition id. */
+  holderDefId?: string;
 }
 
 /** Host → viewer messages (`window.postMessage`, or the handle's methods). */
@@ -337,7 +347,14 @@ export type ViewerHostMessage =
    * The person takes the view and the scene back from every agent at once (a "Take over" button, Esc): every
    * agent lease is revoked and the camera is the person's (PB-1196, collaboration D9).
    */
-  | { type: "uhd-viewer:takeOver" };
+  | { type: "uhd-viewer:takeOver" }
+  /**
+   * Pin a finding's callout open in the 3D view (a check row clicked in the host's Inspector, after a `focus` on its
+   * module): `id` is the view's finding id (`drc:<code>:<entity kind>:<entity id>`); when no finding has that id or
+   * its repeats, the first finding with `code` that names `path` (from the root) or a part under it. The findings
+   * layer is turned on. Ignored on the diagram.
+   */
+  | { type: "uhd-viewer:openFinding"; id: string; code: string; path?: string };
 
 /** Viewer → host events (posted to the parent window, or the options' callbacks). */
 export type ViewerEvent =
