@@ -132,3 +132,107 @@ export function shortRecordId(id: string, max = 128): string {
   const hash = `${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
   return `${id.slice(0, max - hash.length - 1)}~${hash}`;
 }
+
+/**
+ * The body a component is drawn in (R1-A): the model's own map first (`within`), else the longest drawn body whose
+ * path is an ancestor of the component's (a board's part that the bundle does not list). Undefined for a path that
+ * is itself a body, or lies under no body.
+ */
+export function holderOfPath(path: string, bodyKeys: Iterable<string>, within?: ReadonlyMap<string, string>): string | undefined {
+  const known = within?.get(path);
+  if (known !== undefined) return known;
+  let best: string | undefined;
+  for (const key of bodyKeys) {
+    const k = pathOf(key);
+    if (k === path) return undefined;
+    if (!holdsPath(key, path)) continue;
+    if (best === undefined || key.length > best.length) best = key;
+  }
+  return best;
+}
+
+/** What glows and how (R1-A, items A1, A2, M5). */
+export interface GlowPlan {
+  /** Bodies drawn in the selection colour (the orange focus surface): a body picked on its own, or an assembly's parts. */
+  selected: Set<string>;
+  /** Bodies drawn with the highlight glow (what an agent points at), when not selected. */
+  highlighted: Set<string>;
+  /** The selected component inside its holder body (the holder itself does not glow, A2). */
+  component?: { holder: string; path: string };
+  /** Highlighted components inside their holder bodies (A1: a highlight path below a body names a component). */
+  components: { holder: string; path: string }[];
+  /** Harnesses with the highlight glow (the selected harness is drawn selected instead). */
+  harnesses: Set<string>;
+}
+
+/**
+ * Which bodies, components and harnesses the selection and the highlight light up (R1-A). Rules:
+ * - a body is selected when the selection names it (or, for an assembly with no body of its own, lies under it),
+ *   and only when no component or interface is picked: a component pick lights the component, never its holder
+ *   board (A2); an interface pick lights the interface's geometry only (gate R1);
+ * - a highlight path that matches a drawn body (or an assembly over bodies) glows those bodies; one that lies
+ *   below a body names a component of it, which glows inside its holder (A1);
+ * - the selection wins over a highlight on the same thing.
+ */
+export function glowPlan(input: {
+  bodies: Iterable<string>;
+  harnesses?: Iterable<string>;
+  selection: { body?: string; component?: string; harness?: string; iface?: string };
+  highlight: readonly string[];
+  within?: ReadonlyMap<string, string>;
+}): GlowPlan {
+  const keys = [...input.bodies];
+  const sel = input.selection;
+  const selected = new Set<string>();
+  const highlighted = new Set<string>();
+  let component: GlowPlan["component"];
+  if (sel.component !== undefined) {
+    const holder = sel.body !== undefined && keys.includes(sel.body) ? sel.body : holderOfPath(sel.component, keys, input.within);
+    if (holder !== undefined) component = { holder, path: sel.component };
+  } else if (sel.body !== undefined && sel.iface === undefined) {
+    // gate R1: an interface pick draws the interface in the accent (CadView's overlay); its body keeps its own look,
+    // else the interface is accent on accent and cannot be seen
+    for (const key of keys) if (key === sel.body || (sel.body !== "" && pathOf(key).startsWith(`${sel.body}/`))) selected.add(key);
+  }
+  const components: GlowPlan["components"] = [];
+  for (const p of input.highlight) {
+    const bodies = keys.filter((k) => matchesPath(k, p));
+    if (bodies.length) {
+      for (const k of bodies) if (!selected.has(k)) highlighted.add(k);
+      continue;
+    }
+    const holder = holderOfPath(p, keys, input.within);
+    if (holder === undefined || (component && component.path === p)) continue;
+    if (!components.some((c) => c.path === p)) components.push({ holder, path: p });
+  }
+  const harnesses = new Set<string>();
+  for (const h of input.harnesses ?? []) if (h !== sel.harness && input.highlight.some((p) => matchesPath(h, p))) harnesses.add(h);
+  return { selected, highlighted, ...(component ? { component } : {}), components, harnesses };
+}
+
+/**
+ * What a host's focus on `key` (a path in this view's scope) selects (R1-A): the body it names; a component inside
+ * the body that draws it (the model's map, else the nearest body above it: never that body alone, which painted the
+ * whole board, A2); an assembly drawn by its parts. Undefined when nothing drawn answers to it.
+ */
+export function focusSelection(key: string, bodyKeys: readonly string[], within?: ReadonlyMap<string, string>): { body: string; component?: string } | undefined {
+  if (bodyKeys.includes(key)) return { body: key };
+  const known = within?.get(key);
+  if (known !== undefined) return { body: known, component: key };
+  // an assembly drawn by its parts (an FC + ESC stack): selected as the group of them (QA B4)
+  if (key !== "" && bodyKeys.some((b) => pathOf(b).startsWith(`${key}/`))) return { body: key };
+  const holder = holderOfPath(key, bodyKeys);
+  return holder !== undefined ? { body: holder, component: key } : undefined;
+}
+
+/**
+ * Whether a host's focus is new to the page (R1-A, A2): the 3D view remounts on a rebuild or a tab switch, and the
+ * shell's last focus (an old hierarchy click) must not select again after the person cleared it. Remembered per
+ * focus object for the page's lifetime.
+ */
+const focusSeen = new WeakSet<object>();
+export function freshFocus(focus: object): boolean {
+  if (focusSeen.has(focus)) return false;
+  focusSeen.add(focus);
+  return true;
+}

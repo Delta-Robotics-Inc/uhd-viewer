@@ -34,6 +34,7 @@ import * as THREE from "three";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
 import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, createScene, type QualityReport, type SceneHandle } from "./scene";
 import { IconButton, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
+import { ViewGlyph } from "./viewIcons";
 import { cx } from "../ui/cx";
 import { FEATURE_COUNT, GCODE_FEATURES, TRAVEL } from "../gcode/features";
 import { buildGcodeDraw, type GcodeDraw } from "../gcode/geometry";
@@ -61,10 +62,11 @@ export interface GcodeViewInfo {
 }
 
 type ViewDir = "iso" | "top" | "front";
-const VIEWS: { id: ViewDir; icon: string; label: string; dir: [number, number, number] }[] = [
-  { id: "iso", icon: "box", label: "Isometric view", dir: [1, -1.2, 0.9] },
-  { id: "top", icon: "arrow-down-to-dot", label: "Top view", dir: [0, -0.0001, 1] },
-  { id: "front", icon: "square", label: "Front view", dir: [0, -1, 0.0001] },
+// the standard-view glyphs shared with ModelView (./viewIcons.tsx, R1-D E2)
+const VIEWS: { id: ViewDir; label: string; dir: [number, number, number] }[] = [
+  { id: "iso", label: "Isometric view", dir: [1, -1.2, 0.9] },
+  { id: "top", label: "Top view", dir: [0, -0.0001, 1] },
+  { id: "front", label: "Front view", dir: [0, -1, 0.0001] },
 ];
 
 const hms = (s: number) => {
@@ -336,7 +338,7 @@ export function GcodeView({ url, text, file, name, parseOptions, onReady, classN
           {VIEWS.map((v) => (
             <IconButton
               key={v.id}
-              icon={v.icon}
+              icon={<ViewGlyph face={v.id} />}
               label={v.label}
               tooltipSide="top"
               pressed={view === v.id}

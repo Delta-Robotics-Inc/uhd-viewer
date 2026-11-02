@@ -112,3 +112,32 @@ export function towardCamera(p: THREE.Vector3, camera: THREE.PerspectiveCamera, 
 
 /** World units per CSS pixel at distance `d` (perspective camera). */
 export const worldPerPx = (camera: THREE.PerspectiveCamera, d: number, height: number) => (2 * Math.tan(((camera.fov ?? 50) * Math.PI) / 360) * d) / Math.max(1, height);
+
+/**
+ * Where a DRC marker attaches to a part (walkthrough D1: "the callout should be attached to the part, it should not
+ * be floating above it"): a point on the part's own surface nearest the top centre of its bounds. The bounds of an
+ * oversized or tilted model (the ClientX USB-C) put that top centre in the air, so the point is found on the
+ * meshes: first straight down (world -Z, UHD is Z-up) through the top centre, which does not depend on the camera
+ * (the marker does not slide while orbiting); then along the camera's ray to the top centre; then the visible
+ * surface toward the part's centre (surfacePoint); else the top centre itself. Depth testing stays as before.
+ */
+export function anchorOnPart(camera: THREE.Camera, part: PartHit, pick: (ray: THREE.Ray, roots: THREE.Object3D[]) => THREE.Vector3 | undefined): THREE.Vector3 {
+  const b = part.box;
+  const top = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, b.max.z);
+  const lift = Math.max(1, (b.max.z - b.min.z) * 0.5);
+  const down = pick(new THREE.Ray(top.clone().add(new THREE.Vector3(0, 0, lift)), new THREE.Vector3(0, 0, -1)), part.objects);
+  if (down && down.z >= b.min.z - 1e-3) return down;
+  const origin = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  const dir = top.clone().sub(origin);
+  if (dir.lengthSq() > 1e-12) {
+    const hit = pick(new THREE.Ray(origin, dir.normalize()), part.objects);
+    if (hit) return hit;
+  }
+  return surfacePoint(camera, part, pick);
+}
+
+/** The marker's size on screen (walkthrough D1): a share of the part's screen size, never under `min` px. */
+export function markerPx(partScreenDiag: number | undefined, min: number, max: number, share = 0.3): number {
+  const want = (partScreenDiag ?? 0) * share;
+  return Math.round(Math.min(max, Math.max(min, Number.isFinite(want) ? want : min)));
+}

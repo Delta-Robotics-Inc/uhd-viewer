@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { LoadTracker, LoadingScreen, loadLine, preflight, preflightFromSidecars, sidecarCounts, trianglePoint } from "../src/cad/loading";
+import { LoadTracker, LoadingScreen, MARK_PATH, SCRIM_OPACITY, attachLoadTracker, loadLine, loadMode, preflight, preflightFromSidecars, sidecarCounts, trianglePoint } from "../src/cad/loading";
+import type { LoadState } from "../src/cad/render/observe";
 
 function clock() {
   let t = 1000;
@@ -123,7 +124,9 @@ describe("loading screen", () => {
     tr.push({ type: "begin", files: 2 });
     c.advance(2000);
     const html = renderToStaticMarkup(createElement(LoadingScreen, { state: tr.snapshot() }));
-    expect(html).toContain("Getting your model ready");
+    // R1-B (B3): plain words, no file names
+    expect(html).toContain("Loading model");
+    expect(html).not.toContain("Getting your model ready");
     expect(html).toContain("Fetching parts (0 of 2)");
     expect(html).toContain('data-stage="fetch"');
     expect(html).toContain("cad-loading-dot");
@@ -151,5 +154,140 @@ describe("loading screen", () => {
     expect(p[0]).toBeGreaterThan(11);
     expect(p[0]).toBeLessThan(89);
     expect(trianglePoint(1)).toEqual(trianglePoint(0));
+  });
+});
+
+/** A CadView LoadState as its load effect reports it. */
+const ls = (phase: LoadState["phase"], total: number, done: number): LoadState => ({ phase, total, done, failed: 0, bytes: 0, swapped: 0, kept: 0, started: 0, ms: 0 });
+
+/** One load as CadView reports it: begin, the bodies arriving, ready, then the first frame. */
+function runLoad(t: ReturnType<typeof attachLoadTracker>, files: number, model?: string) {
+  const seen: boolean[] = [];
+  const watch = () => seen.push(t.tracker.snapshot().visible);
+  t.loadState(ls("loading", files, 0), model);
+  watch();
+  for (let i = 1; i <= files; i++) {
+    t.loadState(ls("loading", files, i), model);
+    watch();
+  }
+  t.loadState(ls("ready", files, files), model);
+  watch();
+  t.frame();
+  watch();
+  return seen;
+}
+
+describe("the loading screen's lifecycle (R1-B, B1: no screen on a rebuild)", () => {
+  it("shows on the first load of a model, not on a rebuild of it, and again when the model changes", () => {
+    const t = attachLoadTracker(new LoadTracker(clock().now));
+    try {
+      // first load: the screen until the first frame
+      expect(runLoad(t, 3, "clientx|")).toEqual([true, true, true, true, true, false]);
+      expect(t.tracker.snapshot()).toMatchObject({ stage: "ready", visible: false, mode: "load", title: "Loading model" });
+      // the dev server rebuilt: the same model is swapped in place, the screen never mounts
+      const updates = runLoad(t, 3, "clientx|");
+      expect(updates.every((v) => v === false)).toBe(true);
+      // while it ran, the snapshot said "Updating model" and that an update was under way
+      t.loadState(ls("loading", 2, 0), "clientx|");
+      expect(t.tracker.snapshot()).toMatchObject({ mode: "update", title: "Updating model", visible: false, updating: true });
+      t.loadState(ls("ready", 2, 2), "clientx|");
+      t.frame();
+      expect(t.tracker.snapshot()).toMatchObject({ visible: false, updating: false });
+      // another model (a level, a different system): a load again
+      expect(runLoad(t, 2, "clientx|pcb")[0]).toBe(true);
+      // and back to a model already shown before the last one: a load (the one on screen changed)
+      expect(runLoad(t, 2, "clientx|")[0]).toBe(true);
+    } finally {
+      t.detach();
+    }
+  });
+
+  it("treats every load after the first as an update when the view names no model (until CadView passes it)", () => {
+    const t = attachLoadTracker(new LoadTracker(clock().now));
+    try {
+      expect(runLoad(t, 1)[0]).toBe(true);
+      expect(runLoad(t, 1).some(Boolean)).toBe(false);
+      expect(runLoad(t, 4).some(Boolean)).toBe(false);
+    } finally {
+      t.detach();
+    }
+  });
+
+  it("keeps the first load's screen when a rebuild lands before the first frame", () => {
+    const t = attachLoadTracker(new LoadTracker(clock().now));
+    try {
+      t.loadState(ls("loading", 3, 0), "m");
+      t.loadState(ls("loading", 3, 1), "m");
+      // the effect restarts for a new bundle mid-load: still loading, still the screen (no second begin)
+      t.loadState(ls("loading", 3, 0), "m");
+      expect(t.tracker.snapshot()).toMatchObject({ visible: true, mode: "load" });
+    } finally {
+      t.detach();
+    }
+  });
+
+  it("decides the mode from what was shown", () => {
+    expect(loadMode(false, undefined, "a")).toBe("load");
+    expect(loadMode(true, "a", "a")).toBe("update");
+    expect(loadMode(true, "a", "b")).toBe("load");
+    expect(loadMode(true, undefined, undefined)).toBe("update");
+  });
+
+  it("numbers the loads, so an Escape release lasts one load", () => {
+    const tr = new LoadTracker(clock().now);
+    tr.push({ type: "begin", files: 1 });
+    const a = tr.snapshot().loadId;
+    tr.push({ type: "begin", files: 1, mode: "update" });
+    expect(tr.snapshot().loadId).toBe(a + 1);
+  });
+});
+
+describe("the loading screen's look (R1-B, B3 and B4)", () => {
+  const loading = () => {
+    const c = clock();
+    const tr = new LoadTracker(c.now);
+    tr.push({ type: "begin", files: 4 });
+    c.advance(1500);
+    tr.push({ type: "file", url: "a", bytes: 1 });
+    return tr.snapshot();
+  };
+
+  it("draws the Protoboard mark in its triangle, the title, the stage and the bar", () => {
+    const html = renderToStaticMarkup(createElement(LoadingScreen, { state: loading() }));
+    expect(html).toContain(MARK_PATH.slice(0, 40));
+    expect(html).toContain("cad-loading-mark");
+    expect(html).toContain("cad-loading-dot head");
+    expect(html).toContain(">Loading model<");
+    expect(html).toContain("Fetching parts (1 of 4");
+    expect(html).toContain("cad-loading-bar");
+    expect(html).not.toMatch(/\.glb|\.step|\.json/);
+  });
+
+  it("lays a translucent scrim in the theme's scene colour, never a literal light fallback", () => {
+    const html = renderToStaticMarkup(createElement(LoadingScreen, { state: loading() }));
+    expect(html).toContain(`color-mix(in srgb,var(--uhd-scene-background,var(--uhd-background,#131313)) ${Math.round(SCRIM_OPACITY * 100)}%,transparent)`);
+    expect(SCRIM_OPACITY).toBeGreaterThan(0.3);
+    expect(SCRIM_OPACITY).toBeLessThan(0.75);
+    // the old names were not theme tokens and fell back to white
+    expect(html).not.toContain("--uhd-bg");
+    expect(html).not.toContain("--uhd-line");
+    expect(html).not.toMatch(/#fff/);
+    expect(html).toContain("var(--uhd-overlay");
+  });
+
+  it("soft-locks input while it shows (Escape releases it) and says how", () => {
+    const html = renderToStaticMarkup(createElement(LoadingScreen, { state: loading() }));
+    expect(html).toContain("data-locked");
+    expect(html).toContain('data-mode="load"');
+    expect(html).toContain("pointer-events:auto");
+    expect(html).toContain("Esc to look around while it loads");
+    expect(html).toContain(".cad-loading-screen.released{background:transparent;pointer-events:none");
+  });
+
+  it("renders nothing for an update of the model on screen", () => {
+    const tr = new LoadTracker(clock().now);
+    tr.push({ type: "begin", files: 2, mode: "update" });
+    expect(tr.snapshot()).toMatchObject({ visible: false, updating: true, title: "Updating model" });
+    expect(renderToStaticMarkup(createElement(LoadingScreen, { state: tr.snapshot() }))).toBe("");
   });
 });

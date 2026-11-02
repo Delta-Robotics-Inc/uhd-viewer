@@ -23,27 +23,22 @@
  */
 import * as THREE from "three";
 import { authorLabel, type AnnotRecord } from "./record";
-import { anchorKey, findingCard, type DrcMarker } from "./drc";
+import { anchorKey, findingSummary, type DrcMarker } from "./drc";
 import type { FindingAnchors, FindingSeverity } from "./findings-anchors";
 import { leaderPath, polylineLength, type Box, type Pt } from "./leader";
 import { placeLabels, screenBox, type PlaceItem } from "./place";
-import { surfacePoint, towardCamera, worldPerPx, type PartHit } from "./resolve";
-import { DRC_COLOURS, REVEAL_MS, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg } from "./style";
+import { anchorOnPart, markerPx, surfacePoint, towardCamera, worldPerPx, type PartHit } from "./resolve";
+import { CALLOUT_RADIUS_PX, DRC_COLOURS, LEADER_PX, LONG_HOVER_MS, REVEAL_MS, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg, svgNode } from "./style";
+import { attachWheelForward, canvasIn } from "./wheel";
 
 /**
- * A constant SVG string (./style.ts markerSvg) as DOM nodes, parsed as XML by DOMParser (no HTML parsing into the
- * page, no script runs; W4-D: the textContent rule). An unparsable string gives an empty span.
+ * Break opportunities in long tokens (walkthrough M10): a zero-width space after "/", "." and "_" so an instance
+ * path ("pcb/controller/sensors/i2c0_sda.ps.pin_4") wraps at its separators instead of being clipped mid-token.
+ * Text only (set with textContent); the aria-label keeps the plain string.
  */
-export function svgNode(svg: string): Node {
-  try {
-    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-    const root = doc.documentElement;
-    if (root && root.nodeName === "svg" && !doc.getElementsByTagName("parsererror").length) return document.importNode(root, true);
-  } catch {
-    /* no DOMParser */
-  }
-  return document.createElement("span");
-}
+export const breakable = (s: string): string => s.replace(/([/._])(?=\S)/g, "$1\u200b");
+
+export { svgNode } from "./style";
 
 export interface AnnotHost {
   /** The part a ref names (null: nothing drawn holds it: the record is an orphan). */
@@ -57,6 +52,11 @@ export interface AnnotHost {
   firstHit(ray: THREE.Ray, maxDistance?: number, exclude?: Set<THREE.Object3D>): { object: THREE.Object3D; distance: number; point: THREE.Vector3 } | undefined;
   prepare?: () => void;
   onFinding?: (id: string, action: "open" | "close" | "hover") => void;
+  /**
+   * A click on a marker or its card (walkthrough D3: "click opens the inspector"): the host shows the finding's
+   * detail in the Inspector (the view sends its `uhd-viewer:inspect` message for `ref`; R1-E wires the Inspector).
+   */
+  onInspect?: (findingId: string, ref: string | undefined) => void;
   onLookAt?: (ref: string) => void;
   onDismiss?: (recordId: string) => void;
 }
@@ -82,6 +82,13 @@ export interface AnnotInput {
   ghosts: boolean;
   /** Reveal animations (off in document mode and with reduced motion: labels show at once). */
   motion: boolean;
+  /**
+   * Whether markers may look for their part's surface now (default true). Finding it raycasts the part, which builds
+   * its BVH: on ClientX 11 builds, 177 ms, in the middle of the model's load, which put time to settled from 2.35 s
+   * to 2.8-3.1 s (wave R1 gate). The host passes false until the view has settled; a marker without its own point
+   * and not yet anchored waits until then (DEFAULT).
+   */
+  anchorParts?: boolean;
 }
 
 export interface AnnotStatus {
@@ -93,6 +100,9 @@ export interface AnnotStatus {
   /** What it points at (instance path from the shown module). */
   ref?: string;
 }
+
+/** DEFAULT (gate R1): after the host allows it (the view settled), markers wait this long before looking for their part's surface; a frame drawn later anchors at once. */
+export const ANCHOR_DELAY_MS = 400;
 
 /** DEFAULT (PB-1184): open callouts above this many collapse to numbered pins (round 1 said about 8; 12 is the brief's drone test). */
 export const MAX_OPEN_CALLOUTS = 12;
@@ -131,7 +141,16 @@ export const ANCHOR_CANDIDATES: [number, number, number][] = [
 ];
 /** DEFAULT: dot and marker sizes in CSS px. */
 export const DOT_PX = 7;
+/**
+ * A DRC marker's smallest size on screen (walkthrough D1: markers were tiny on a busy board). It grows with the
+ * part's size on screen (resolve.ts markerPx) up to MARKER_MAX_PX. DEFAULT 16 and 26 px (R1-C).
+ */
 export const MARKER_PX = 16;
+export const MARKER_MAX_PX = 26;
+/** The marker's stem: from the dot on the part's surface up to the marker, in CSS px (walkthrough D1). DEFAULT 12 (R1-C). */
+export const STEM_PX = 12;
+/** The terminal dot where the stem meets the part. DEFAULT 5 px (R1-C). */
+export const TERMINAL_DOT_PX = 5;
 
 interface LabelView {
   id: string;
@@ -231,6 +250,19 @@ export class AnnotLayer {
   private arrows = new Map<string, { line: SVGPathElement; head: SVGPathElement }>();
   private hovered: string | undefined;
   private hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The hover tier of the hovered marker's card (walkthrough D3): the title only, then the one-line description. */
+  private hoverTier: "short" | "long" = "short";
+  private longTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A marker's point on its part, in its body's frame (found once; follows explode and moves), by marker key. */
+  private markerAnchors = new Map<string, { local: THREE.Vector3; obj: string }>();
+  private anchorTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When markers may look for their part's surface (gate R1): ANCHOR_DELAY_MS after the view first allowed it. */
+  private anchorAt: number | undefined;
+  private stems = new Map<string, THREE.Mesh>();
+  private drawnMarkers = 0;
+  private wheelOff: () => void;
+  /** Where wheel events over labels go (the renderer's canvas; found in the container when unset). */
+  wheelTarget: EventTarget | undefined;
   private occluded = new Map<string, boolean>();
   /** A callout's anchor as last found: in its body's frame (so it follows the part between tests), and which candidate. */
   private anchorCache = new Map<string, { local: THREE.Vector3; idx: number }>();
@@ -263,6 +295,8 @@ export class AnnotLayer {
     this.group.name = "annotations";
     this.group.userData.noBatch = true;
     this.root.addEventListener("keydown", (e) => this.onKey(e));
+    // wheel over a sheet, pin or marker zooms the view (walkthrough D2): forwarded to the canvas's controls
+    this.wheelOff = attachWheelForward(this.root, () => this.wheelTarget ?? canvasIn(container));
   }
 
   /** Read the theme's colours (call when the theme changes). */
@@ -284,6 +318,8 @@ export class AnnotLayer {
 
   setInput(input: AnnotInput) {
     this.input = input;
+    if (input.anchorParts === false) this.anchorAt = undefined;
+    else if (input.anchorParts === true) this.anchorAt ??= performance.now() + ANCHOR_DELAY_MS;
     this.fullKey = "";
   }
 
@@ -350,6 +386,11 @@ export class AnnotLayer {
       priority: number;
       ref?: string;
       n?: number;
+      /** A finding card's one-line description (the long hover tier) and its hint. */
+      description?: string;
+      hint?: string;
+      /** The finding a card shows (a click on the card pins it and opens it in the Inspector). */
+      finding?: string;
     }
     const open: Live[] = [];
     const partBox = (hit: PartHit): Box | undefined => {
@@ -433,42 +474,81 @@ export class AnnotLayer {
       });
     }
 
-    // ---- DRC markers: a sprite per anchor, a hover target, a card when hovered or pinned ----------
+    // ---- DRC markers: on the part's surface, a stem up to the marker, a hover target, a card ---------
+    // walkthrough D1: the marker is attached to the part (a dot on its surface, a short stem), not floating over its
+    // bounds; D3: hover tiers (title, then the one-line description), a click pins the card with its raw rows
     const keepMarkers = new Set<string>();
+    const keepStems = new Set<string>();
+    // gate R1: finding a part's surface raycasts it (a BVH build, ~16 ms a part on ClientX's board): not while the
+    // model loads, and only ANCHOR_DELAY_MS after it settled, all markers in one frame (markers drawn a few per frame
+    // showed a screen-filling marker glyph in the frames between; not root-caused, R2)
+    let anchorsWaiting = false;
+    const now = performance.now();
     this.input.markers.forEach((m, index) => {
       const ref = m.anchor.component ?? m.anchor.body;
       const hit = this.host.resolve(ref) ?? (m.anchor.component ? this.host.resolve(m.anchor.body) : null);
       if (!hit || hit.hidden || hit.box.isEmpty()) return;
-      let p: THREE.Vector3;
-      if (m.anchor.local) p = new THREE.Vector3(...m.anchor.local).applyMatrix4(hit.frame);
-      else if (m.anchor.component && hit.objects.length) p = new THREE.Vector3((hit.box.min.x + hit.box.max.x) / 2, (hit.box.min.y + hit.box.max.y) / 2, hit.box.max.z);
-      else p = surfacePoint(camera, hit, pickOn);
+      if (!m.anchor.local && this.markerAnchors.get(m.key)?.obj !== (hit.objects[0]?.uuid ?? "")) {
+        if (this.input.anchorParts === false) return;
+        // a host that says when (anchorParts given): the wait, counted from when it allowed it (setInput), so a frame
+        // drawn later (a capture's single frame) anchors at once; none (a test, a bare layer): at once
+        if (this.anchorAt !== undefined && now < this.anchorAt) {
+          anchorsWaiting = true;
+          return;
+        }
+      }
+      const p = this.markerSurface(m, hit, camera);
       keepMarkers.add(m.key);
-      this.markerAt(m, p, camera, height);
-      const [x, y, on] = toPx(p);
-      this.hitAt(m, x, y, on, index);
+      const box = partBox(hit);
+      const size = markerPx(box ? Math.hypot(box.w, box.h) : undefined, MARKER_PX, MARKER_MAX_PX) + (this.hovered === m.key ? 4 : 0);
+      const head = this.markerAt(m, p, camera, height, size, keepDots, keepStems);
+      const [x, y, on] = toPx(head);
+      this.hitAt(m, x, y, on, index, size);
       const pinnedFinding = m.findings.find((f) => this.input.open.has(f.id));
       const showCard = pinnedFinding ?? (this.hovered === m.key ? m.findings[0] : undefined);
       if (showCard && on) {
-        const card = findingCard(showCard);
+        const card = findingSummary(showCard);
+        const tier = pinnedFinding ? "pinned" : this.hoverTier;
+        const more: [string, string][] = m.findings.length > 1 ? [["MORE", `${m.findings.length - 1} more at this point`]] : [];
         open.push({
           id: `f:${m.key}`,
           kind: "finding",
-          anchor: p,
+          anchor: head,
           px: [x, y],
-          part: partBox(hit),
+          ...(box ? { part: box } : {}),
           own: hit.objects,
           tone: showCard.severity,
           severity: showCard.severity,
           title: card.title,
-          rows: [...card.rows, ...(m.findings.length > 1 ? ([["MORE", `${m.findings.length - 1} more at this point`]] as [string, string][]) : [])],
-          text: card.text,
+          // the raw rows (AT path, BY validator, MORE n) and the full message only when pinned (walkthrough D3)
+          rows: tier === "pinned" ? [...card.rows, ...more] : [],
+          ...(tier === "pinned" ? { text: card.text } : {}),
+          ...(tier === "long" && card.description ? { description: card.description, hint: "Click for details" } : {}),
           priority: this.hovered === m.key ? 5 : 3,
           ref,
+          finding: showCard.id,
         });
       }
     });
+    if (anchorsWaiting && !this.anchorTimer) {
+      // a frame when the wait is over (the view renders on demand). A scene frame: the markers' sprites are added in
+      // it, and a view-only frame draws the scene as it was grouped (they were not drawn, or drawn unplaced)
+      this.anchorTimer = setTimeout(() => {
+        this.anchorTimer = undefined;
+        if (this.onSceneChange) this.onSceneChange();
+        else this.onChange?.();
+      }, Math.max(0, (this.anchorAt ?? now) - now) + 1);
+    }
     for (const [k, pair] of this.markerSprites) if (!keepMarkers.has(k)) this.dropSprite(this.markerSprites, k, pair);
+    for (const k of [...this.markerAnchors.keys()]) if (!keepMarkers.has(k)) this.markerAnchors.delete(k);
+    this.drawnMarkers = keepMarkers.size;
+    for (const [k, mesh] of this.stems)
+      if (!keepStems.has(k)) {
+        this.group.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+        this.stems.delete(k);
+      }
     for (const [k, b] of this.hits)
       if (!keepMarkers.has(k)) {
         b.remove();
@@ -607,7 +687,11 @@ export class AnnotLayer {
       v.slot = s.slot;
       v.el.style.transform = `translate(${s.box.x.toFixed(1)}px, ${s.box.y.toFixed(1)}px)`;
       v.el.classList.toggle("side-l", s.side < 0);
-      v.path.setAttribute("d", leaderPath(s.leader));
+      // the shelf tucks under the card's rounded corner (walkthrough D4: the app's radius, not a square shelf)
+      const pts = s.leader.points.slice();
+      const sh = pts[pts.length - 2];
+      pts[pts.length - 1] = [sh[0] + s.side * Math.min(CALLOUT_RADIUS_PX + 2, s.box.w / 2), sh[1]];
+      v.path.setAttribute("d", leaderPath({ ...s.leader, points: pts }));
       v.path.setAttribute("class", `annot-leader tone-${l.tone}`);
       this.showLabel(v, motion, polylineLength(s.leader.points));
       if (recordId) status.push({ id: recordId, kind: "callout", status: "placed", ...(l.ref !== undefined ? { ref: l.ref } : {}), anchorPx: [Math.round(l.px[0]), Math.round(l.px[1])], labelBox: { x: Math.round(s.box.x), y: Math.round(s.box.y), w: Math.round(s.box.w), h: Math.round(s.box.h) } });
@@ -726,9 +810,59 @@ export class AnnotLayer {
     this.placeSprite(this.sprite(this.dots, key, "dot", this.colours.accent), p, camera, height, DOT_PX);
   }
 
-  private markerAt(m: DrcMarker, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number) {
-    const pair = this.sprite(this.markerSprites, m.key, m.severity, this.colours.drc[m.severity], m.findings.length);
-    this.placeSprite(pair, p, camera, height, this.hovered === m.key ? MARKER_PX + 4 : MARKER_PX);
+  /**
+   * A marker's point on its part (walkthrough D1): the finding's own point when it has one, else the part's surface
+   * nearest its bounds' top centre (resolve.ts anchorOnPart), found once and kept in the body's frame so it follows
+   * explode and moves without sliding while the camera orbits; looked for again when the part's object changes.
+   */
+  private markerSurface(m: DrcMarker, hit: PartHit, camera: THREE.PerspectiveCamera): THREE.Vector3 {
+    if (m.anchor.local) return new THREE.Vector3(...m.anchor.local).applyMatrix4(hit.frame);
+    const obj = hit.objects[0]?.uuid ?? "";
+    const cached = this.markerAnchors.get(m.key);
+    if (cached && cached.obj === obj) {
+      const p = cached.local.clone().applyMatrix4(hit.frame);
+      if ([p.x, p.y, p.z].every(Number.isFinite)) return p;
+    }
+    let p = anchorOnPart(camera, hit, (ray, roots) => this.host.pickOn(ray, roots));
+    if (![p.x, p.y, p.z].every(Number.isFinite)) p = hit.box.getCenter(new THREE.Vector3());
+    else this.markerAnchors.set(m.key, { local: p.clone().applyMatrix4(hit.frame.clone().invert()), obj });
+    return p;
+  }
+
+  /**
+   * Draws a marker as a pin (walkthrough D1): a terminal dot on the part's surface, a stem `STEM_PX` long straight up
+   * the screen, and the severity marker on top; each depth-tested (the ghost copies show hidden ones). Returns the
+   * marker's centre in the world (the hover target and the card's leader start there).
+   */
+  private markerAt(m: DrcMarker, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, px: number, keepDots: Set<string>, keepStems: Set<string>): THREE.Vector3 {
+    const colour = this.colours.drc[m.severity];
+    keepDots.add(`t:${m.key}`);
+    this.placeSprite(this.sprite(this.dots, `t:${m.key}`, "dot", colour), p, camera, height, TERMINAL_DOT_PX);
+    const base = towardCamera(p, camera, 1, height);
+    const camPos = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    const perPx = worldPerPx(camera, camPos.distanceTo(base), height);
+    // the screen's up in the world (the camera's own y axis)
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    const head = base.clone().addScaledVector(up, perPx * (STEM_PX + px / 2));
+    this.placeSprite(this.sprite(this.markerSprites, m.key, m.severity, colour, m.findings.length), head, camera, height, px);
+    // the stem: a camera-facing quad LEADER_PX wide (a WebGL line is 1 px whatever its width), depth-tested
+    keepStems.add(m.key);
+    let stem = this.stems.get(m.key);
+    if (!stem) {
+      stem = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: colour, depthTest: true, depthWrite: false, transparent: true, toneMapped: false }));
+      stem.renderOrder = 20;
+      stem.frustumCulled = false;
+      stem.userData.noBatch = true;
+      stem.userData.annot = true;
+      this.group.add(stem);
+      this.stems.set(m.key, stem);
+    }
+    (stem.material as THREE.MeshBasicMaterial).color.set(colour);
+    stem.position.copy(base).addScaledVector(up, (perPx * STEM_PX) / 2);
+    stem.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(camera.matrixWorld));
+    stem.scale.set(perPx * LEADER_PX, perPx * STEM_PX, 1);
+    stem.updateMatrixWorld();
+    return head;
   }
 
   /** A mark: ring (a circle on the camera side of the part's bounding sphere), box (its bounds), crosshair, dot. */
@@ -778,8 +912,8 @@ export class AnnotLayer {
     obj.updateMatrixWorld(true);
   }
 
-  private labelView(l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; by?: string; tone: string; severity?: FindingSeverity; ref?: string }, doc: Document): LabelView {
-    const content = JSON.stringify([l.title, l.rows, l.text, l.by, l.tone]);
+  private labelView(l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; description?: string; hint?: string; by?: string; tone: string; severity?: FindingSeverity; ref?: string; finding?: string }, doc: Document): LabelView {
+    const content = JSON.stringify([l.title, l.rows, l.text, l.description, l.hint, l.by, l.tone]);
     let v = this.labels.get(l.id);
     if (!v) {
       const el = doc.createElement("div");
@@ -805,8 +939,17 @@ export class AnnotLayer {
       const title = doc.createElement("div");
       title.className = "annot-title";
       if (l.severity) title.prepend(svgNode(markerSvg(l.severity, 12)));
-      title.append(doc.createTextNode(l.title));
+      const tt = doc.createElement("span");
+      tt.className = "annot-title-text";
+      tt.textContent = breakable(l.title);
+      title.append(tt);
       el.appendChild(title);
+      if (l.description) {
+        const d = doc.createElement("div");
+        d.className = "annot-desc";
+        d.textContent = breakable(l.description);
+        el.appendChild(d);
+      }
       if (l.rows.length) {
         const grid = doc.createElement("div");
         grid.className = "annot-rows";
@@ -816,7 +959,7 @@ export class AnnotLayer {
           kk.textContent = k;
           const vv = doc.createElement("span");
           vv.className = "annot-v";
-          vv.textContent = val;
+          vv.textContent = breakable(val);
           grid.append(kk, vv);
         }
         el.appendChild(grid);
@@ -824,8 +967,14 @@ export class AnnotLayer {
       if (l.text) {
         const t = doc.createElement("div");
         t.className = "annot-text";
-        t.textContent = l.text;
+        t.textContent = breakable(l.text);
         el.appendChild(t);
+      }
+      if (l.hint) {
+        const hnt = doc.createElement("div");
+        hnt.className = "annot-hint";
+        hnt.textContent = l.hint;
+        el.appendChild(hnt);
       }
       if (l.by) {
         const by = doc.createElement("div");
@@ -833,14 +982,17 @@ export class AnnotLayer {
         by.textContent = `by ${l.by}`;
         el.appendChild(by);
       }
-      el.setAttribute("aria-label", [l.title, ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? ""].join(", "));
+      el.setAttribute("aria-label", [l.title, l.description ?? "", ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? ""].filter(Boolean).join(", "));
       el.dataset.tone = l.tone;
       el.classList.remove(...[...el.classList].filter((c) => c.startsWith("tone-")));
       el.classList.add(`tone-${l.tone}`);
-      if (l.ref) {
+      if (l.ref || l.finding) {
         el.onclick = (e) => {
-          if (e.detail === 2) this.host.onLookAt?.(l.ref!);
+          if (e.detail === 2 && l.ref) this.host.onLookAt?.(l.ref);
+          // a click on a finding's card pins it and opens its detail in the Inspector (walkthrough D3)
+          else if (e.detail === 1 && l.finding) this.inspect(l.finding, l.ref);
         };
+        el.style.cursor = l.finding ? "pointer" : "";
       }
       // its size, read once per content change (labels are laid out off-screen until placed)
       const was = el.style.transform;
@@ -944,7 +1096,7 @@ export class AnnotLayer {
   }
 
   /** A focusable, hoverable target over a marker (the markers are a roving-tabindex list, worst first). */
-  private hitAt(m: DrcMarker, x: number, y: number, on: boolean, index: number) {
+  private hitAt(m: DrcMarker, x: number, y: number, on: boolean, index: number, px = MARKER_PX) {
     let b = this.hits.get(m.key);
     if (!b) {
       b = this.root.ownerDocument.createElement("button");
@@ -960,7 +1112,9 @@ export class AnnotLayer {
         const marker = this.input.markers.find((x) => x.key === key);
         const f = marker?.findings[0];
         if (!f) return;
-        this.host.onFinding?.(f.id, this.input.open.has(f.id) ? "close" : "open");
+        // a click pins the card (or unpins it) and, pinning, asks the host to open the finding in the Inspector (D3)
+        if (this.input.open.has(f.id)) this.host.onFinding?.(f.id, "close");
+        else this.inspect(f.id, marker?.anchor.component ?? marker?.anchor.body);
       });
       this.root.appendChild(b);
       this.hits.set(m.key, b);
@@ -971,32 +1125,67 @@ export class AnnotLayer {
     b.style.color = this.colours.drc[m.severity];
     b.classList.toggle("pinned", m.findings.some((x) => this.input.open.has(x.id)));
     b.style.display = on ? "" : "none";
+    // the target covers the marker as drawn (it grows with the part, walkthrough D1), never under 22 px
+    const t = Math.max(22, px + 6);
+    b.style.width = b.style.height = `${t}px`;
+    b.style.margin = `${-t / 2}px 0 0 ${-t / 2}px`;
     b.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+
+  /** Pins a finding's card and asks the host to open its detail in the Inspector (walkthrough D3). */
+  private inspect(findingId: string, ref: string | undefined) {
+    if (!this.input.open.has(findingId)) this.host.onFinding?.(findingId, "open");
+    this.host.onInspect?.(findingId, ref);
   }
 
   /** Hover or focus: the card opens after the intent delay (focus opens at once). */
   private hover(key: string | undefined, now = false) {
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
-    this.hoverTimer = undefined;
+    if (this.longTimer) clearTimeout(this.longTimer);
+    this.hoverTimer = this.longTimer = undefined;
     if (key === undefined) {
+      this.hoverTier = "short";
       if (this.hovered === undefined) return;
       this.hovered = undefined;
       this.onChange?.();
       return;
     }
+    // hover tiers (walkthrough D3): the title after the intent delay, the one-line description after LONG_HOVER_MS;
+    // keyboard focus shows both at once
     const go = () => {
       this.hovered = key;
+      this.hoverTier = now ? "long" : "short";
       const f = this.input.markers.find((m) => m.key === key)?.findings[0];
       if (f) this.host.onFinding?.(f.id, "hover");
       this.onChange?.();
     };
     // the CSS reveal carries the intent delay itself; the timer only avoids re-laying out for a pointer passing over
     if (now) go();
-    else this.hoverTimer = setTimeout(go, Math.min(40, REVEAL_MS.intent));
+    else {
+      this.hoverTimer = setTimeout(go, Math.min(40, REVEAL_MS.intent));
+      this.longTimer = setTimeout(() => {
+        this.longTimer = undefined;
+        if (this.hovered !== key) return;
+        this.hoverTier = "long";
+        this.onChange?.();
+      }, LONG_HOVER_MS);
+    }
+  }
+
+  /** Markers drawn on the last frame (their part resolved and shown in this view): 0 lets the Findings control say so. */
+  markersDrawn(): number {
+    return this.drawnMarkers;
+  }
+
+  /** The hovered marker and its tier (tests, `__cad.annotations()`). */
+  hoverState(): { key: string | undefined; tier: "short" | "long" } {
+    return { key: this.hovered, tier: this.hoverTier };
   }
 
   /** Called when the layer needs a frame (a hover changed): the view invalidates. */
   onChange?: () => void;
+  /** Asks the host for a frame that regroups the scene (objects added): the marker anchoring's frame (gate R1). */
+  onSceneChange?: () => void;
 
   private onKey(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
@@ -1026,7 +1215,10 @@ export class AnnotLayer {
   }
 
   dispose() {
+    if (this.anchorTimer) clearTimeout(this.anchorTimer);
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
+    if (this.longTimer) clearTimeout(this.longTimer);
+    this.wheelOff();
     for (const v of this.labels.values()) if (v.removeTimer) clearTimeout(v.removeTimer);
     this.group.removeFromParent();
     this.group.traverse((o) => {

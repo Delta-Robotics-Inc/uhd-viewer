@@ -628,11 +628,13 @@ export function Scene3D({ inspector, scope, emptyHint }: Scene3DProps) {
       diagnostics={c.diagnostics}
       hostDiagnostics={c.hostDiagnostics}
       focusOn={c.cadFocus}
+      findingOn={c.cadFinding}
       onSelect={c.onCadSelect}
       inspector={inspector ?? Boolean(c.panel)}
       scope={shown}
       emptyHint={emptyHint}
       onOpenModule={c.hostActions.openModule}
+      onInspect={c.hostActions.inspect}
     />
   );
 }

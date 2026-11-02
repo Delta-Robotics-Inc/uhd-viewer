@@ -16,6 +16,7 @@ import { ScrollArea } from "../ui/ScrollArea";
 import { ArtifactLink } from "../chrome/Artifacts";
 import { cableSummary, cableTrait, routeManifest } from "./harness";
 import type { CadSelection } from "./CadView";
+import { instancePathIn } from "./render/ids";
 
 // ---------------------------------------------------------------------------
 // Inspector
@@ -111,7 +112,7 @@ export function CadInspector({
   return (
     <aside className="inspector cad-inspector" data-chrome="inspector">
       <div className="inspector-header">
-        <span className="section-title">{body ? "MODULE" : harness ? "HARNESS" : mate || route ? "LINK" : "ASSEMBLY"}</span>
+        <span className="section-title">{body && sel.component ? "COMPONENT" : body ? "MODULE" : harness ? "HARNESS" : mate || route ? "LINK" : "ASSEMBLY"}</span>
         {callout && (
           <button className="mini" aria-pressed={callout.on} title={callout.on ? `Remove the callout on ${callout.what}` : `Ring and label ${callout.what} (MPN, LCSC)`} onClick={callout.toggle}>
             CALLOUT
@@ -124,6 +125,16 @@ export function CadInspector({
         )}
       </div>
       <ScrollArea className="inspector-scroll" contentClassName="inspector-body">
+        {body && sel.component && (
+          // R1-A (M2): a picked component is what the card shows; its board stays below as its context
+          <div className="cad-component" data-component={sel.component}>
+            <h3 className="cad-title">{model.defs.get(instancePathIn(body.path.join("/"), sel.component))?.name ?? sel.component.split("/").pop()}</h3>
+            <div className="cad-sub">{instancePathIn(body.path.join("/"), sel.component).split("/").join(" / ")}</div>
+            <div className="cad-sub">
+              in <button className="linklike" onClick={() => onSel({ body: body.key })}>{body.def.name}</button>
+            </div>
+          </div>
+        )}
         {body ? (
           <>
             <h3 className="cad-title">{body.def.name}</h3>
@@ -341,7 +352,8 @@ function BodyContents({ model, body, sel, onSel, resolve }: { model: CadModel; b
           <div className="section-title">COMPONENTS · {components.length}</div>
           <div className="cad-rows">
             {components.map((c) => (
-              <button key={c.id} className={`cad-row${sel.component === c.id ? " on" : ""}`} onClick={() => onSel({ body: body.key, component: c.id })}>
+              // R1-A (M2): the component by its instance path (the host and the 3D pick name it so), not its bare id
+              <button key={c.id} className={`cad-row${sel.component === c.id || sel.component === instancePathIn(body.key.split("#")[0], c.id) ? " on" : ""}`} onClick={() => onSel({ body: body.key, component: instancePathIn(body.key.split("#")[0], c.id) })}>
                 <span className="cad-row-name">{c.id}</span>
                 <span className="cad-row-via">{c.name ?? c.moduleDefId}</span>
               </button>

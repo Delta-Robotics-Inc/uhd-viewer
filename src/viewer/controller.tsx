@@ -406,6 +406,8 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
   const [reveal, setReveal] = useState<{ selection: NonNullable<Selection>; seq: number }>();
   const [cadFocus, setCadFocus] = useState<{ path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean }>();
   const [cadSelection, setCadSelection] = useState<ViewerSelection | null>(null);
+  // a host's openFinding (gate R1, R1-E's D7): the finding whose callout the 3D view pins
+  const [cadFinding, setCadFinding] = useState<{ id: string; code: string; path?: string; seq: number }>();
   // how much of the diagram's legend fits beside the toolbar (ui/legendFit.ts): the legend measures, the toolbar shows its button
   const [legendStage, setLegendStage] = useState<LegendStage>("full");
   // a module's menu (`id`), or the empty canvas's
@@ -478,6 +480,10 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
           return;
         case "uhd-viewer:setView":
           setView(m.view);
+          return;
+        // pinned in the 3D view only (the host sends its focus first, which selects and frames the module)
+        case "uhd-viewer:openFinding":
+          if (shownView === "3d") setCadFinding({ id: m.id, code: m.code, ...(m.path !== undefined ? { path: m.path } : {}), seq: ++seq.current });
           return;
       }
     });
@@ -680,6 +686,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     centre,
     reveal,
     cadFocus,
+    cadFinding,
     onCadSelect,
     // the 3D view's selection, as the host hears it (paths from the root)
     cadSelection,

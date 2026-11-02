@@ -116,6 +116,11 @@ export interface UrlOpening {
   panel?: "none";
   /** `zoom=<n>`: the opening fit comes `n` times closer (0.1 to 10). */
   zoom?: number;
+  /**
+   * `zoomToCursor=0|1` (R1-A, E1): wheel zoom toward the pointer. Absent: the view's DEFAULT (on). A host can change
+   * it later through `ViewHub.controls` (a settings page, R1-E).
+   */
+  zoomToCursor?: boolean;
 }
 
 const list = (v: string | null) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -172,6 +177,8 @@ export function fromUrlParams(params: URLSearchParams): { values: Partial<Pick<V
   if (params.get("panel") === "none") opening.panel = "none";
   const zoom = num(params.get("zoom"));
   if (zoom !== undefined && zoom >= 0.1 && zoom <= 10) opening.zoom = zoom;
+  const ztc = params.get("zoomToCursor");
+  if (ztc === "0" || ztc === "1") opening.zoomToCursor = ztc === "1";
   return { values, visibility, opening };
 }
 

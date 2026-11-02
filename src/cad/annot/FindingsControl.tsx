@@ -8,10 +8,9 @@
  */
 import { useEffect, useRef } from "react";
 import { IconButton } from "../../ui/Toolbar";
-import { MAX_OPEN_FINDINGS, severityCounts } from "./drc";
+import { MAX_OPEN_FINDINGS, findingsPlacement, severityCounts } from "./drc";
 import { SEVERITY_ORDER, worst, type FindingAnchors, type FindingSeverity } from "./findings-anchors";
-import { SEVERITY_LABEL, markerSvg } from "./style";
-import { svgNode } from "./layer";
+import { SEVERITY_LABEL, markerSvg, svgNode } from "./style";
 
 export interface FindingsControlProps {
   findings: FindingAnchors[];
@@ -30,6 +29,8 @@ export interface FindingsControlProps {
   onOpenAll: (on: boolean) => void;
   menu: boolean;
   onMenu: (open: boolean) => void;
+  /** Markers drawn in this view (AnnotLayer.markersDrawn); default: the findings with a 3D anchor in this scope. */
+  placed?: number;
 }
 
 function Shape({ s, size = 14 }: { s: FindingSeverity; size?: number }) {
@@ -53,22 +54,38 @@ export function FindingsControl(p: FindingsControlProps) {
     return () => window.removeEventListener("keydown", close);
   }, [p.menu]);
   if (!total) return null;
+  const where = findingsPlacement(p.findings, p.placed);
   const allOpen = p.findings.filter((f) => f.anchors.length && p.shown.has(f.severity)).every((f) => p.open.has(f.id));
   return (
     <div className="cad-menu-wrap">
-      <IconButton
-        icon={worstSev ? <Shape s={worstSev} size={15} /> : "triangle-alert"}
-        label={`Findings on the model · ${total}${worstSev ? ` · worst ${SEVERITY_LABEL[worstSev].toLowerCase()}` : ""}`}
-        tooltipSide="top"
-        pressed={p.markers}
-        onClick={() => p.onMarkers(!p.markers)}
-      />
+      {where.empty ? (
+        // nothing to draw here (R1-D's G4 ask): the button says so and opens the list instead of turning on an
+        // empty layer
+        <IconButton
+          icon={worstSev ? <Shape s={worstSev} size={15} /> : "triangle-alert"}
+          label={`${where.note} · ${total} in the list`}
+          tooltipSide="top"
+          pressed={false}
+          aria-disabled={true}
+          style={{ opacity: 0.55 }}
+          onClick={() => p.onMenu(!p.menu)}
+        />
+      ) : (
+        <IconButton
+          icon={worstSev ? <Shape s={worstSev} size={15} /> : "triangle-alert"}
+          label={`Findings on the model · ${total}${worstSev ? ` · worst ${SEVERITY_LABEL[worstSev].toLowerCase()}` : ""}`}
+          tooltipSide="top"
+          pressed={p.markers}
+          onClick={() => p.onMarkers(!p.markers)}
+        />
+      )}
       <IconButton icon="chevron-up" size="sm" className="w-5" label="Findings list and filters" tooltipSide="top" aria-expanded={p.menu} onClick={() => p.onMenu(!p.menu)} />
       {p.menu && (
         <div className="cad-menu annot-findings" ref={listRef} role="dialog" aria-label="Findings on the model">
           <div className="cad-menu-label">
             Findings on the model · {total}
           </div>
+          {where.empty && <div className="annot-row-msg">{where.note}: none of these has a location on the parts shown here.</div>}
           <div className="annot-chips" role="group" aria-label="Show severities">
             {SEVERITY_ORDER.filter((s) => counts[s] > 0 || s === "fail" || s === "warn").map((s) => (
               <button key={s} type="button" className="annot-chip-btn" aria-pressed={p.shown.has(s)} onClick={() => p.onShown(s, !p.shown.has(s))} title={`${SEVERITY_LABEL[s]}: show or hide`}>

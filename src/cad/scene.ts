@@ -63,6 +63,11 @@ export interface SceneColors {
   glowStrong: number;
 }
 
+/** DEFAULT (R1-A, E1): wheel zoom toward the pointer. */
+export const DEFAULT_ZOOM_TO_CURSOR = true;
+/** DEFAULT (R1-A, A1): the highlight glow's share of the accent (emissive). */
+export const HIGHLIGHT_GLOW = 0.5;
+
 /** The neutral default theme's accent and highlight (the stylesheet defaults), used until a theme is read. */
 export const DEFAULT_SCENE_ACCENT = "#339fee";
 export const DEFAULT_SCENE_HIGHLIGHT = "#22d3ee";
@@ -78,7 +83,9 @@ export function sceneColors(theme: Pick<SceneTheme, "accent" | "highlight"> = { 
     phase: [0xe11d48, 0xfacc15, 0x38bdf8],
     hint: 0xa8a29e,
     glow: accent.clone().multiplyScalar(0.16).getHex(),
-    glowStrong: accent.clone().multiplyScalar(0.22).getHex(),
+    // R1-A (A1): what an agent points at glows enough to see on a small part (0.22 read as no glow on the USB-C).
+    // DEFAULT 0.5 of the accent; the selection itself is the solid accent surface (`focus`, M5)
+    glowStrong: accent.clone().multiplyScalar(HIGHLIGHT_GLOW).getHex(),
   };
 }
 
@@ -358,6 +365,12 @@ export interface SceneOptions {
   toon?: boolean;
   /** The ink pass (silhouettes and creases). Default on; URL `?edges=0`. The quality curve drops it while moving when over budget. */
   edges?: boolean;
+  /**
+   * Wheel zoom goes toward the point under the pointer (R1-A, E1). DEFAULT true (Kevin's walkthrough, 39:56); the view
+   * option `zoomToCursor` (URL `?zoomToCursor=0`, a host's `hub.controls`) turns it off. Left drag orbits, right drag
+   * pans, the wheel or middle drag zooms (OrbitControls' own mapping, confirmed and pinned in `createScene`).
+   */
+  zoomToCursor?: boolean;
 }
 
 /** The model's look (PB-1189): the toon bands and the ink, and what the theme set. */
@@ -719,6 +732,10 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 20);
   controls.enableDamping = true;
+  // R1-A (E1): zoom toward the pointer (DEFAULT on; `options.zoomToCursor` / `setZoomToCursor` turn it off); the
+  // buttons pinned to what Kevin asked for (left orbit, middle zoom, right pan), the same as OrbitControls' defaults
+  controls.zoomToCursor = options.zoomToCursor ?? DEFAULT_ZOOM_TO_CURSOR;
+  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 
   const hemi = new THREE.HemisphereLight(0xf5f5f4, 0x1c1917, 1.4);
   scene.add(hemi);
@@ -1144,6 +1161,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
    */
   const drawScene = (inset: { x: number; y: number; w: number; h: number } | undefined) => {
     renderer.info.reset();
+    fitNear();
     const scale = knobsNow.scale;
     const ink = edgesWanted && edgesAllowed;
     edgesDrawn = ink;
@@ -1605,8 +1623,29 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     grid.position.copy(upAxis).multiplyScalar(-0.5);
     invalidate();
   };
+  /** The model's bounds (the ground box): the near plane is fitted to it (R1-E's C1 handoff). */
+  const modelBounds = new THREE.Box3();
+  /**
+   * The near plane fitted to the model each frame (R1-A for R1-E's C1, board z-fighting): half the gap between the
+   * camera and the model's bounding sphere, at least 1 mm and at most 5 % of the distance to the target (DEFAULT).
+   * With a fixed 1 mm near plane a 24-bit depth step at 600 mm is 0.021 mm, coarser than a board's layer gaps; at
+   * a 30 mm near plane it is 0.0007 mm. Inside the bounds it stays 1 mm.
+   */
+  const fitNear = () => {
+    let near = 1;
+    if (!modelBounds.isEmpty()) {
+      const sphere = modelBounds.getBoundingSphere(new THREE.Sphere());
+      const gap = camera.position.distanceTo(sphere.center) - sphere.radius;
+      near = nearPlaneFor(gap, camera.position.distanceTo(controls.target));
+    }
+    if (Math.abs(near - camera.near) > 1e-6) {
+      camera.near = near;
+      camera.updateProjectionMatrix();
+    }
+  };
   const setGround = (box: THREE.Box3) => {
     if (box.isEmpty()) return;
+    modelBounds.copy(box);
     // the lowest point of the box along up, half a millimetre below it
     const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
     const low = Math.min(...corners.map((c) => c.dot(upAxis)));
@@ -1875,4 +1914,176 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     sections: sectionsApi,
   });
   return handle;
+}
+
+// ---------------------------------------------------------------------------
+// Camera rules (R1-A: M1 keep the camera across a hot swap, M11 explode envelope, E3 look along normal)
+// ---------------------------------------------------------------------------
+
+/** DEFAULT (R1-A, M1): a hot swap refits only when the model's size changes by more than this factor. */
+export const REFIT_RATIO = 2;
+/** DEFAULT (R1-A, M11): below this travel (mm) an explode moves nothing and the camera stays. */
+export const EXPLODE_STILL_MM = 0.5;
+
+/**
+ * Whether a model that arrives again (a rebuild's hot swap, a remount) is refitted (R1-A, M1): only on a first
+ * load (`previous` unknown and the camera not yet placed) or when its size (bounds diagonal) changed by more than
+ * `ratio`. A camera already placed (by the person, a host, a restored state) is kept otherwise.
+ */
+export function needsRefit(previous: THREE.Box3 | null | undefined, next: THREE.Box3, placed: boolean, ratio = REFIT_RATIO): boolean {
+  if (next.isEmpty()) return false;
+  if (!previous || previous.isEmpty()) return !placed;
+  const a = previous.getSize(new THREE.Vector3()).length();
+  const b = next.getSize(new THREE.Vector3()).length();
+  if (a <= 1e-9) return b > 1e-9;
+  const k = b / a;
+  return k > ratio || k < 1 / ratio;
+}
+
+/**
+ * Where the camera goes as the model comes apart or together (R1-A, M11): nothing moves (`moved` under
+ * EXPLODE_STILL_MM), the camera stays (null). Otherwise the view is kept as the person framed it and only scaled:
+ * the target follows the change of the model's centre, the distance grows or shrinks with its bounding radius
+ * (clamped to 0.25x to 4x). It never refits from scratch, so a close-up stays a close-up.
+ */
+export function explodeCamera(input: { from: THREE.Box3; to: THREE.Box3; moved: number; position: THREE.Vector3; target: THREE.Vector3 }): { position: THREE.Vector3; target: THREE.Vector3 } | null {
+  const { from, to, moved, position, target } = input;
+  if (!(moved >= EXPLODE_STILL_MM) || from.isEmpty() || to.isEmpty()) return null;
+  const ra = from.getBoundingSphere(new THREE.Sphere()).radius;
+  const rb = to.getBoundingSphere(new THREE.Sphere()).radius;
+  const k = ra > 1e-9 ? Math.min(4, Math.max(0.25, rb / ra)) : 1;
+  const shift = to.getCenter(new THREE.Vector3()).sub(from.getCenter(new THREE.Vector3()));
+  const t = target.clone().add(shift);
+  return { target: t, position: t.clone().add(position.clone().sub(target).multiplyScalar(k)) };
+}
+
+/**
+ * The outward normal of a part's largest face (R1-A, E3), in world space: its own box (in the frame `toWorld`
+ * takes it from) is flattest across one axis, and the largest face lies across it. Of the two sides, the one
+ * facing `towardCamera` (camera minus target), so the view turns the least.
+ */
+export function dominantNormal(localBox: THREE.Box3, toWorld: THREE.Matrix4, towardCamera: THREE.Vector3): THREE.Vector3 {
+  const size = localBox.getSize(new THREE.Vector3());
+  const axis = size.x <= size.y && size.x <= size.z ? 0 : size.y <= size.z ? 1 : 2;
+  const n = new THREE.Vector3().setComponent(axis, 1).applyMatrix3(new THREE.Matrix3().getNormalMatrix(toWorld)).normalize();
+  if (n.lengthSq() === 0) return new THREE.Vector3(0, 0, 1);
+  return n.dot(towardCamera) < 0 ? n.negate() : n;
+}
+
+/** The world normal of one triangle of a mesh (an instance of an InstancedMesh with `instance`), facing `toward`. */
+export function triangleNormal(mesh: THREE.Mesh, triangle: number, toward: THREE.Vector3, instance?: number): THREE.Vector3 | undefined {
+  const g = mesh.geometry as THREE.BufferGeometry | undefined;
+  const pos = g?.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!g || !pos) return undefined;
+  const idx = g.index;
+  if (triangle < 0 || triangle * 3 + 2 >= (idx ? idx.count : pos.count)) return undefined;
+  const v = [0, 1, 2].map((i) => (idx ? idx.getX(triangle * 3 + i) : triangle * 3 + i));
+  if (v.some((i) => !Number.isInteger(i) || i < 0 || i >= pos.count)) return undefined;
+  const world = mesh.matrixWorld.clone();
+  if (instance !== undefined && (mesh as THREE.InstancedMesh).isInstancedMesh) {
+    const im = new THREE.Matrix4();
+    (mesh as THREE.InstancedMesh).getMatrixAt(instance, im);
+    world.multiply(im);
+  }
+  const [a, b, c] = v.map((i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(world));
+  const n = b.clone().sub(a).cross(c.clone().sub(a));
+  if (n.lengthSq() < 1e-18) return undefined;
+  n.normalize();
+  return n.dot(toward) < 0 ? n.negate() : n;
+}
+
+/**
+ * The direction a part's surface mostly faces (gate R1, E3): the principal axis of its triangles' area-weighted
+ * normals (sign-free n n^T, so a plate's two faces agree), in world space, facing `toward`. A part modelled in its
+ * assembly's frame (ClientX's shell panels: their own box is not square to the panel) is faced square this way, where
+ * its box's flattest axis is a diagonal through the shell. At most `maxTriangles` triangles are read (a stride
+ * beyond, DEFAULT 200,000). Undefined when the objects have no area.
+ */
+export function principalNormal(objects: THREE.Object3D[], toward: THREE.Vector3, maxTriangles = 200_000): THREE.Vector3 | undefined {
+  const c = [0, 0, 0, 0, 0, 0];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(), n = new THREE.Vector3();
+  const meshes: THREE.Mesh[] = [];
+  // hidden meshes too: under the batcher a body's own meshes are not drawn themselves
+  for (const o of objects) o.traverse((x) => { if ((x as THREE.Mesh).isMesh) meshes.push(x as THREE.Mesh); });
+  let total = 0;
+  for (const m of meshes) {
+    const pos = m.geometry?.getAttribute("position");
+    if (pos) total += (m.geometry.index ? m.geometry.index.count : pos.count) / 3;
+  }
+  if (!total) return undefined;
+  const stride = Math.max(1, Math.ceil(total / maxTriangles));
+  for (const m of meshes) {
+    const g = m.geometry;
+    const pos = g.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    m.updateWorldMatrix(true, false);
+    const idx = g.index;
+    const count = (idx ? idx.count : pos.count) / 3;
+    const at = (i: number) => (idx ? idx.getX(i) : i);
+    for (let t = 0; t < count; t += stride) {
+      a.fromBufferAttribute(pos, at(t * 3)).applyMatrix4(m.matrixWorld);
+      b.fromBufferAttribute(pos, at(t * 3 + 1)).applyMatrix4(m.matrixWorld);
+      d.fromBufferAttribute(pos, at(t * 3 + 2)).applyMatrix4(m.matrixWorld);
+      n.subVectors(b, a).cross(d.sub(a));
+      const l = n.length();
+      if (!(l > 0)) continue;
+      // area-weighted: n n^T / |n| (|n| is twice the area)
+      const w = 1 / l;
+      c[0] += n.x * n.x * w; c[1] += n.x * n.y * w; c[2] += n.x * n.z * w;
+      c[3] += n.y * n.y * w; c[4] += n.y * n.z * w; c[5] += n.z * n.z * w;
+    }
+  }
+  if (!(c[0] + c[3] + c[5] > 0)) return undefined;
+  const v = new THREE.Vector3(c[0] >= c[3] && c[0] >= c[5] ? 1 : 0.01, c[3] > c[0] && c[3] >= c[5] ? 1 : 0.02, c[5] > c[0] && c[5] > c[3] ? 1 : 0.03);
+  for (let k = 0; k < 64; k++) {
+    const x = c[0] * v.x + c[1] * v.y + c[2] * v.z, y = c[1] * v.x + c[3] * v.y + c[4] * v.z, z = c[2] * v.x + c[4] * v.y + c[5] * v.z;
+    v.set(x, y, z);
+    if (!(v.lengthSq() > 0)) return undefined;
+    v.normalize();
+  }
+  return v.dot(toward) < 0 ? v.negate() : v;
+}
+
+/**
+ * The camera looking at `target` along `normal` (from its outside), at the distance it is now (R1-A, E3). Straight
+ * along the up axis the orbit would lose its heading, so the view keeps a sliver of its current heading there.
+ */
+export function lookAlong(target: THREE.Vector3, position: THREE.Vector3, normal: THREE.Vector3, up: THREE.Vector3): THREE.Vector3 {
+  const distance = Math.max(1e-6, position.distanceTo(target));
+  const n = normal.clone().normalize();
+  const u = up.clone().normalize();
+  if (Math.abs(n.dot(u)) > 0.9995) {
+    const heading = position.clone().sub(target);
+    heading.addScaledVector(u, -heading.dot(u));
+    if (heading.lengthSq() < 1e-12) heading.set(1, 0, 0).addScaledVector(u, -u.x);
+    n.addScaledVector(heading.normalize(), 0.02).normalize();
+  }
+  return target.clone().addScaledVector(n, distance);
+}
+
+/** Ease in and out (cubic). */
+export const easeInOut = (k: number) => (k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2);
+
+/**
+ * A point on the way from one camera pose to another (R1-A, E3): the direction from the target turns along the
+ * sphere (no swing through the model), the distance and the target move straight, both eased by `k` (0 to 1).
+ */
+export function cameraBetween(from: { position: THREE.Vector3; target: THREE.Vector3 }, to: { position: THREE.Vector3; target: THREE.Vector3 }, k: number): { position: THREE.Vector3; target: THREE.Vector3 } {
+  const t = easeInOut(Math.min(1, Math.max(0, k)));
+  const d0 = from.position.clone().sub(from.target);
+  const d1 = to.position.clone().sub(to.target);
+  const r = THREE.MathUtils.lerp(d0.length(), d1.length(), t);
+  const q = new THREE.Quaternion().setFromUnitVectors(d0.clone().normalize(), d1.clone().normalize());
+  const dir = d0.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, t));
+  const target = from.target.clone().lerp(to.target, t);
+  return { target, position: target.clone().addScaledVector(dir, r) };
+}
+
+/**
+ * The near plane for a camera `gap` mm from the model's bounding sphere and `distance` mm from its target (R1-A for
+ * R1-E's C1): half the gap, clamped to [1, 5 % of the distance] (DEFAULT); 1 mm when the camera is inside the bounds.
+ */
+export function nearPlaneFor(gap: number, distance: number): number {
+  if (!(gap > 2) || !Number.isFinite(distance)) return 1;
+  return Math.max(1, Math.min(0.5 * gap, 0.05 * distance));
 }

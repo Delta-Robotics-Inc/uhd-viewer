@@ -19,16 +19,17 @@ import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { LoadedSource } from "../source/source";
 import type { ScopedDiagnostic } from "../model/diagnostics";
 import { anchorOf, findingAnchors } from "./findings";
-import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode } from "./annot";
+import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, findingForHost, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode } from "./annot";
 import { DIRECTIONS, defAt, explodeParts, glbFor, interfaceRows, loadManifests, type CadBody, type CadModel, type Direction, type InterfaceRow } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
-import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, materialFor, proceduralGeometry, toMatrix4, type AntialiasMode, type LoadedModel, type SceneHandle } from "./scene";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, DEFAULT_ZOOM_TO_CURSOR, EXPLODE_STILL_MM, cadWrapper, cameraBetween, createScene, dominantNormal, explodeCamera, principalNormal, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, lookAlong, materialFor, needsRefit, proceduralGeometry, toMatrix4, triangleNormal, type AntialiasMode, type LoadedModel, type SceneColors, type SceneHandle } from "./scene";
 import { buildAll, bvhStats, pick } from "./render/pick";
 import { setMeshLook } from "./render/looks";
+import { paintComponent, swapMaterial } from "./render/glow";
 import { instancePathIn, isPlaceholder, partInstanceIdOf } from "./render/ids";
 import { observeScene, type CadObservation, type LoadState } from "./render/observe";
 import { attachSceneTelemetry } from "../telemetry";
-import { LabelLayer, type LabelItem, type LabelKind } from "./labels";
+import { LabelLayer, partSubtitle, type LabelItem, type LabelKind } from "./labels";
 import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measurePointFace, measurePointPoint, meshFace, objectFace, orientByFace, pickRef, placeOnFace, refFace, toMat4, toPartFrame, type FaceSource, type MeasureKind, type MeasureRef, type MeshFaceInput } from "./measure";
 import { TourPlayback, parseTour, tourOps, type Tour } from "./tour";
 import { LoadingScreen, attachLoadTracker, glbPlacements, useLoadTiers, type LoadSnapshot, type LoadTier } from "./loading";
@@ -38,14 +39,14 @@ import { Icon } from "../canvas/Icon";
 import { layOutRow } from "./row";
 import { intoScope, outOfScope, scopeRef, scopedModel, scopedPlacements, shownSummary } from "./scope";
 import { CadInspector } from "./CadInspector";
-import { CadToolbar } from "./CadToolbar";
+import { CadToolbar, toolbarAvailability } from "./CadToolbar";
 import { GcodeView } from "./GcodeView";
 import { gcodeEntry } from "../gcode/entry";
 import { cableSummary, harnessMaterial, routeManifest } from "./harness";
 import type { ViewerSnapshotMessage } from "../api";
 import { HUMAN, SYSTEM, presentation, presentationFromDisplay, same, serializeViewState, useViewSlice, viewHub, type Actor, type Batch, type CameraState, type PlacementVerb, type SectionPlane, type ViewHub, type ViewSelection, type ViewState } from "./state";
 import type { PlacementFacts, SetOp } from "../api";
-import { matchesPath, placeholderSummary, shortRecordId, shownBy, viewUp, type PlaceholderSummary } from "./state/view";
+import { focusSelection, freshFocus, glowPlan, holdsPath, matchesPath, placeholderSummary, shortRecordId, shownBy, viewUp, type GlowPlan, type PlaceholderSummary } from "./state/view";
 
 /** Render knobs from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -54,6 +55,15 @@ const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" :
 const EXPLODE_MM = 26;
 /** A camera drag reports its camera to the view state at most this often (ms); the host saves after 400 ms of quiet. */
 const CAMERA_REPORT_MS = 200;
+/** DEFAULT (R1-A, E3): "Look along normal" turns the camera in this long (ms), eased. */
+const LOOK_ALONG_MS = 450;
+/**
+ * The model's drawn bounds when the camera was last fitted or kept, per system and scope (R1-A, M1): the view
+ * remounts on a rebuild or a tab switch, and a model of about the same size keeps the camera the person left.
+ */
+const fittedBoxes = new Map<string, THREE.Box3>();
+/** Pages opened with `?focus=1` frame the focus once per system and scope, not on every rebuild (R1-A, M1). */
+const urlFocusDone = new Set<string>();
 
 /** Instance display names: ChildModuleRef names by path ("arm_fl" → "Front-left arm", "arm_fl/motor" → "Motor"). */
 function instanceNames(system: ModuleDef, lookup: ModuleLookup): Map<string, string> {
@@ -113,6 +123,9 @@ interface HardwareRec {
   offset: THREE.Vector3;
 }
 
+/** Host openFinding messages already pinned, for the page's lifetime (gate R1). */
+const findingsPinned = new WeakSet<object>();
+
 /** The actor for writes made through `window.__cad.set` (a script driving the page). */
 const SCRIPT: Actor = { kind: "host", id: "__cad" };
 /** The actor for the explode amount a sequence play leaves (W2-C's player). */
@@ -147,12 +160,14 @@ export function CadView({
   diagnostics = [],
   hostDiagnostics = [],
   focusOn,
+  findingOn,
   onSelect,
   inspector = true,
   scope,
   emptyHint,
   onLoadState,
   onOpenModule,
+  onInspect,
   hub: givenHub,
   sequence,
   onLoadTier,
@@ -171,6 +186,11 @@ export function CadView({
    * a link selects the mate of that path (`owner/link`); `none` clears.
    */
   focusOn?: { path: string; seq: number; kind?: "node" | "link" | "none"; look?: boolean };
+  /**
+   * A host's openFinding (gate R1, R1-E's D7): pin that finding's callout open, with the findings layer on and its
+   * severity shown; `seq` tells repeats apart. Framing is the focus's job (the host sends one first).
+   */
+  findingOn?: { id: string; code: string; path?: string; seq: number };
   /** Show the inspector card (the app's panel toggle; closed by default on a narrow view, PB-861). */
   inspector?: boolean;
   /** Every selection change (for the host), by paths from the root. */
@@ -203,6 +223,8 @@ export function CadView({
    * Refs are instance paths from the root. Also settable with `window.__cad.presence(list)`.
    */
   presence?: PresenceChip[];
+  /** Show a part in the host's own Inspector (`uhd-viewer:inspect`), by instance path from the root (R1-C's D3). */
+  onInspect?: (path: string, defId?: string) => void;
 }) {
   const display = source.display.spatial ?? {};
   const resolve = source.resolveArtifact;
@@ -270,6 +292,12 @@ export function CadView({
   const [settled, setSettled] = useState(false);
   /** The camera's move while the model comes apart or together: from where it was to a fit of where it ends. */
   const cameraTween = useRef<{ from: [THREE.Vector3, THREE.Vector3]; to: [THREE.Vector3, THREE.Vector3]; start: number } | null>(null);
+  /** A timed camera move (R1-A, E3 "Look along normal"): eased from one pose to another over `ms`. */
+  const viewTween = useRef<{ from: { position: THREE.Vector3; target: THREE.Vector3 }; to: { position: THREE.Vector3; target: THREE.Vector3 }; start: number; ms: number } | null>(null);
+  /** The face under the person's last pick (world normal) and what that pick selected (R1-A, E3). */
+  const lastPick = useRef<{ key: string; normal: THREE.Vector3 } | null>(null);
+  /** The model info card's note after an explode that moved nothing (R1-A, M11). */
+  const [explodeNote, setExplodeNote] = useState<string | null>(null);
   const [labelMenu, setLabelMenu] = useState(false);
   const [sectionMenu, setSectionMenu] = useState(false);
   const present = hub.opening.present;
@@ -286,6 +314,8 @@ export function CadView({
   const [caption, setCaption] = useState<[string, string] | null>(null);
   const openModuleRef = useRef(onOpenModule);
   openModuleRef.current = onOpenModule;
+  const inspectHandler = useRef(onInspect);
+  inspectHandler.current = onInspect;
   // the loading screen (W2-C, PB-1177): fed by every GLB load and by this view's counts, compiles and first frame
   const [loadSnap, setLoadSnap] = useState<LoadSnapshot | null>(null);
   const tracker = useRef<ReturnType<typeof attachLoadTracker> | null>(null);
@@ -420,8 +450,17 @@ export function CadView({
       ...(aa === "msaa" || aa === "native" || aa === "none" ? { antialias: aa as AntialiasMode } : {}),
       ...(params.get("samples") ? { samples: Number(params.get("samples")) } : {}),
       ...(params.get("batch") === "0" ? { batching: false } : {}),
+      // R1-A (E1): wheel zoom toward the pointer, DEFAULT on; a host's choice (hub.controls), else the URL's
+      zoomToCursor: hub.controlOptions?.zoomToCursor ?? hub.opening.zoomToCursor ?? DEFAULT_ZOOM_TO_CURSOR,
     });
     handle.current = h;
+    hub.controls = (o) => {
+      if (typeof o?.zoomToCursor === "boolean") {
+        hub.controlOptions = { ...hub.controlOptions, zoomToCursor: o.zoomToCursor };
+        h.controls.zoomToCursor = o.zoomToCursor;
+      }
+      return { zoomToCursor: h.controls.zoomToCursor };
+    };
     // local crash and performance records (PB-1181, W1-E): frames, loads, context loss of this scene
     const stopTelemetry = attachSceneTelemetry(h);
     h.scene.add(harnessGroup.current);
@@ -435,8 +474,11 @@ export function CadView({
       onFinding: (id, action) => annotHost.current.onFinding?.(id, action),
       onLookAt: (ref) => annotHost.current.onLookAt?.(ref),
       onDismiss: (id) => annotHost.current.onDismiss?.(id),
+      // R1-C handoff (D3): a click that pins a marker or a finding's card shows its part in the Inspector
+      onInspect: (id, ref) => annotHost.current.onInspect?.(id, ref),
     });
     annot.onChange = () => h.invalidate("view");
+    annot.onSceneChange = () => h.invalidate("scene");
     h.overlay.add(annot.group);
     annotRef.current = annot;
     return () => {
@@ -444,6 +486,7 @@ export function CadView({
       annotRef.current = null;
       labelsRef.current?.dispose();
       stopTelemetry();
+      hub.controls = undefined;
       h.dispose();
       handle.current = null;
     };
@@ -508,6 +551,18 @@ export function CadView({
         // shared materials (PB-1175): the GLB's own (one per glTF material, shared by every clone) or one per look
         if (!vendor) mesh.material = materialFor(body.def, part.name, appearanceOf(body.def.id));
         mesh.userData.bodyKey = body.key;
+        // R1-E's C1 handoff: a board's layer sheets (copper, mask/paste, silkscreen) are drawn in front of the one
+        // below them by their rank (DEFAULT -rank / -2 rank), so coplanar layers do not z-fight
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) {
+          const rank = (m.userData?.protoboard as { layerRank?: unknown } | undefined)?.layerRank;
+          if (typeof rank === "number" && rank > 0 && !m.polygonOffset) {
+            m.polygonOffset = true;
+            m.polygonOffsetFactor = -rank;
+            m.polygonOffsetUnits = -2 * rank;
+            m.needsUpdate = true;
+          }
+        }
         if (components.has(part.name)) mesh.userData.component = part.name;
         else if (typeof partId === "string" && partId) mesh.userData.component = partId;
       });
@@ -576,7 +631,8 @@ export function CadView({
     const changed = () => {
       state.ms = performance.now() - state.started;
       loadListener.current?.({ ...state });
-      tracker.current?.loadState({ ...state });
+      // R1-B handoff (B1, B3): the model the load is for, so a rebuild of the same model is an update (no screen)
+      tracker.current?.loadState({ ...state }, `${system.id}|${at}`);
     };
     let compiled = 0;
     const bump = () => {
@@ -650,6 +706,10 @@ export function CadView({
           }
           const rec = buildBody(body, base, loadedModel);
           rec.look = lookKey(body);
+          // R1-A (M1): the selection and the highlight in force are painted on it now, so the swap shows no frame
+          // without them (the glow effect paints it again on its next pass and undoes this with its own)
+          const glow = glowNow.current;
+          if (glow) paintBody(rec, glow.plan, h.colors, glow.restore);
           // programs before the swap: the next frame does not stall on a shader compile
           await h.compile([rec.obj]);
           tracker.current?.upload(++compiled, state.total);
@@ -965,6 +1025,22 @@ export function CadView({
           }
         }
       }
+      // "Look along normal" (R1-A, E3): the camera turns to the part's face, eased
+      const vt = viewTween.current;
+      let turning = false;
+      if (vt) {
+        const k = (performance.now() - vt.start) / vt.ms;
+        const pose = cameraBetween(vt.from, vt.to, k);
+        h.camera.position.copy(pose.position);
+        h.controls.target.copy(pose.target);
+        h.camera.lookAt(pose.target);
+        h.invalidate("view");
+        turning = k < 1;
+        if (!turning) {
+          viewTween.current = null;
+          reportCameraRef.current(SYSTEM);
+        }
+      }
       // a sequence playing (a step, a loop, a clip): the player moves the parts
       const p = player.current;
       const seqMoving = !moving && p ? p.tick(dt) : false;
@@ -990,7 +1066,7 @@ export function CadView({
         annotWas.current = annotActive.current;
       }
       // still moving: the next frame is drawn too; otherwise the view goes idle
-      return moving || seqMoving || ex.value !== ex.target || easing || annotBusy;
+      return moving || seqMoving || ex.value !== ex.target || easing || annotBusy || turning;
     };
     h.beforeRender.add(f);
     return () => {
@@ -1039,7 +1115,9 @@ export function CadView({
         let title = h?.title ?? nameOf(path);
         if (!h?.title && b.key.includes("#")) title = `${title} · ${b.glb?.name?.replace(/ \(GLB\)$/, "") ?? b.key.split("#")[1]}`;
         else if (!h?.title && parent && sameName(path)) title = `${title} · ${nameOf(parent)}`;
-        const sub = h?.sub ?? (b.def.name !== title ? b.def.name : undefined) ?? (b.hint ? "placed by a display hint" : undefined);
+        // R1-C handoff (M12): the subtitle is the part's refdes or MPN, never placement provenance
+        const f = partFacts(b.key.split("#")[0], b.def);
+        const sub = h?.sub ?? partSubtitle(f) ?? (b.def.name !== title ? b.def.name : undefined);
         items.push({ id: `m:${b.key}`, kind: "module", title, sub, anchor: bodyAnchor(b.key, b.key === rootKey ? "centre" : "top"), onClick: () => setSel({ body: b.key }) });
       }
     }
@@ -1106,6 +1184,11 @@ export function CadView({
       }
     }
     // findings are markers now (PB-1184, ./annot): this layer carries the module, harness and interface labels
+    // R1-C handoff (D5): labels behind the drawn model's centre fade
+    layer.centre = () => {
+      const b = drawnBox();
+      return b.isEmpty() ? null : b.getCenter(new THREE.Vector3());
+    };
     layer.setItems(showLabels ? items : []);
     layer.target = showLabels ? 1 : 0;
     // the inspector card covers the right of the view only while it is open
@@ -1130,6 +1213,19 @@ export function CadView({
     }
     return box;
   };
+  /**
+   * Bounds of what is drawn now (R1-A, M1): as `currentBounds`, without the bodies hidden or isolated away (a fit of
+   * a board must not frame the shell the person hid). Everything when nothing is drawn.
+   */
+  const drawnBox = () => {
+    const box = new THREE.Box3();
+    for (const rec of bodies.current.values()) {
+      if (rec.box.isEmpty() || !rec.obj.visible) continue;
+      box.union(rec.box.clone().applyMatrix4(rec.obj.matrix));
+      for (const part of rec.parts) if (!part.cadBox.isEmpty()) box.union(part.cadBox.clone().applyMatrix4(rec.obj.matrix).translate(part.travel));
+    }
+    return box.isEmpty() ? currentBounds() : box;
+  };
   /** Where the section plane cuts `box` (the assembled bounds), and which side it keeps (flip: the + side). */
   const sectionPlane = (box: THREE.Box3) => {
     const h = handle.current;
@@ -1142,7 +1238,7 @@ export function CadView({
   };
   /** Bounds of what is drawn now: the model as exploded, less what a section cuts away. */
   const visibleBounds = () => {
-    const box = currentBounds();
+    const box = drawnBox();
     const cut = sectionPlane(assembledBounds());
     if (!section || !cut || box.isEmpty()) return box;
     if (cut.flip) box.min.setComponent(section.axis, Math.max(box.min.getComponent(section.axis), cut.at));
@@ -1194,6 +1290,26 @@ export function CadView({
     handle.current?.invalidate();
   }, [xray, loaded, model, settled]);
 
+  // ---- what glows (R1-A: A1, A2, M5) ----------------------------------------------------------------------
+  /** The plan in force and its undo list: a body built by a hot swap is painted with it before it is shown (M1). */
+  const glowNow = useRef<{ plan: GlowPlan; restore: (() => void)[] } | null>(null);
+  /** Paint one body as the plan says: the selection's solid accent surface, the highlight's glow, its components. */
+  const paintBody = (rec: BodyRec, plan: GlowPlan, colors: SceneColors, restore: (() => void)[]) => {
+    const key = rec.body.key;
+    const selected = plan.selected.has(key);
+    const glow = plan.highlighted.has(key) ? colors.glowStrong : undefined;
+    rec.obj.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || o.userData.bodyKey === undefined) return;
+      // a highlight is a shared variant of the mesh's material: under the batcher, an instance attribute
+      setMeshLook(mesh, { emissive: glow });
+      // DEFAULT (M5): a selected body is drawn in the theme's accent surface, as a selected component is
+      if (selected) swapMaterial(mesh, focusMaterial(colors.focus), restore);
+    });
+    if (plan.component?.holder === key) paintComponent(rec, plan.component.path, "select", colors, restore);
+    for (const c of plan.components) if (c.holder === key) paintComponent(rec, c.path, "highlight", colors, restore);
+  };
+
   // ---- selection overlays: interface geometry per direction, frames ----------
   useEffect(() => {
     const h = handle.current;
@@ -1202,19 +1318,14 @@ export function CadView({
     const newNotes: string[] = [];
     const objOf = (key: string) => bodies.current.get(key)?.obj;
 
-    for (const [key, rec] of bodies.current) {
-      // an assembly with no body of its own is selected as its parts
-      const lit = sel.body !== undefined && (key === sel.body || (sel.body !== "" && key.startsWith(`${sel.body}/`)));
-      // what the view state highlights besides the selection (an agent pointing at a part): the stronger glow
-      const marked = highlight.some((p) => matchesPath(key, p));
-      rec.obj.traverse((o) => {
-        // a highlight is a shared variant of the mesh's material: under the batcher, an instance attribute
-        if ((o as THREE.Mesh).isMesh && o.userData.bodyKey !== undefined) setMeshLook(o as THREE.Mesh, { emissive: lit ? h.colors.glow : marked ? h.colors.glowStrong : undefined });
-      });
-    }
-    for (const [key, obj] of harnessObjs.current) {
-      if (key === sel.harness || !highlight.some((p) => matchesPath(key, p))) continue;
-      obj.traverse((o) => {
+    // R1-A: one plan for what glows. A picked component lights itself, never its holder board (A2); a highlight below
+    // a body lights the component it names (A1); the selection is the accent surface on bodies and components alike (M5)
+    const plan = glowPlan({ bodies: bodies.current.keys(), harnesses: harnessObjs.current.keys(), selection: sel, highlight, within: model.within });
+    for (const rec of bodies.current.values()) paintBody(rec, plan, h.colors, restore);
+    glowNow.current = { plan, restore };
+    for (const key of plan.harnesses) {
+      const obj = harnessObjs.current.get(key);
+      obj?.traverse((o) => {
         if (!(o as THREE.Mesh).isMesh) return;
         setMeshLook(o as THREE.Mesh, { emissive: h.colors.glowStrong });
         restore.push(() => setMeshLook(o as THREE.Mesh, { emissive: undefined }));
@@ -1350,56 +1461,11 @@ export function CadView({
         }
       }
     }
-    if (selBody && sel.component) {
-      // a component inside the body (a board's part): its node, named by its id in the body, glows
-      const holder = selBody.key.split("#")[0];
-      const node = holder && sel.component.startsWith(`${holder}/`) ? sel.component.slice(holder.length + 1) : sel.component;
-      const partId = (o: THREE.Object3D) => (o.userData.protoboard as { partInstanceId?: unknown } | undefined)?.partInstanceId;
-      let found = false;
-      objOf(selBody.key)?.traverse((o) => {
-        // by the node's name (its id in the body), or by the instance path its extras carry (PB-1175 ids)
-        const id = partId(o);
-        if (o.name !== node && !(typeof id === "string" && (id === node || id === sel.component))) return;
-        found = true;
-        o.traverse((x) => {
-          const mesh = x as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          const was = mesh.material;
-          mesh.material = focusMaterial(h.colors.focus);
-          restore.push(() => (mesh.material = was));
-        });
-      });
-      // one instance of a GPU-instanced node (`extras.protoboard.instances`, e.g. ClientX's SOP-8 packages): a twin
-      // of that instance in the highlight surface, drawn over it (gate 3: a board component selected this way drew
-      // no highlight at all; the annotation layer already resolved it the same way)
-      const twins: { parent: THREE.Object3D; twin: THREE.Mesh }[] = [];
-      if (!found)
-        objOf(selBody.key)?.traverse((o) => {
-          const im = o as THREE.InstancedMesh;
-          const list = (o.userData.protoboard as { instances?: unknown } | undefined)?.instances;
-          if (!im.isInstancedMesh || !Array.isArray(list) || !im.parent) return;
-          const i = list.findIndex((p) => p === node || p === sel.component);
-          if (i < 0 || i >= im.count) return;
-          const at = new THREE.Matrix4();
-          im.getMatrixAt(i, at);
-          const twin = new THREE.Mesh(im.geometry, focusMaterial(h.colors.focus));
-          twin.matrixAutoUpdate = false;
-          twin.matrix.multiplyMatrices(im.matrix, at);
-          twin.userData.noBatch = true;
-          twin.raycast = () => {};
-          twins.push({ parent: im.parent, twin });
-        });
-      for (const { parent, twin } of twins) {
-        parent.add(twin);
-        restore.push(() => parent.remove(twin));
-      }
-    }
     if (sel.harness) {
+      // a selected cable: the same accent surface as any selected part (M5)
       const obj = harnessObjs.current.get(sel.harness);
       obj?.traverse((o) => {
-        if (!(o as THREE.Mesh).isMesh) return;
-        setMeshLook(o as THREE.Mesh, { emissive: h.colors.glowStrong });
-        restore.push(() => setMeshLook(o as THREE.Mesh, { emissive: undefined }));
+        if ((o as THREE.Mesh).isMesh) swapMaterial(o as THREE.Mesh, focusMaterial(h.colors.focus), restore);
       });
     }
     if (showFrames) {
@@ -1417,10 +1483,13 @@ export function CadView({
     setNotes([...new Set(newNotes)]);
     h.invalidate();
     return () => {
-      restore.forEach((f) => f());
+      // last applied first: a component's glow is undone before its body's look is
+      for (let i = restore.length - 1; i >= 0; i--) restore[i]();
+      if (glowNow.current?.restore === restore) glowNow.current = null;
       handle.current?.invalidate();
     };
-  }, [model, sel, direction, showFrames, loaded, themed, highlight]);
+    // x-ray repoints the meshes at its own variants: the selection is painted again over it
+  }, [model, sel, direction, showFrames, loaded, themed, highlight, xray]);
 
   // ---- isolation and hidden paths (the view state's): a body, a harness or a fastener is drawn or not -----
   useEffect(() => {
@@ -1456,10 +1525,18 @@ export function CadView({
     const h = handle.current;
     if (!h) return;
     const el = h.renderer.domElement;
-    let down: { x: number; y: number } | null = null;
-    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+    // a click is a press whose pointer never wandered more than 4 px (DEFAULT): a drag that ends where it began (a
+    // shake, R1-C's observation) is a drag, not a pick
+    let down: { x: number; y: number; far: number } | null = null;
+    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY, far: 0 });
+    const onMove = (e: PointerEvent) => {
+      if (down) down.far = Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y));
+    };
     const onUp = (e: PointerEvent) => {
-      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
+      if (!down || Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y)) > 4) return;
+      down = null;
+      // a person's pick never frames: a focus still waiting to frame (a host's, on what had nothing drawn) is dropped
+      look.current = false;
       const r = el.getBoundingClientRect();
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
@@ -1475,6 +1552,9 @@ export function CadView({
         // a component is named by its instance path in the model (the body's path, then its id in the body), as a host's focus names it
         const holder = k.split("#")[0];
         const component = child === undefined ? undefined : instancePathIn(holder, child);
+        // the face under the pick: "Look along normal" faces it (R1-A, E3)
+        const normal = triangleNormal(hit.object, hit.triangle, h.camera.position.clone().sub(hit.point), hit.instance);
+        lastPick.current = normal && !hwMate ? { key: component ?? k, normal } : null;
         setSel(hwMate ? { mate: hwMate } : component ? { body: k, component } : { body: k });
       }
     };
@@ -1507,6 +1587,7 @@ export function CadView({
     const interactOn = () => turns.setInteracting?.(true);
     const interactOff = () => turns.setInteracting?.(false);
     el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("dblclick", onDouble);
     el.addEventListener("pointerdown", interactOn);
@@ -1517,6 +1598,7 @@ export function CadView({
     el.addEventListener("lostpointercapture", interactOff);
     return () => {
       el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("dblclick", onDouble);
       el.removeEventListener("pointerdown", interactOn);
@@ -1575,6 +1657,7 @@ export function CadView({
     const h = handle.current;
     if (!h) return;
     cameraTween.current = null;
+    viewTween.current = null;
     framed.current = true;
     h.controls.target.set(...cam.target);
     h.camera.position.set(...cam.position);
@@ -1623,28 +1706,42 @@ export function CadView({
     if (!h) return;
     const v = h.camera.position.clone().sub(h.controls.target).normalize();
     const local = v.clone().applyQuaternion(upQuat.clone().invert());
-    fit(currentBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
+    fit(visibleBounds(), (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
   };
-  /** Explode or assemble, the camera moving with the parts to frame where they end. */
+  /**
+   * Explode or assemble (R1-A, M11). The camera keeps the view the person framed and only follows the parts'
+   * envelope: where they end is measured (laid out there for a moment and put back), and the camera moves by the
+   * change of that envelope (`explodeCamera`), never a fresh fit. Nothing moves (a model with no steps, or steps
+   * that move nothing): the camera stays and the model info card says so.
+   */
   const toggleExploded = (on: boolean) => {
     const h = handle.current;
     const ex = explode.current;
     if (h && model && ex.target !== (on ? 1 : 0)) {
-      const from: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
-      const now = ex.value < 0.5 ? 4 * ex.value ** 3 : 1 - (-2 * ex.value + 2) ** 3 / 2;
-      // where it ends: lay the parts out there for a moment, fit, and put everything back (not reported: the
-      // camera is reported when the tween ends)
+      // the sequence the parts follow, now (it resolves lazily, W3-C): without it nothing would move here
+      if (!player.current && settledRef.current) resolveSequence();
+      const steps = player.current?.snapshot().steps.length ?? 0;
+      const where = () => {
+        h.root.updateMatrixWorld(true);
+        const out: THREE.Vector3[] = [];
+        for (const rec of bodies.current.values()) {
+          out.push(new THREE.Vector3().setFromMatrixPosition(rec.obj.matrixWorld));
+          for (const part of rec.parts) out.push(new THREE.Vector3().setFromMatrixPosition(part.obj.matrixWorld));
+        }
+        for (const hw of hardware.current) out.push(new THREE.Vector3().setFromMatrixPosition(hw.obj.matrixWorld));
+        return out;
+      };
+      const before = where();
+      const fromBox = drawnBox();
       applyExplode(on ? 1 : 0);
+      const after = where();
+      const toBox = drawnBox();
+      applyExplode(ex.value);
       h.root.updateMatrixWorld(true);
-      muteCamera.current = true;
-      fitAsSeen();
-      muteCamera.current = false;
-      const to: [THREE.Vector3, THREE.Vector3] = [h.camera.position.clone(), h.controls.target.clone()];
-      applyExplode(now);
-      h.camera.position.copy(from[0]);
-      h.controls.target.copy(from[1]);
-      h.camera.lookAt(from[1]);
-      cameraTween.current = { from, to, start: ex.value };
+      const moved = before.reduce((m, p, i) => Math.max(m, after[i] ? p.distanceTo(after[i]) : 0), 0);
+      const next = explodeCamera({ from: fromBox, to: toBox, moved, position: h.camera.position, target: h.controls.target });
+      if (next) cameraTween.current = { from: [h.camera.position.clone(), h.controls.target.clone()], to: [next.position, next.target], start: ex.value };
+      setExplodeNote(on && (steps === 0 || moved < EXPLODE_STILL_MM) ? "nothing to explode in this model" : null);
     }
     write([{ op: "explode", t: on ? 1 : 0 }], on ? "explode the assembly" : "assemble the parts");
   };
@@ -1674,7 +1771,9 @@ export function CadView({
     if (part && !sel.iface) {
       const box = part.box.clone();
       const size = box.getSize(new THREE.Vector3());
-      box.expandByScalar(Math.max(size.length() * 1.5, 25));
+      // R1-A (M1): room of half its size on each side (twice its size in all, QA B4), at least 12 mm. DEFAULT. It was
+      // 1.5x its size on each side, so a large part (ClientX's USB-C) left the board tiny ("why did it get smaller?")
+      box.expandByScalar(Math.max(size.length() * 0.5, 12));
       const v = h.camera.position.clone().sub(h.controls.target).normalize();
       const local = v.clone().applyQuaternion(upQuat.clone().invert());
       fit(box, (Math.atan2(local.y, local.x) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI);
@@ -1700,6 +1799,80 @@ export function CadView({
     h.camera.position.copy(target.clone().add(dir.multiplyScalar(160)));
     h.invalidate("view");
     reportCamera(SYSTEM);
+  };
+  /**
+   * "Look along normal" (R1-A, E3): the camera turns to face the selection's dominant face, at the distance it is
+   * now, eased over LOOK_ALONG_MS. The face is the one under the person's last pick on this selection, else the
+   * largest face of its box (in its own frame: a tilted panel is faced square), else an interface's own normal.
+   * "Fit" is unchanged.
+   */
+  const lookAlongNormal = () => {
+    const h = handle.current;
+    if (!h) return;
+    const recs = selectionRecs(sel.body);
+    const wire = sel.body === undefined && sel.harness !== undefined ? harnessObjs.current.get(sel.harness) : undefined;
+    if (!recs.length && !wire) return;
+    const toward = h.camera.position.clone().sub(h.controls.target);
+    const rec = recs.length === 1 ? recs[0] : undefined;
+    let box = new THREE.Box3();
+    let normal: THREE.Vector3 | undefined;
+    const pickKey = sel.component ?? sel.body ?? sel.harness;
+    if (rec) rec.obj.updateWorldMatrix(true, true);
+    const iface = rec && sel.iface ? rec.body.def.interfaces.find((i) => i.id === sel.iface)?.geometry?.frame : undefined;
+    if (rec && iface) {
+      box.setFromCenterAndSize(new THREE.Vector3(...iface.origin).applyMatrix4(rec.obj.matrixWorld), new THREE.Vector3());
+      // an interface's frame normal points out of the part: the camera looks at it from that side
+      normal = new THREE.Vector3(...iface.normal).transformDirection(rec.obj.matrixWorld);
+    } else if (rec && sel.component) {
+      const holderKey = rec.body.key.split("#")[0];
+      const part = componentIn(rec.obj, holderKey && sel.component.startsWith(`${holderKey}/`) ? sel.component.slice(holderKey.length + 1) : sel.component, sel.component);
+      if (part) {
+        box = part.box.clone();
+        // its box in the holder's frame (a board's parts sit square to the board)
+        const toLocal = rec.obj.matrixWorld.clone().invert();
+        normal = dominantNormal(part.box.clone().applyMatrix4(toLocal), rec.obj.matrixWorld, toward);
+      }
+    }
+    if (box.isEmpty() && rec && !rec.box.isEmpty()) {
+      box = rec.box.clone().applyMatrix4(rec.obj.matrixWorld);
+      // gate R1: the way its surface faces (its triangles), else its box's flattest axis
+      normal = principalNormal([rec.obj], toward) ?? dominantNormal(rec.box, rec.obj.matrixWorld, toward);
+    }
+    if (box.isEmpty()) {
+      for (const o of wire ? [wire] : recs.map((r) => r.obj)) box.expandByObject(o);
+      if (box.isEmpty()) return;
+      normal = dominantNormal(box, new THREE.Matrix4(), toward);
+    }
+    // gate R1: which face. A part away from the middle of what is drawn (a shell panel) is faced from outside, away
+    // from that middle (it was faced through the shell, from inside); a part at the middle (a board on its own) from
+    // the side the camera is on, seen from the part's own centre (DEFAULT: "away" past 10 % of the drawn radius)
+    if (normal && !iface) {
+      const centre = box.getCenter(new THREE.Vector3());
+      const drawn = drawnBox();
+      const middle = drawn.isEmpty() ? centre : drawn.getCenter(new THREE.Vector3());
+      const radius = drawn.isEmpty() ? 0 : drawn.getSize(new THREE.Vector3()).length() / 2;
+      const out = centre.clone().sub(middle);
+      const side = radius > 0 && out.length() > 0.1 * radius && Math.abs(out.clone().normalize().dot(normal)) > 0.2 ? out : h.camera.position.clone().sub(centre);
+      if (normal.dot(side) < 0) normal.negate();
+    }
+    // the person's own pick on this selection: the face they clicked
+    if (lastPick.current && lastPick.current.key === pickKey && !iface) normal = lastPick.current.normal.clone();
+    const target = box.getCenter(new THREE.Vector3());
+    const position = lookAlong(target, target.clone().add(toward), normal ?? toward.clone().normalize(), upRef.current);
+    const from = { position: h.camera.position.clone(), target: h.controls.target.clone() };
+    const to = { position, target };
+    cameraTween.current = null;
+    const reduced = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      h.controls.target.copy(target);
+      h.camera.position.copy(position);
+      h.camera.lookAt(target);
+      h.invalidate("view");
+      reportCamera(SYSTEM);
+      return;
+    }
+    viewTween.current = { from, to, start: performance.now(), ms: LOOK_ALONG_MS };
+    h.invalidate("view");
   };
   reportCameraRef.current = reportCamera;
   /** Bounds of each body as drawn now, from its precise local box (the same box from a sidecar or a plain GLB). */
@@ -1987,6 +2160,7 @@ export function CadView({
     () =>
       store.subscribe((c) => {
         if (c.source === "view" || !c.state.camera || c.state.camera === c.prev.camera) return;
+        openedByDefault.current = false;
         applyCamera(c.state.camera);
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2008,7 +2182,9 @@ export function CadView({
       user = true;
       // the user took the camera: no opening fit or tween takes it back
       framed.current = true;
+      openedByDefault.current = false;
       cameraTween.current = null;
+      viewTween.current = null;
       clearTimeout(ending);
     };
     const onChange = () => {
@@ -2066,12 +2242,20 @@ export function CadView({
     target: saved?.target ? new THREE.Vector3(...saved.target) : undefined,
   };
   const framed = useRef(false);
+  /** The camera is still the default opening orbit this view put there (no one chose it). */
+  const openedByDefault = useRef(false);
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
     h.setUp(upVec);
     const have = store.get().camera;
-    if (have) return applyCamera(have);
+    if (have) {
+      applyCamera(have);
+      // the camera this view placed itself by default (React's development double mount runs this twice): still
+      // to be fitted once the models are in, not a camera someone chose (R1-A, M1)
+      if (openedByDefault.current) framed.current = false;
+      return;
+    }
     if (urlOpen.camera) {
       applyCamera({ ...urlOpen.camera, up: urlOpen.camera.up ?? (upVec.toArray() as [number, number, number]) });
       return reportCamera(SYSTEM);
@@ -2080,7 +2264,10 @@ export function CadView({
       store.dispatch([{ op: "applyView", name: urlOpen.view }], { actor: SYSTEM, label: `open the named view ${urlOpen.view}`.slice(0, 120), source: "url" });
       return;
     }
-    if (!urlOpen.focus) orbit(opening.az, opening.el, opening.dist ?? 520, opening.target);
+    if (!urlOpen.focus) {
+      orbit(opening.az, opening.el, opening.dist ?? 520, opening.target);
+      openedByDefault.current = opening.dist === undefined;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upVec]);
   useEffect(() => {
@@ -2088,15 +2275,40 @@ export function CadView({
     if (!h || !model || !settled) return;
     const box = assembledBounds();
     h.setGround(box);
-    if (framed.current || urlOpen.focus || h.manual.on) return;
-    framed.current = true;
-    if (opening.dist !== undefined) return;
-    // what is drawn: a section view opens on the half it keeps, centred
-    fit(visibleBounds(), opening.az, opening.el);
+    if (h.manual.on) return;
+    // R1-A (M1): the camera is fitted on a first load only. A rebuild's hot swap or a remount keeps the camera the
+    // person (or a host, or a restored state) placed, unless the model's size changed by more than REFIT_RATIO
+    // (DEFAULT 2x): then it is fitted again from where the camera looks
+    const drawn = visibleBounds();
+    const memo = `${system.id}|${at}`;
+    const placed = framed.current || urlOpen.focus || opening.dist !== undefined;
+    if (!placed) {
+      framed.current = true;
+      openedByDefault.current = false;
+      // what is drawn: a section view opens on the half it keeps, centred
+      fit(drawn, opening.az, opening.el);
+    } else if (needsRefit(fittedBoxes.get(memo), drawn, true)) {
+      fitAsSeen();
+    }
+    if (opening.dist !== undefined) framed.current = true;
+    if (!drawn.isEmpty()) fittedBoxes.set(memo, drawn.clone());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, model]);
+  // gate R1 (M1): what the person shows (isolation, hidden parts) is the size the next rebuild compares with: isolating
+  // the board after the whole assembly was fitted made the next rebuild refit the camera (the drawn bounds shrank
+  // past REFIT_RATIO against the memo of the whole assembly)
   useEffect(() => {
-    if (urlOpen.focus && loaded >= (model?.bodies.filter((b) => b.glb).length ?? 1)) focus();
+    if (!settled || !model) return;
+    const drawn = visibleBounds();
+    if (!drawn.isEmpty()) fittedBoxes.set(`${system.id}|${at}`, drawn.clone());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isolation, hidden]);
+  useEffect(() => {
+    // `?focus=1` frames the focus once (per system and scope), not again on every rebuild (R1-A, M1)
+    const memo = `${system.id}|${at}`;
+    if (!urlOpen.focus || urlFocusDone.has(memo) || loaded < (model?.bodies.filter((b) => b.glb).length ?? 1)) return;
+    urlFocusDone.add(memo);
+    focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, model]);
 
@@ -2104,7 +2316,8 @@ export function CadView({
   const [shot, setShot] = useState<{ msg: ViewerSnapshotMessage; fading: boolean; local?: boolean } | null>(() => (hub.snapshot && snapshotFor(hub.snapshot, at) ? { msg: hub.snapshot, fading: false } : null));
   useEffect(() => {
     hub.onSnapshot = (m) => {
-      if (snapshotFor(m, at) && !settledRef.current) setShot({ msg: m, fading: false });
+      // R1-B handoff (B3): a host's snapshot paints only before the first models are in, never over a hot swap
+      if (snapshotFor(m, at) && !settledRef.current && bodies.current.size === 0) setShot({ msg: m, fading: false });
     };
     return () => void (hub.onSnapshot = undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2207,7 +2420,8 @@ export function CadView({
     if (sel.harness) selected.add(sel.harness);
     for (const r of selectionRecs(sel.body)) selected.add(r.body.key);
     h.setAttention("selected", selected);
-    h.setAttention("agent", [...bodies.current.keys(), ...harnessObjs.current.keys()].filter((k) => highlight.some((p) => matchesPath(k, p))));
+    // a highlighted component keeps its holder body at full quality too (R1-A, A1)
+    h.setAttention("agent", [...bodies.current.keys(), ...harnessObjs.current.keys()].filter((k) => highlight.some((p) => matchesPath(k, p) || holdsPath(k, p))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, highlight, loaded, settled]);
 
@@ -2233,11 +2447,12 @@ export function CadView({
 
   // a host's focus: select the module's body (the board body a component is drawn in, or the
   // nearest placed module above it), then look at it once its model is loaded
-  const focused = useRef(0);
   const look = useRef(false);
   useEffect(() => {
-    if (!focusOn || !model || focused.current === focusOn.seq) return;
-    focused.current = focusOn.seq;
+    if (!focusOn || !model) return;
+    // R1-A (A2): a focus is applied once per page. The view remounts on a rebuild or a tab switch and used to apply
+    // the shell's last focus again (an old hierarchy click), selecting the board after the person had cleared it
+    if (!freshFocus(focusOn)) return;
     if (focusOn.kind === "none") return setSel({});
     // the host names paths from the root: in a module's view, what lies outside it is not there to select
     const key = intoScope(focusOn.path, at);
@@ -2253,13 +2468,9 @@ export function CadView({
       look.current = focusOn.look !== false && harnessObjs.current.has(key);
       return;
     }
-    const has = (k: string) => model.bodies.some((b) => b.key === k);
-    const holder = model.within.get(key);
-    const parts = key.split("/");
-    const above = parts.map((_, i) => parts.slice(0, parts.length - 1 - i).join("/")).find((k) => k && has(k));
-    // an assembly drawn by its parts (an FC + ESC stack): selected as the group of them (QA B4)
-    const parts_ = key !== "" && model.bodies.some((b) => b.key.startsWith(`${key}/`));
-    const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : parts_ ? { body: key } : above ? { body: above } : undefined;
+    // the body; a component in the body that draws it (never that body alone: it painted the whole board, A2); an
+    // assembly drawn by its parts (QA B4)
+    const next: CadSelection | undefined = focusSelection(key, model.bodies.map((b) => b.key), model.within);
     if (!next) return;
     setSel(next);
     look.current = focusOn.look !== false;
@@ -2278,7 +2489,10 @@ export function CadView({
   // the host hears paths from the root
   useEffect(() => {
     const out = (p: string | undefined) => (p === undefined ? undefined : p.includes("#") ? `${outOfScope(p.split("#")[0], at)}#${p.split("#")[1]}` : outOfScope(p, at));
-    selectHandler.current?.({ ...sel, ...(sel.body !== undefined ? { body: out(sel.body) } : {}), ...(sel.component !== undefined ? { component: out(sel.component) } : {}), ...(sel.harness !== undefined ? { harness: out(sel.harness) } : {}), ...(sel.mate !== undefined ? { mate: out(sel.mate) } : {}) });
+    // R1-A (M2): a component named by its id in its body (the inspector card's rows) is named by its instance path
+    const holder = sel.body?.split("#")[0];
+    const component = sel.component !== undefined && holder !== undefined ? instancePathIn(holder, sel.component) : sel.component;
+    selectHandler.current?.({ ...sel, ...(sel.body !== undefined ? { body: out(sel.body) } : {}), ...(component !== undefined ? { component: out(component) } : {}), ...(sel.harness !== undefined ? { harness: out(sel.harness) } : {}), ...(sel.mate !== undefined ? { mate: out(sel.mate) } : {}) });
   }, [sel, at]);
 
   // render on demand (PB-1175): whatever React state changed (selection, visibility, explode, sections, labels,
@@ -2597,6 +2811,9 @@ export function CadView({
       }
     },
     onLookAt: (ref) => lookAtRef(ref),
+    onInspect: (_id, ref) => {
+      if (ref) inspectRef(ref);
+    },
     onDismiss: (id) => write([{ op: "set", path: ["annotations", id], value: undefined }], "remove a callout"),
   };
   /** Select what a scoped key names and frame it (a finding's "look at", a double-click on a label). */
@@ -2604,9 +2821,7 @@ export function CadView({
     const m = model;
     const key = keyIntoScope(ref.startsWith("link:") ? ref : ref.split(":")[0]);
     if (!m || key === undefined) return;
-    const has = (k: string) => m.bodies.some((b) => b.key === k);
-    const holder = m.within.get(key);
-    const next: CadSelection | undefined = has(key) ? { body: key } : holder !== undefined ? { body: holder, component: key } : m.bodies.some((b) => b.key.startsWith(`${key}/`)) ? { body: key } : undefined;
+    const next: CadSelection | undefined = focusSelection(key, m.bodies.map((b) => b.key), m.within);
     if (!next) return;
     if (same(next, sel)) {
       // already selected: frame it now (no selection change to wait for)
@@ -2617,6 +2832,34 @@ export function CadView({
     look.current = true;
     setSel(next);
   };
+  /**
+   * Show what a ref names in the Inspector (R1-C handoff, D3): selected here without moving the camera (the host's
+   * Inspector follows the selection, M2), and the host's own `uhd-viewer:inspect` when it gave `onInspect`.
+   */
+  const inspectRef = (ref: string) => {
+    const m = model;
+    const path = ref.startsWith("link:") ? undefined : ref.split(":")[0].split("#")[0];
+    const key = path !== undefined ? keyIntoScope(path) : undefined;
+    if (m && key !== undefined) {
+      const next = focusSelection(key, m.bodies.map((b) => b.key), m.within);
+      if (next && !same(next, sel)) setSel(next);
+    }
+    if (path !== undefined) inspectHandler.current?.(path, path ? defAt(system, lookup, path.split("/"))?.id : system.id);
+  };
+  // a host's openFinding (gate R1): pinned once per message for the page's lifetime (the view remounts on a rebuild
+  // or a tab switch and must not reopen a card the person closed, as for a focus, A2), as soon as the finding is
+  // known (a load may still be running)
+  useEffect(() => {
+    if (!findingOn || findingsPinned.has(findingOn) || !model) return;
+    const f = findingForHost(annotFindings, findingOn, keyOutOfScope);
+    if (!f) return;
+    findingsPinned.add(findingOn);
+    if (!showFindings) setVis("findings", true);
+    if (!shownSev.has(f.severity)) setShownSev((prev) => new Set(prev).add(f.severity));
+    setCurrentFinding(f.id);
+    if (f.anchors.length) setOpenFindings((prev) => new Set(prev).add(f.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findingOn, model, annotFindings]);
   const chooseFinding = (f: FindingAnchors) => {
     setCurrentFinding(f.id);
     if (!f.anchors.length) return;
@@ -2639,7 +2882,9 @@ export function CadView({
     const markers = showFindings && model ? drcMarkers(annotFindings, shownSev) : [];
     const who = [...(presence ?? []), ...presenceSet, ...storeChips].filter((p) => p && typeof p.who === "string" && typeof p.ref === "string").slice(0, 16);
     const reduced = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    layer.setInput({ records, markers, open: openFindings, presence: who, ghosts, motion: !noChrome && !present && !reduced });
+    // gate R1: markers find their part's surface (BVH builds) once the view has settled, not during the load; a
+    // document-mode page (a capture) at once, so its frame has them
+    layer.setInput({ records, markers, open: openFindings, presence: who, ghosts, motion: !noChrome && !present && !reduced, anchorParts: settled || noChrome });
     layer.margins = { top: noChrome || present ? 12 : 56, bottom: noChrome || present ? 12 : 60, left: noChrome || present ? 12 : 52, right: present || noChrome || !inspector || hub.opening.panel === "none" ? 16 : 380 };
     annotActive.current = records.length > 0 || markers.length > 0 || who.length > 0;
     handle.current?.invalidate("view");
@@ -2702,6 +2947,9 @@ export function CadView({
     else n.add(k);
     setVis("labelKinds", [...n]);
   };
+
+  // R1-D handoff (G4): what the model has, so the frame toggle and the D1/D2/D3 radios say "none in this model"
+  const toolbarAvail = useMemo(() => (model ? toolbarAvailability(model) : undefined), [model]);
 
   // after the last hook (W4-B's mount): a G-code file is shown by its own viewer, with its own toolbar
   if (gcode) return <GcodeView url={gcode.url} name={gcode.name} />;
@@ -2778,7 +3026,8 @@ export function CadView({
             direction={direction}
             onDirection={setDirection}
             onFit={fitAsSeen}
-            onFocus={focus}
+            onFocus={lookAlongNormal}
+            availability={toolbarAvail}
             canFocus={Boolean(sel.body)}
           />
         )}
@@ -2817,6 +3066,12 @@ export function CadView({
                         ? `its ${summary.parts} parts, assembled`
                         : "the whole assembly"}
               </span>
+              {explodeNote && exploded && (
+                // R1-A (M11): "Exploded" on a model whose parts have nowhere to go
+                <span className="cad-scope-what cad-scope-explode" data-explode="none">
+                  {explodeNote}
+                </span>
+              )}
               {placeholders?.line && (
                 // W1-B's rule (handoffs.md): stand-in models drawn, and parts the build says have none of their own
                 <span className="cad-scope-what cad-scope-placeholders" data-placeholders={placeholders.count} title={`Placeholders (no model of their own yet): ${placeholders.paths.slice(0, 12).join(", ")}${placeholders.paths.length > 12 ? ` and ${placeholders.paths.length - 12} more` : ""}`}>
@@ -2857,7 +3112,7 @@ export function CadView({
           <div className={`cad-snapshot${shot.fading ? " fading" : ""}`} aria-hidden={shot.fading || undefined} style={{ position: "absolute", inset: 0, zIndex: 4, overflow: "hidden", pointerEvents: "none", background: "var(--uhd-scene-background, transparent)", opacity: shot.fading ? 0 : 1, transition: "opacity 150ms linear" }}>
             <img src={shot.msg.imageUrl} alt="" style={{ position: "absolute", top: 0, left: "50%", height: "100%", width: "auto", transform: "translateX(-50%)", maxWidth: "none" }} />
             <div className="cad-snapshot-note" role="status" data-chrome="snapshot-note" style={{ position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", padding: "4px 10px", borderRadius: 6, font: "12px var(--uhd-font-ui, system-ui)", color: "var(--uhd-text-muted, #888)", background: "var(--uhd-surface, rgba(0,0,0,0.5))" }}>
-              {shot.msg.bundleHash && shot.msg.currentBundleHash && shot.msg.bundleHash !== shot.msg.currentBundleHash ? "Updating to the latest build" : "Getting your model ready"}
+              {shot.msg.bundleHash && shot.msg.currentBundleHash && shot.msg.bundleHash !== shot.msg.currentBundleHash ? "Updating model" : "Loading model"}
             </div>
           </div>
         )}

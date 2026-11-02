@@ -74,3 +74,69 @@ export function findingCard(f: FindingAnchors): { title: string; text: string; r
   if (f.validator) rows.push(["BY", f.validator]);
   return { title: f.code.replace(/_/g, " "), text: f.message, rows };
 }
+
+/**
+ * Whether the findings toggle has anything to show in this view (R1-D's G4 ask: ClientX's Cube shell had 0 of 16
+ * findings placed, and the toggle turned on and showed nothing). `drawn` is the layer's count of markers drawn
+ * (AnnotLayer.markersDrawn) when the host has it; else the findings with a 3D anchor in this scope.
+ */
+export function findingsPlacement(findings: FindingAnchors[], drawn?: number): { total: number; placed: number; empty: boolean; note?: string } {
+  const placed = drawn ?? findings.filter((f) => f.anchors.length > 0).length;
+  const empty = findings.length > 0 && placed === 0;
+  return { total: findings.length, placed, empty, ...(empty ? { note: "No findings placed in this view" } : {}) };
+}
+
+/** The one-line description's longest, in characters, before an ellipsis at a word boundary. DEFAULT 120 (R1-C). */
+export const SUMMARY_MAX = 120;
+
+/**
+ * A finding's card in hover tiers (walkthrough D3, presentation only: the plain-language rewrite is wave R2): the
+ * title (the code in words), a one-line description cut from the message (parentheticals dropped, the first clause
+ * or sentence, at most SUMMARY_MAX characters), and the raw rows (AT path, BY validator) and full message, which
+ * only the pinned card shows.
+ */
+export function findingSummary(f: FindingAnchors): { title: string; description: string; text: string; rows: [string, string][] } {
+  const card = findingCard(f);
+  return { title: card.title, description: summarise(f.message), text: card.text, rows: card.rows };
+}
+
+/** The first clause of a diagnostic message, without parentheticals, cut at a word boundary (pure). */
+export function summarise(message: string, max = SUMMARY_MAX): string {
+  let s = (message ?? "").replace(/\s+/g, " ").trim();
+  // "(controller/sensors/i2c0_sda.ps.pin_4+...)": the raw list stays in the pinned card and the Inspector
+  for (let i = 0; i < 3 && /\([^()]*\)/.test(s); i++) s = s.replace(/\s*\([^()]*\)/g, "");
+  s = s.replace(/\s+([:;,.])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  // the first clause: before a dash aside, else the first sentence
+  const dash = s.search(/\s[–—-]\s/);
+  if (dash > 12) s = s.slice(0, dash);
+  const stop = s.search(/[.!?](\s|$)/);
+  if (stop > 12) s = s.slice(0, stop + 1);
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:]+$/, "")}…`;
+}
+
+/**
+ * The finding a host names to pin (`uhd-viewer:openFinding`, sent when a check row is clicked in the host's
+ * Inspector; gate R1, R1-E's D7 handoff): the exact id, else its repeats (`<id>#2`, ...) in order, else the first
+ * finding with that code whose refs name `path` or a part under it. `rootPath` turns a ref (a key in the view's
+ * scope) into a path from the root, as the host names it.
+ */
+export function findingForHost<F extends Pick<FindingAnchors, "id" | "code" | "refs">>(
+  findings: readonly F[],
+  want: { id: string; code: string; path?: string },
+  rootPath: (ref: string) => string = (r) => r,
+): F | undefined {
+  const exact = findings.find((f) => f.id === want.id) ?? findings.find((f) => f.id.startsWith(`${want.id}#`));
+  if (exact || want.path === undefined) return exact;
+  const path = want.path.replace(/^\/+|\/+$/g, "");
+  return findings.find(
+    (f) =>
+      f.code === want.code &&
+      f.refs.some((r) => {
+        const p = rootPath(r.split("#")[0]);
+        return p === path || (path !== "" && p.startsWith(`${path}/`));
+      }),
+  );
+}
