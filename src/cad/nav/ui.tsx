@@ -47,7 +47,7 @@ export function NavButtons({ hub, scope }: { hub: ViewHub; scope: string }) {
  * items say why. Escape, a press outside, or the window losing focus closes it; arrow keys move between items.
  * `x`, `y` are client coordinates.
  */
-export function PartMenu({ x, y, title, items, onRun, onClose }: { x: number; y: number; title?: string; items: MenuItem[]; onRun: (id: MenuItem["id"]) => void; onClose: () => void }) {
+export function PartMenu({ x, y, title, items, onRun, onClose, kind = "part" }: { x: number; y: number; title?: string; items: MenuItem[]; onRun: (id: MenuItem["id"]) => void; onClose: () => void; kind?: "part" | "void" }) {
   ensureNavStyle();
   const ref = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState({ left: x, top: y });
@@ -82,24 +82,26 @@ export function PartMenu({ x, y, title, items, onRun, onClose }: { x: number; y:
     window.addEventListener("pointerdown", away, true);
     window.addEventListener("keydown", key, true);
     window.addEventListener("blur", onClose);
-    window.addEventListener("wheel", onClose, { passive: true });
+    // capture (wave R4 gate): the zoom policy stops the canvas's wheel on its holder, so a bubbling listener missed it
+    window.addEventListener("wheel", onClose, { capture: true, passive: true });
     return () => {
       window.removeEventListener("pointerdown", away, true);
       window.removeEventListener("keydown", key, true);
       window.removeEventListener("blur", onClose);
-      window.removeEventListener("wheel", onClose);
+      window.removeEventListener("wheel", onClose, { capture: true });
     };
   }, [onClose]);
   return (
-    <div ref={ref} className="context-menu cad-part-menu" data-chrome="part-menu" style={{ left: at.left, top: at.top }} role="menu" aria-label={title ? `${title} actions` : "Part actions"} onContextMenu={(e) => e.preventDefault()}>
+    <div ref={ref} className="context-menu cad-part-menu" data-chrome={kind === "void" ? "void-menu" : "part-menu"} data-menu={kind} style={{ left: at.left, top: at.top }} role="menu" aria-label={kind === "void" ? "View actions" : title ? `${title} actions` : "Part actions"} onContextMenu={(e) => e.preventDefault()}>
       {title && <div className="cad-part-menu-title">{title}</div>}
       {items.map((it, i) => (
         <span key={it.id} style={{ display: "contents" }}>
-          {(it.id === "frame" || it.id === "copy") && i > 0 && <div role="separator" className="context-menu-rule" />}
+          {(it.rule ?? (kind === "part" && (it.id === "frame" || it.id === "copy"))) && i > 0 && <div role="separator" className="context-menu-rule" />}
           <button
             type="button"
-            role="menuitem"
+            role={it.checked !== undefined ? "menuitemcheckbox" : "menuitem"}
             data-item={it.id}
+            aria-checked={it.checked !== undefined ? it.checked : undefined}
             aria-disabled={it.disabled ? "true" : undefined}
             title={it.disabled}
             onClick={() => {

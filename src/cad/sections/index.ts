@@ -16,11 +16,30 @@ import * as THREE from "three";
 import { instancePathIn, partInstanceIdOf } from "../render/ids";
 import { shown } from "../render/pick";
 import { slicePlane, type SectionCut, type SliceTarget } from "./slice";
-import { HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, INK_ON_LIGHT, hatchAcross, hatchMaterial, inkFor } from "./caps";
+import { HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, INK_ON_LIGHT, contrast, hatchAcross, hatchMaterial, inkFor, type HatchUniforms } from "./caps";
+import { CAP_LINE_SHARE, DARK_CAP_SCENE, PAPER_CAP_SCENE, capTones, surfaceColour, type CapScene } from "./capColour";
 import { capTriangles, meshIsClosed } from "./cpuCaps";
 import { planeMeta, type PlaneMeta } from "./planes";
 
-export { SectionCaps, HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, HATCH_LINE_PX, contrast, hatchAcross, hatchMaterial, inkFor, luminance } from "./caps";
+export { SectionCaps, HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, HATCH_LINE_PX, CAP_CLIP_TOLERANCE_MM, contrast, hatchAcross, hatchMaterial, inkFor, luminance } from "./caps";
+export {
+  capTones,
+  capTonesLinear,
+  capSceneParams,
+  surfaceColour,
+  isDarkGround,
+  withLightness,
+  lightness,
+  CAP_SHIFT_TO_GROUND,
+  CAP_LINE_DARKEN_DARK,
+  CAP_LINE_DARKEN_PAPER,
+  CAP_MIN_CONTRAST,
+  CAP_CONTRAST_AIM,
+  CAP_LINE_SHARE,
+  DARK_CAP_SCENE,
+  PAPER_CAP_SCENE,
+  type CapScene,
+} from "./capColour";
 export { capTriangles, meshIsClosed } from "./cpuCaps";
 export { slicePlane, sliceGeometry, chainSegments, clipSegment, WELD_MM, MAX_POINTS_PER_PART, type SectionCut, type PartCut, type SliceTarget } from "./slice";
 export {
@@ -63,8 +82,8 @@ export interface SectionsReport {
   scope: string[] | "all";
   /** The exact cut per plane, once the view settled after the last change (null while it is being computed). */
   cuts: SectionCut[] | null;
-  /** The live caps' last pass: planes capped, CPU ms of the pass. */
-  caps: { planes: number; ms: number };
+  /** The live caps' last pass: planes capped, CPU ms of the pass, and (R4-C) the draw calls it made. */
+  caps: { planes: number; ms: number; draws?: number };
   /** The caps' hatch (R2-B): spacing in model mm, angle, and the screen-space fallback (DEFAULTs in ./caps.ts). */
   hatch: { mm: number; deg: number; minPx: number; screenPx: number };
   /**
@@ -147,10 +166,19 @@ export class SceneSections {
   /** The outline of the settled cut (world mm), drawn on the caps. */
   readonly outline = new THREE.Group();
   private lineMaterial = new THREE.LineBasicMaterial({ color: 0xd4d4d4, toneMapped: false, depthFunc: THREE.LessEqualDepth });
-  /** CPU caps of open meshes (R2-B): the cap tone with the hatch, over the live cap (drawn after it, unclipped). */
+  /**
+   * CPU caps of open meshes (R2-B): the cap tone with the hatch, over the live cap (drawn after it, unclipped). This
+   * one holds the theme's tones; each cap mesh gets its own copy (R4-C: its part's tones, its plane's hatch direction).
+   */
   private capMaterial = hatchMaterial({ color: 0x4a4640, side: THREE.DoubleSide, toneMapped: false, depthFunc: THREE.LessEqualDepth, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   private open: SectionsReport["open"] = null;
-  caps = { planes: 0, ms: 0 };
+  /** The mesh each cut part's cap takes its colour from (the first logical mesh of that instance path). */
+  private meshOf = new Map<string, THREE.Mesh>();
+  /** Whether CPU caps take each part's colour (R4-C, DEFAULT on; as `SectionCaps.partColours`). */
+  partColours = true;
+  private tones: CapScene = DARK_CAP_SCENE;
+  private sceneSet = false;
+  caps: { planes: number; ms: number; draws?: number } = { planes: 0, ms: 0 };
 
   constructor(
     private deps: {
@@ -230,7 +258,11 @@ export class SceneSections {
     this.cutVersion = this.version;
     // which parts are open meshes (R2-B): their caps come from the CPU cut where it closes
     const openPaths = new Set<string>();
-    for (const t of targets) if (!meshIsClosed(t.mesh.geometry)) openPaths.add(t.instancePath);
+    this.meshOf.clear();
+    for (const t of targets) {
+      if (!meshIsClosed(t.mesh.geometry)) openPaths.add(t.instancePath);
+      if (!this.meshOf.has(t.instancePath)) this.meshOf.set(t.instancePath, t.mesh);
+    }
     const open: NonNullable<SectionsReport["open"]> = [];
     for (const cut of cuts)
       for (const part of cut.parts) {
@@ -260,7 +292,7 @@ export class SceneSections {
       }),
       scope: this.input?.scope?.length ? (this.input.scopePaths ?? []) : "all",
       cuts: this.cutVersion === this.version ? this.cuts : null,
-      caps: { planes: this.caps.planes, ms: Math.round(this.caps.ms * 100) / 100 },
+      caps: { planes: this.caps.planes, ms: Math.round(this.caps.ms * 100) / 100, ...(this.caps.draws !== undefined ? { draws: this.caps.draws } : {}) },
       hatch: { mm: HATCH_MM, deg: HATCH_DEG, minPx: HATCH_MIN_PX, screenPx: HATCH_SCREEN_PX },
       open: this.cutVersion === this.version ? this.open : null,
     };
@@ -272,8 +304,58 @@ export class SceneSections {
     this.capMaterial.userData.hatch.uHatchInk.value.set(hex);
     // until the scene hands the cap tone over (`setCapColor`): the theme's cap for that ink (paper's dark ink, dark's light)
     if (!this.capSet) this.capMaterial.color.set(inkFor(hex) === INK_ON_LIGHT ? "#4a4640" : "#dcd7cd");
+    // until the scene hands its background and lit tone over: the theme the ink belongs to (a dark ink is paper's)
+    if (!this.sceneSet) this.tones = contrast(hex, "#000000") < contrast(hex, "#ffffff") ? PAPER_CAP_SCENE : DARK_CAP_SCENE;
   }
   private capSet = false;
+
+  /** The scene's background and lit tone, the part tones of the CPU caps are derived against (as `SectionCaps`). */
+  setSceneTones(tones: CapScene): void {
+    this.sceneSet = true;
+    this.tones = { ...tones };
+  }
+
+  /** The tones the CPU caps are derived against (tests, observe). */
+  sceneTones(): CapScene {
+    return { ...this.tones };
+  }
+
+  /**
+   * The CPU cap material of one cut part on one plane (R4-C): a copy of the theme cap with its own hatch uniforms,
+   * the plane's hatch direction, and each frame the tones of the part's surface (cached by colour). Without a mesh
+   * to read, or with part colours off, the theme's tones.
+   */
+  private partCapMaterial(source: THREE.Mesh | undefined, normal: THREE.Vector3): THREE.MeshBasicMaterial & { userData: { hatch: HatchUniforms } } {
+    const theme = this.capMaterial;
+    const u = theme.userData.hatch;
+    const own: HatchUniforms = {
+      ...u,
+      uHatchInk: { value: u.uHatchInk.value.clone() },
+      uHatchShare: { value: u.uHatchShare.value },
+      uHatchAcross: { value: hatchAcross(normal) },
+    };
+    const m = hatchMaterial({ color: theme.color.clone(), side: THREE.DoubleSide, toneMapped: false, depthFunc: THREE.LessEqualDepth, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }, own);
+    const surface = new THREE.Color();
+    let key = "";
+    m.onBeforeRender = () => {
+      if (!this.partColours || !source) {
+        m.color.copy(theme.color);
+        own.uHatchInk.value.copy(u.uHatchInk.value);
+        own.uHatchShare.value = u.uHatchShare.value;
+        key = "";
+        return;
+      }
+      surfaceColour(source, new THREE.Color(this.tones.neutral), surface);
+      const next = `${surface.getHexString()}|${this.tones.background}|${this.tones.neutral}`;
+      if (next === key) return;
+      key = next;
+      const t = capTones(`#${surface.getHexString()}`, this.tones);
+      m.color.set(t.fill);
+      own.uHatchInk.value.set(t.line);
+      own.uHatchShare.value = CAP_LINE_SHARE;
+    };
+    return m;
+  }
 
   /** The cap tone of the CPU caps (the theme's sectionCap, as the live caps'). */
   setCapColor(hex: string): void {
@@ -285,6 +367,9 @@ export class SceneSections {
     for (const c of [...this.outline.children]) {
       this.outline.remove(c);
       (c as THREE.LineSegments).geometry.dispose();
+      // the CPU caps' own materials (R4-C); the outline's line material is shared
+      const mat = (c as THREE.Mesh).material as THREE.Material;
+      if (mat && mat !== this.lineMaterial && mat !== this.capMaterial) mat.dispose();
     }
   }
 
@@ -294,17 +379,19 @@ export class SceneSections {
     cuts.forEach((cut, i) => {
       const p = planes[i];
       // CPU caps of open meshes, under the outline (R2-B)
-      const fill: number[] = [];
-      for (const part of cut.parts) if (openPaths.has(part.instancePath)) fill.push(...capTriangles(part.polylines, part.closed, p.normal));
-      if (fill.length) {
+      // one mesh per open part (R4-C: each in its own part's tones, with this plane's hatch direction)
+      for (const part of cut.parts) {
+        if (!openPaths.has(part.instancePath)) continue;
+        const fill = capTriangles(part.polylines, part.closed, p.normal);
+        if (!fill.length) continue;
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.Float32BufferAttribute(fill, 3));
-        const m = new THREE.Mesh(g, this.capMaterial);
+        const m = new THREE.Mesh(g, this.partCapMaterial(this.meshOf.get(part.instancePath), p.normal));
         m.frustumCulled = false;
         m.renderOrder = 19;
         m.userData.noSection = true;
         m.userData.noBatch = true;
-        m.onBeforeRender = () => void hatchAcross(p.normal, this.capMaterial.userData.hatch.uHatchAcross.value);
+        m.userData.capOf = part.instancePath;
         this.outline.add(m);
       }
       // lifted 0.02 mm off the cap toward the viewer, so the line is not lost in the cap's own depth

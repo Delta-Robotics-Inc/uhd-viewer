@@ -236,6 +236,12 @@ export interface ViewerOptions {
    * `update({ settings })` on every change. Anything absent or out of range takes its DEFAULT (shown).
    */
   settings?: ViewerHostSettings;
+  /**
+   * Wave R4 gate (R4-B's handoff): the person changed a viewer setting in the view itself (the toolbar's scale
+   * chooser, its units). The host saves it where `settings` come from (the VS Code extension: the settings file, as
+   * the person). Not given (and no frame parent): the choice is kept in this browser's storage only.
+   */
+  onSetting?: (change: ViewerSettingChange) => void;
 }
 
 /** The person's viewer settings a host passes (R2-E, J1). Every field optional; the DEFAULT in brackets. */
@@ -248,6 +254,17 @@ export interface ViewerHostSettings {
   modelInfo?: boolean;
   /** The long-hover tier of callouts and part tooltips, ms, 200 to 5000 [900]. */
   hoverLongDelayMs?: number;
+  /** R4-B (wave R4 gate): the 3D view's units, the floor grid, its scale label and the cube for scale ["mm"]. */
+  units?: "mm" | "in";
+  /** R4-B (wave R4 gate): what the toolbar's scale button stands beside the model ["banana"]. */
+  scaleReference?: "banana" | "cube" | "benchy";
+}
+
+/** A viewer setting the 3D view writes back to the host (wave R4 gate): the toolbar's scale chooser and units. */
+export interface ViewerSettingChange {
+  /** The stack's setting key: `viewer.units` or `viewer.scaleReference`. */
+  key: string;
+  value: string;
 }
 
 /** What the 3D toolbar's Export asks the host for (R2-E, G3). */
@@ -479,7 +496,9 @@ export type ViewerEvent =
   /** The viewer's own back and forward history (`ViewerOptions.onHistory`; R2-A, F1). */
   | ({ type: "uhd-viewer:history" } & ViewerHistoryState)
   /** The 3D toolbar's Export (`ViewerOptions.onExport`; R2-E, G3). */
-  | ({ type: "uhd-viewer:export" } & ExportRequest);
+  | ({ type: "uhd-viewer:export" } & ExportRequest)
+  /** A viewer setting the person changed in the view (`ViewerOptions.onSetting`; wave R4 gate). */
+  | ({ type: "uhd-viewer:setting" } & ViewerSettingChange);
 
 export interface ViewerHandle {
   /**

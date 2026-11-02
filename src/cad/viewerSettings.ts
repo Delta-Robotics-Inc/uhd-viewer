@@ -18,6 +18,9 @@ export const VIEWER_SETTING_DEFAULTS: Readonly<Required<ViewerHostSettings>> = O
   zoomToCursor: true,
   modelInfo: true,
   hoverLongDelayMs: LONG_HOVER_MS,
+  // R4-B (wave R4 gate): the scale reference's settings; ../scaleref/kinds.ts reads them (and this browser's storage)
+  units: "mm",
+  scaleReference: "banana",
 });
 
 /** The settings in force: each a value the host gave when it is well formed (the delay within its range), else its DEFAULT. */
@@ -30,6 +33,8 @@ export function readViewerSettings(s: unknown): Required<ViewerHostSettings> {
     zoomToCursor: bool("zoomToCursor"),
     modelInfo: bool("modelInfo"),
     hoverLongDelayMs: typeof ms === "number" && Number.isFinite(ms) && ms >= HOVER_LONG_MIN_MS && ms <= HOVER_LONG_MAX_MS ? Math.round(ms) : VIEWER_SETTING_DEFAULTS.hoverLongDelayMs,
+    units: o.units === "in" ? "in" : VIEWER_SETTING_DEFAULTS.units,
+    scaleReference: o.scaleReference === "cube" || o.scaleReference === "benchy" ? o.scaleReference : VIEWER_SETTING_DEFAULTS.scaleReference,
   };
 }
 

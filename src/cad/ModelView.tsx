@@ -237,8 +237,8 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
-    const g = h.scene.children.find((o) => o instanceof THREE.GridHelper);
-    if (g) g.visible = grid;
+    // wave R4 gate (R4-A's handoff): the floor grid is `h.grid` (../grid), no longer a GridHelper among the children
+    h.grid.visible = grid;
     h.invalidate();
   }, [grid, state.status, theme]);
 

@@ -35,6 +35,8 @@ import { MAX_SECTIONS, ORIGIN_PLANES, autoFlipOf, flipped, isPlaced, nextPlane, 
 import { SectionTool, type FaceHit, type ToolScene } from "./sections/gizmo";
 import { AssembleGlyph, ExplodeGlyph } from "./viewIcons";
 import type { ExplodeMode } from "./sequence/player";
+import { SCALE_KINDS, SCALE_KIND_INFO, scaleButtonLabel, type ScaleKind } from "./scaleref/kinds";
+import type { Units } from "./grid/levels";
 
 export interface CadToolbarProps {
   exploded: boolean;
@@ -129,6 +131,24 @@ export interface CadToolbarProps {
   onExport?: (format: ExportFormat, target?: string) => void;
   /** The part a model export is of (the selection, by path from the root); null: none selected (the model rows say so). */
   exportTarget?: { path: string; label: string } | null;
+  /**
+   * R4-B (Kevin, 2026-11-02: "a dedicated icon in the toolbar with a tooltip that said 'banana for scale'"; "a little
+   * up chevron to select which one (banana = default)"): the scale reference on or off, and a chooser (Banana, Cube,
+   * Benchy; the units mm or in). Absent: no control.
+   */
+  scaleRef?: ScaleRefControl;
+}
+
+/** R4-B: the scale reference's control (./scaleref): what is shown and how to change it. */
+export interface ScaleRefControl {
+  shown: boolean;
+  kind: ScaleKind;
+  units: Units;
+  onShown: (on: boolean) => void;
+  onKind: (kind: ScaleKind) => void;
+  onUnits: (units: Units) => void;
+  /** A word on the current reference (the cube's edge "10 mm", "Loading the Benchy…"), shown in the chooser. */
+  note?: string;
 }
 
 /** What the Export menu offers (R2-E's formats). */
@@ -258,6 +278,76 @@ function hubMode(mode: ExplodeMode): void {
   } catch {
     /* no view mounted: the next explode resolves the player in its DEFAULT mode */
   }
+}
+
+/**
+ * R4-B: the scale reference's button (its icon and tooltip follow the choice, DEFAULT; banana for scale first) and its
+ * up-chevron chooser, the same pattern as Label types: Banana, Cube, Benchy and the units. Choosing one shows it
+ * (DEFAULT: a choice made while hidden would change nothing on screen).
+ */
+function ScaleRefButton({ c }: { c: ScaleRefControl }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState(false);
+  useDismiss(menu, wrap, () => setMenu(false));
+  // the menu's state is this button's own: the bar is not rendered again when it opens, so show its overflow here
+  // (as `useMenusVisible` does for the bar's own menus)
+  useLayoutEffect(() => {
+    const bar = wrap.current?.closest<HTMLElement>(".cad-toolbar");
+    if (bar) bar.style.overflow = bar.querySelector('[aria-expanded="true"]') ? "visible" : "";
+  }, [menu]);
+  const info = SCALE_KIND_INFO[c.kind];
+  return (
+    <div className="cad-menu-wrap" ref={wrap} data-scale-ref={c.kind}>
+      <IconButton icon={info.icon} label={scaleButtonLabel(c.kind, c.shown)} tooltipSide="top" pressed={c.shown} data-scale="toggle" onClick={() => c.onShown(!c.shown)} />
+      <IconButton
+        icon="chevron-up"
+        size="sm"
+        className="w-5"
+        label="Scale reference: banana, cube or Benchy; units"
+        tooltipSide="top"
+        aria-expanded={menu}
+        aria-haspopup="menu"
+        data-scale="menu"
+        onClick={() => setMenu(!menu)}
+      />
+      {menu && (
+        <div className="cad-menu" role="menu" aria-label="Scale reference">
+          <div className="cad-menu-label">For scale</div>
+          {SCALE_KINDS.map((k) => {
+            const on = c.kind === k;
+            return (
+              <button
+                key={k}
+                className="cad-menu-item"
+                role="menuitemradio"
+                aria-checked={on}
+                data-scale-kind={k}
+                data-tooltip={SCALE_KIND_INFO[k].detail}
+                data-tooltip-side="right"
+                onClick={() => {
+                  c.onKind(k);
+                  if (!c.shown) c.onShown(true);
+                }}
+              >
+                <span className={`cad-check${on ? " on" : ""}`}>{on && <Icon name="check" size={12} />}</span>
+                <Icon name={SCALE_KIND_INFO[k].icon} size={13} />
+                {SCALE_KIND_INFO[k].label}
+              </button>
+            );
+          })}
+          <div className="cad-menu-label">Units</div>
+          <div className="segmented" role="radiogroup" aria-label="Units" style={{ margin: "0 8px 6px" }}>
+            {(["mm", "in"] as const).map((u) => (
+              <button key={u} role="radio" aria-checked={c.units === u} className={c.units === u ? "on" : ""} data-units={u} onClick={() => c.onUnits(u)}>
+                {u}
+              </button>
+            ))}
+          </div>
+          {c.note && <div className="cad-menu-label" style={{ textTransform: "none" }}>{c.note}</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CadToolbar(p: CadToolbarProps) {
@@ -514,6 +604,7 @@ export function CadToolbar(p: CadToolbarProps) {
           className={p.shells ? undefined : DISABLED}
           onClick={() => p.shells && p.onXray(!p.xray)}
         />
+        {p.scaleRef && <ScaleRefButton c={p.scaleRef} />}
         {p.findingsControl ?? (p.findings > 0 && (
           <IconButton
             icon="triangle-alert"

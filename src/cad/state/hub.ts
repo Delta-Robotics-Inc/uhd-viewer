@@ -75,6 +75,12 @@ export interface ViewHub {
    * or a frame's parent). Absent: the Export button is disabled and says why.
    */
   exportView?: (request: ExportRequest) => void;
+  /**
+   * Saves a viewer setting the person changed in the view (wave R4 gate, R4-B's handoff: the scale chooser and its
+   * units, `viewer.scaleReference` / `viewer.units`). The mount sets it when the host takes it (`onSetting`, or a
+   * frame's parent). Absent: the choice stays in this browser's storage (../scaleref/kinds.ts).
+   */
+  saveSetting?: (key: string, value: unknown) => unknown;
 }
 
 const KEY = "__uhdViewHub";
