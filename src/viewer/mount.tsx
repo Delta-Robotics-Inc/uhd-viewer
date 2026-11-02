@@ -150,6 +150,8 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   // R2-E (G3): the toolbar's Export goes to a host that takes it (`onExport`, or a frame's parent); else it is disabled
   const exports = () => {
     hub.exportView = current.onExport || parent ? (request) => emit({ type: "uhd-viewer:export", ...request }) : undefined;
+    // wave R4 gate (R4-B's handoff): the toolbar's scale chooser and units go to a host that saves settings
+    hub.saveSetting = current.onSetting || parent ? (key, value) => (typeof value === "string" ? emit({ type: "uhd-viewer:setting", key, value }) : undefined) : undefined;
   };
   exports();
   // the live view state, 400 ms after it last changed (and when the page hides): the host saves it per user
@@ -237,6 +239,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       hub.snapshot = undefined;
       hub.onSnapshot = undefined;
       hub.exportView = undefined;
+      hub.saveSetting = undefined;
     },
     focus: (path) => void post({ type: "uhd-viewer:focus", path }),
     select: (ids, options) => void post({ type: "uhd-viewer:select", ids, ...(options?.reveal === false ? { reveal: false } : {}) }),

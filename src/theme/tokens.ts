@@ -153,9 +153,14 @@ export interface ThemeTokens {
   inkFaint: string;
   /** Ink width in CSS px (a length: `1px`); constant on screen, never scaled by distance. */
   inkWidth: string;
-  /** The flat fill of a section cap (where a section plane cuts through solid material). */
+  /**
+   * The flat fill of a section cap where the part's own colour cannot be read (R4-C, 2026-11-02: a cut part's cap is
+   * a tone of that part's colour with darker hatch lines of the same hue, derived from the part and the scene
+   * background in `src/cad/sections/capColour.ts`; this tone fills only what that pass does not reach, and every cap
+   * when part colours are off).
+   */
   sectionCap: string;
-  /** The exact cut outline drawn on the cap once the view settles. */
+  /** The exact cut outline drawn on the cap once the view settles, and the hatch ink on the `sectionCap` fill. */
   sectionLine: string;
 
   // ---- DRC findings in the 3D view and its callouts (PB-1073, contrast-checked per theme) ----------

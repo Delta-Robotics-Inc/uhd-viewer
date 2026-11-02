@@ -30,6 +30,7 @@ import { DEFAULT_LOOK, EDGE_GLSL, EDGE_THRESHOLDS, ToonTwins, applyLookToUniform
 import { SECTION_LAYER } from "./render/batch";
 import { SceneSections, SectionCaps, findScopeRoots, sectionsByCamera, toPlanes, type SectionsInput, type SectionsReport, type SectionCut } from "./sections";
 import { resolveTokenColor, resolveTokenValue } from "../theme/resolveColor";
+import { createGroundGrid, type GroundGrid } from "./grid";
 
 export { onGlbLoad, onFrame, onContextLost, type GlbLoadEvent, type FrameEvent, type FrameQuality, type ContextLostEvent } from "./render/events";
 export { LOGICAL_LAYER, SECTION_LAYER } from "./render/batch";
@@ -525,6 +526,13 @@ export interface SceneHandle {
   setUp: (up: THREE.Vector3) => void;
   /** Put the ground grid under a box (the assembled model), across the up direction. */
   setGround: (box: THREE.Box3) => void;
+  /**
+   * Shift the projection so the orbit target is drawn in the middle of the view less a panel `rightPx` wide on its
+   * right (the inspector card), when the view is wider than `minWidth` (R4-A: the pivot stays the model's centre).
+   */
+  setViewShift: (rightPx: number, minWidth?: number) => void;
+  /** The floor grid (./grid, R4-B's module): on/off and its own settings. */
+  grid: GroundGrid;
   /** This scene's highlight colours (follow `setTheme`). */
   colors: SceneColors;
   /** The theme's background, grid and focus colours. */
@@ -819,26 +827,9 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   };
   lightFor(scene.background as THREE.Color);
 
-  let grid = new THREE.GridHelper(600, 60, 0x3a3a3a, 0x262626);
-  // the grid writes no depth: the ink pass would outline its lines
-  (grid.material as THREE.Material).depthWrite = false;
-  grid.rotation.x = Math.PI / 2;
-  grid.position.z = -0.5;
-  scene.add(grid);
-  /** New grid colours: a GridHelper bakes them into its vertices, so the grid is rebuilt in place. */
-  const setGridColors = (major: string, minor: string) => {
-    const next = new THREE.GridHelper(600, 60, major, minor);
-    (next.material as THREE.Material).depthWrite = false;
-    next.position.copy(grid.position);
-    next.quaternion.copy(grid.quaternion);
-    next.scale.copy(grid.scale);
-    next.visible = grid.visible;
-    scene.remove(grid);
-    grid.geometry.dispose();
-    (grid.material as THREE.Material).dispose();
-    grid = next;
-    scene.add(grid);
-  };
+  // the floor grid lives in ./grid (R4-B's module since R4-A's split, 2026-11-02): only its interface is used here
+  const grid: GroundGrid = createGroundGrid();
+  scene.add(grid.object);
 
   const root = new THREE.Group();
   const overlay = new THREE.Group();
@@ -873,7 +864,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
   const caps = new SectionCaps();
   caps.setColor(look.cap);
   const sections = new SceneSections({
-    roots: () => logicalRoots().filter((r) => r !== grid && r !== overlay),
+    roots: () => logicalRoots().filter((r) => r !== grid.object && r !== overlay),
     globalPlanes: () => renderer.clippingPlanes,
     invalidate: () => invalidate("view"),
     eye: () => camera.position,
@@ -949,8 +940,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
         planes,
         new THREE.Sphere(controls.target, r),
         (material, plane) => {
-          const gridShown = grid.visible;
-          grid.visible = false;
+          const gridShown = grid.object.visible;
+          grid.object.visible = false;
           // flat overlays (callouts, markers, the section tool's sheets) are not solids: drawn into the stencil, a quad
           // across the cut flips its parity and its area came out hatched (R2-B's handoff, R2 integration)
           const overlayShown = overlay.visible;
@@ -971,7 +962,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
           } finally {
             scene.overrideMaterial = null;
             scene.background = background;
-            grid.visible = gridShown;
+            grid.object.visible = gridShown;
             overlay.visible = overlayShown;
             for (const o of hidden) o.visible = true;
           }
@@ -1218,6 +1209,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
    */
   const drawScene = (inset: { x: number; y: number; w: number; h: number } | undefined) => {
     renderer.info.reset();
+    fitShift();
     fitNear();
     const scale = knobsNow.scale;
     const ink = edgesWanted && edgesAllowed;
@@ -1289,10 +1281,11 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       renderer.setScissorTest(true);
       renderer.clearDepth();
       // the ground grid stays as the low-resolution pass drew it: its fine lines would show the rectangle's edge
-      const gridShown = grid.visible;
-      grid.visible = false;
+      // (the object itself, wave R4 gate: the grid's own `visible` tells its scale label, every frame here)
+      const gridShown = grid.object.visible;
+      grid.object.visible = false;
       renderer.render(scene, insetCamera);
-      grid.visible = gridShown;
+      grid.object.visible = gridShown;
       // the caps inside the inset too (they are content, not an effect)
       drawSections(insetCamera);
       renderer.setScissorTest(false);
@@ -1391,6 +1384,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
         // damping and auto-rotate move the camera here; OrbitControls says whether it did
         if (controls.update(dt)) again = true;
         if (controls.autoRotate) again = true;
+        // a camera-following floor grid (R4-B's module) moves with the view
+        if (grid.update?.(camera, controls.target) === true) again = true;
         for (const f of beforeRender)
           if (f(dt) === true) {
             again = true;
@@ -1551,6 +1546,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     renderer.setSize(container.clientWidth, container.clientHeight);
     camera.aspect = container.clientWidth / Math.max(1, container.clientHeight);
     camera.updateProjectionMatrix();
+    fitShift();
     invalidate("view");
   });
   ro.observe(container);
@@ -1666,7 +1662,6 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     [key, key.position.clone()],
     [rim, rim.position.clone()],
   ];
-  const gridBase = grid.quaternion.clone();
   const setUp = (up: THREE.Vector3) => {
     upAxis.copy(up).normalize();
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), upAxis);
@@ -1676,8 +1671,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     c._quat.setFromUnitVectors(upAxis, new THREE.Vector3(0, 1, 0));
     c._quatInverse.copy(c._quat).invert();
     for (const [light, base] of lights) light.position.copy(base).applyQuaternion(q);
-    grid.quaternion.copy(q).multiply(gridBase);
-    grid.position.copy(upAxis).multiplyScalar(-0.5);
+    grid.setUp(upAxis);
     invalidate();
   };
   /** The model's bounds (the ground box): the near plane is fitted to it (R1-E's C1 handoff). */
@@ -1700,14 +1694,34 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       camera.updateProjectionMatrix();
     }
   };
+  /**
+   * The view shift (R4-A): with a panel over the right of the view (the inspector card), the projection is shifted
+   * so the orbit target sits in the middle of the free part, not under the card. The target stays the pivot (the
+   * model's centre), so orbiting turns about the model's centre where it is seen (Fit used to move the target off the
+   * centre instead, and the model swung around it). `rightPx` is the panel's width, dropped below `minWidth`.
+   */
+  let shift = { rightPx: 0, minWidth: 0 };
+  const fitShift = () => {
+    const w = container.clientWidth;
+    const frac = shift.rightPx > 0 && w > shift.minWidth && w > 0 ? shift.rightPx / w : 0;
+    // left edge moves by near * filmOffset / filmWidth; half the frustum's width is near * tan(fov / 2) * aspect
+    const skew = frac * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect * camera.getFilmWidth();
+    if (Math.abs(skew - camera.filmOffset) > 1e-9) {
+      camera.filmOffset = skew;
+      camera.updateProjectionMatrix();
+    }
+  };
+  const setViewShift = (rightPx: number, minWidth = 0) => {
+    const next = { rightPx: Math.max(0, rightPx || 0), minWidth: Math.max(0, minWidth || 0) };
+    if (next.rightPx === shift.rightPx && next.minWidth === shift.minWidth) return;
+    shift = next;
+    fitShift();
+    invalidate("view");
+  };
   const setGround = (box: THREE.Box3) => {
     if (box.isEmpty()) return;
     modelBounds.copy(box);
-    // the lowest point of the box along up, half a millimetre below it
-    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
-    const low = Math.min(...corners.map((c) => c.dot(upAxis)));
-    const c = box.getCenter(new THREE.Vector3());
-    grid.position.copy(c.sub(upAxis.clone().multiplyScalar(c.dot(upAxis) - low + 0.5)));
+    grid.placeUnder(box, upAxis);
     invalidate();
   };
 
@@ -1858,6 +1872,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     frameAll,
     setUp,
     setGround,
+    setViewShift,
+    grid,
     invalidate,
     beforeRender,
     onFrame: (cb) => {
@@ -1901,11 +1917,15 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     setTheme: (theme) => {
       scene.background = new THREE.Color(theme.background);
       lightFor(scene.background as THREE.Color);
-      setGridColors(theme.grid, theme.gridMinor);
+      grid.setColors(theme.grid, theme.gridMinor);
       Object.assign(colors, sceneColors(theme));
       // the look's tokens (PB-1189) are read from the themed element the scene sits in: CadView and ModelView pass
       // only the colours above, so nothing changes for them
       setLook(readSceneLook((t) => (t === "inkWidth" ? resolveTokenValue(container, t) : resolveTokenColor(container, t))));
+      // R4-C: the per-part cap tones are derived against the scene's background and lit tone
+      const capScene = { background: `#${(scene.background as THREE.Color).getHexString()}`, neutral: look.neutral };
+      caps.setSceneTones(capScene);
+      sections.setSceneTones(capScene);
       invalidate();
     },
     quality,
@@ -1932,6 +1952,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
       restored?.(false);
       restored = undefined;
       offEdgesEffect();
+      grid.dispose();
       sections.dispose();
       caps.dispose();
       sectionsByCamera.delete(camera);

@@ -100,11 +100,27 @@ describe("the mount's navigation wiring (R2-A, F1)", () => {
 
 describe("the host's viewer settings (R2-E, J1)", () => {
   it("defaults to today's values and refuses anything malformed or out of range", () => {
-    expect(readViewerSettings(undefined)).toEqual({ openModelsInPlace: true, zoomToCursor: true, modelInfo: true, hoverLongDelayMs: LONG_HOVER_MS });
+    // wave R4 gate (deliberate): R4-B's units and scale reference joined the settings (DEFAULT mm, banana)
+    const r4 = { units: "mm", scaleReference: "banana" };
+    expect(readViewerSettings(undefined)).toEqual({ openModelsInPlace: true, zoomToCursor: true, modelInfo: true, hoverLongDelayMs: LONG_HOVER_MS, ...r4 });
     expect(VIEWER_SETTING_DEFAULTS.hoverLongDelayMs).toBe(900);
-    expect(readViewerSettings({ zoomToCursor: "no", modelInfo: false, hoverLongDelayMs: HOVER_LONG_MAX_MS + 1 })).toEqual({ openModelsInPlace: true, zoomToCursor: true, modelInfo: false, hoverLongDelayMs: 900 });
+    expect(readViewerSettings({ zoomToCursor: "no", modelInfo: false, hoverLongDelayMs: HOVER_LONG_MAX_MS + 1 })).toEqual({ openModelsInPlace: true, zoomToCursor: true, modelInfo: false, hoverLongDelayMs: 900, ...r4 });
     expect(readViewerSettings({ hoverLongDelayMs: 1500.4 }).hoverLongDelayMs).toBe(1500);
     expect(readViewerSettings({ hoverLongDelayMs: 100 }).hoverLongDelayMs).toBe(900);
+  });
+
+  it("wave R4 gate: the mount offers saveSetting only to a host that takes it, emits uhd-viewer:setting, and drops it on unmount", () => {
+    const hub = freshHub();
+    const plain = mount({});
+    expect(hub.saveSetting).toBeUndefined();
+    plain.unmount();
+    const seen: unknown[] = [];
+    const v = mount({ onSetting: (c) => seen.push(c) });
+    hub.saveSetting?.("viewer.scaleReference", "cube");
+    hub.saveSetting?.("viewer.units", 3);
+    expect(seen).toEqual([{ key: "viewer.scaleReference", value: "cube" }]);
+    v.unmount();
+    expect(hub.saveSetting).toBeUndefined();
   });
 
   it("the mount puts them on the hub at mount and on update; zoomToCursor reaches the camera controls", () => {

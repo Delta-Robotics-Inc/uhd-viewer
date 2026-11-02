@@ -86,7 +86,7 @@ export const tipHint = (t: PartTip): string => `Click to select · Double-click 
 
 /** One item of the 3D context menu. */
 export interface MenuItem {
-  id: "inspect" | "open" | "openTab" | "frame" | "isolate" | "hide" | "explode" | "copy";
+  id: PartItemId | VoidItemId;
   label: string;
   /** Lucide icon name (the app's Icon set). */
   icon: string;
@@ -94,7 +94,16 @@ export interface MenuItem {
   disabled?: string;
   /** A keyboard hint shown at the right. */
   hint?: string;
+  /** R4-A: a rule above this item (the void menu's groups; the part menu keeps its own two rules). */
+  rule?: boolean;
+  /** R4-A: an on/off item that is on now (shown pressed). */
+  checked?: boolean;
 }
+
+/** The part menu's items (R2-A). */
+export type PartItemId = "inspect" | "open" | "openTab" | "frame" | "isolate" | "hide" | "explode" | "copy";
+/** The void menu's items (R4-A, ./void.ts). */
+export type VoidItemId = "showAll" | "unisolate" | "fit" | "reset" | "explode" | "assemble" | "sectionOff" | "grid" | "scaleRef" | "capture";
 
 /**
  * The context menu for a part (R2-A, F2; Kevin: "if I right-click it, it gives me options like inspect, view 3D

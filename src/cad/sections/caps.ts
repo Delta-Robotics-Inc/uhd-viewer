@@ -17,17 +17,32 @@
  * in screen space `HATCH_SCREEN_PX` apart instead, so the cap never turns to a grey mush. Lines are one device pixel,
  * anti-aliased with the derivative of the line coordinate.
  *
- * Colours: the theme's `sectionCap` tone (one step off the model's tones) and its `sectionLine` ink. Until the scene
- * hands the ink over (`setInk`, a handoff to the scene's owner), the ink is chosen from the cap's luminance: the paper
- * look's dark ink on a light cap, the dark look's light ink on a dark cap (the two themes' own `sectionLine` values).
+ * Colours, per part (R4-C, 2026-11-02; Kevin: "The color of the cross-section hatch system should match the color of
+ * the actual 3D model"): after the parity pass, a second pass draws the BACK faces of the same geometry where the
+ * parity bit is set, depth-tested against the scene. Looking into a cut closed part, the nearest back face behind the
+ * cut is that part's own far wall, so each cap pixel is shaded by the part it belongs to: the shader reads that
+ * part's colour where the scene keeps it (the batcher's per-instance colour and glow, a merged mesh's vertex colour,
+ * a material's colour and emissive set per draw), finds the point on the plane along the view ray, and paints the
+ * fill and hatch there in the part's own tones (./capColour.ts: the fill pulled 12 % toward the background in
+ * lightness, the lines a darker tone of the same hue at 3:1 or more). It marks what it painted in a second stencil
+ * bit. Then the quad fills, in the theme's `sectionCap` with its `sectionLine` hatch, only what the part pass did
+ * not reach (an open mesh, a part whose far wall is missing), and a second, depth-only draw of the quad puts the
+ * plane's depth under every cap pixel (the ink pass outlines the cap like a face) and clears both bits.
  *
- * Cost: one extra geometry pass per plane (vertex work; no colour writes), only while a section is on. Measured on
- * ClientX's board in phase-1/progress.md (W3-C); the hatch is a few ALU ops on the cap's own pixels.
+ * The theme's tones: until the scene hands the ink over (`setInk`), it is chosen from the cap's luminance: the paper
+ * look's dark ink on a light cap, the dark look's light ink on a dark cap (the two themes' own `sectionLine` values).
+ * The background and the lit tone the part tones are derived against come from `setSceneTones` (a handoff to the
+ * scene's owner); until then from the theme the ink belongs to (paper's dark ink: the paper scene tokens).
+ *
+ * Cost: per plane, the parity pass and the part pass (two geometry passes over the parts the plane crosses; the
+ * second shades only cap pixels) and two quads, only while a section is on. Measured in phase-1/progress.md (R4-C).
  *
  * Open (non-closed) meshes give speckled caps; CAD exports are closed solids, the tessellated board too. A part
  * whose mesh is open gets its cap from the CPU cut instead once the view settles (./index.ts, noted in the report).
  */
 import * as THREE from "three";
+import { CAP_LINE_SHARE, CAP_TONES_GLSL, DARK_CAP_SCENE, PAPER_CAP_SCENE, capSceneParams, type CapScene } from "./capColour";
+import { NEUTRAL_FALLBACK } from "../render/toon";
 
 /** Size of the cap quad as a multiple of the model's bounding radius (it must cover the whole cut). DEFAULT. */
 const QUAD_SCALE = 4;
@@ -81,22 +96,35 @@ export function hatchUniforms() {
 }
 export type HatchUniforms = ReturnType<typeof hatchUniforms>;
 
-/** GLSL (ASCII only: some drivers refuse anything else, even in comments) that mixes the hatch into `diffuseColor`. */
+/**
+ * GLSL (ASCII only: some drivers refuse anything else, even in comments): the hatch's uniforms and `uhdHatchLine`,
+ * the line coverage (0..1) at a world point of the cut. Shared by the theme fill and the part pass.
+ */
+export const HATCH_PARS = /* glsl */ `
+uniform vec3 uHatchAcross;
+uniform float uHatchMm;
+uniform vec2 uHatchScreen;
+uniform float uHatchScreenPx;
+uniform float uHatchMinPx;
+uniform float uHatchLinePx;
+float uhdHatchLine( vec3 world ) {
+  // model-space lines: the coordinate across them in units of the spacing, and its change per pixel
+  float c = dot( world, uHatchAcross ) / uHatchMm;
+  float w = fwidth( c );
+  // too dense on screen (fewer than uHatchMinPx pixels from line to line): lay them in screen space
+  if ( w * uHatchMinPx > 1.0 ) {
+    c = dot( gl_FragCoord.xy, uHatchScreen ) / uHatchScreenPx;
+    w = fwidth( c );
+  }
+  float d = abs( fract( c + 0.5 ) - 0.5 ) / max( w, 1e-6 );
+  return clamp( 0.5 * uHatchLinePx + 0.5 - d, 0.0, 1.0 );
+}
+`;
+
+/** GLSL that mixes the hatch into `diffuseColor` (the theme fill, the CPU caps). */
 export const HATCH_FRAGMENT = /* glsl */ `
 #ifdef UHD_HATCH
-  {
-    // model-space lines: the coordinate across them in units of the spacing, and its change per pixel
-    float c = dot( vHatchWorld, uHatchAcross ) / uHatchMm;
-    float w = fwidth( c );
-    // too dense on screen (fewer than uHatchMinPx pixels from line to line): lay them in screen space
-    if ( w * uHatchMinPx > 1.0 ) {
-      c = dot( gl_FragCoord.xy, uHatchScreen ) / uHatchScreenPx;
-      w = fwidth( c );
-    }
-    float d = abs( fract( c + 0.5 ) - 0.5 ) / max( w, 1e-6 );
-    float line = clamp( 0.5 * uHatchLinePx + 0.5 - d, 0.0, 1.0 );
-    diffuseColor.rgb = mix( diffuseColor.rgb, uHatchInk, line * uHatchShare );
-  }
+  diffuseColor.rgb = mix( diffuseColor.rgb, uHatchInk, uhdHatchLine( vHatchWorld ) * uHatchShare );
 #endif
 `;
 
@@ -107,12 +135,159 @@ export function patchHatch(shader: THREE.WebGLProgramParametersWithUniforms, u: 
     .replace("#include <common>", "#include <common>\nvarying vec3 vHatchWorld;")
     .replace("#include <project_vertex>", "#include <project_vertex>\n  vHatchWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;");
   shader.fragmentShader = shader.fragmentShader
-    .replace(
-      "#include <common>",
-      "#include <common>\n#define UHD_HATCH\nvarying vec3 vHatchWorld;\nuniform vec3 uHatchInk;\nuniform float uHatchShare;\nuniform vec3 uHatchAcross;\nuniform float uHatchMm;\nuniform vec2 uHatchScreen;\nuniform float uHatchScreenPx;\nuniform float uHatchMinPx;\nuniform float uHatchLinePx;",
-    )
+    .replace("#include <common>", `#include <common>\n#define UHD_HATCH\nvarying vec3 vHatchWorld;\nuniform vec3 uHatchInk;\nuniform float uHatchShare;\n${HATCH_PARS}`)
     .replace("#include <map_fragment>", `#include <map_fragment>\n${HATCH_FRAGMENT}`);
 }
+
+/** DEFAULT (R4-C): below this luminance distance a material's colour is the neutral fallback grey (as the toon look's test). */
+const FALLBACK_EPS = 0.004;
+/** The part pass's slack on the other planes' clip test, mm: the cap point lies exactly on its own plane (DEFAULT). */
+export const CAP_CLIP_TOLERANCE_MM = 0.01;
+/** DEFAULT (R4-C): see-through parts under this opacity (x-ray shells) get no part cap (as the batcher's `SURFACE_OPACITY`). */
+const CAP_MIN_OPACITY = 0.5;
+
+const PART_VERTEX = /* glsl */ `
+#include <common>
+#include <clipping_planes_pars_vertex>
+attribute vec3 instanceEmissive;
+uniform vec3 uCapColor;
+uniform vec3 uCapEmissive;
+uniform float uCapVertexColor;
+varying vec3 vCapSurface;
+varying vec3 vCapView;
+void main() {
+  #include <begin_vertex>
+  #include <project_vertex>
+  #include <clipping_planes_vertex>
+  vCapView = mvPosition.xyz;
+  vec3 base = uCapColor;
+  #ifdef USE_INSTANCING_COLOR
+    base *= instanceColor;
+  #endif
+  #ifdef USE_COLOR
+    base *= mix( vec3( 1.0 ), color.rgb, uCapVertexColor );
+  #endif
+  vCapSurface = base;
+  // the glow: the batcher's per-instance attribute (0 where a mesh has none) or the material's, per draw
+  vCapSurface += instanceEmissive + uCapEmissive;
+}
+`;
+
+const PART_FRAGMENT = /* glsl */ `
+#include <common>
+#include <clipping_planes_pars_fragment>
+uniform vec4 uCapPlane;
+uniform float uCapSkip;
+uniform vec3 uCapNeutral;
+uniform vec3 uCapFallback;
+uniform float uCapGroundL;
+uniform float uCapDarken;
+uniform float uCapLineShare;
+uniform float uCapClipTol;
+varying vec3 vCapSurface;
+varying vec3 vCapView;
+${HATCH_PARS}
+${CAP_TONES_GLSL}
+void main() {
+  if ( uCapSkip > 0.5 ) discard;
+  #include <clipping_planes_fragment>
+  // the point of the cap on this plane along the view ray (view space; the plane is n.p + w = 0)
+  vec3 dir = isOrthographic ? vec3( 0.0, 0.0, - 1.0 ) : normalize( vCapView );
+  float den = dot( uCapPlane.xyz, dir );
+  if ( abs( den ) < 1e-6 ) discard;
+  vec3 p = vCapView - dir * ( ( dot( uCapPlane.xyz, vCapView ) + uCapPlane.w ) / den );
+  // a cap point another plane removes belongs to that plane's cap, not this one's
+  #if NUM_CLIPPING_PLANES > 0
+  for ( int i = 0; i < NUM_CLIPPING_PLANES; i ++ ) {
+    if ( dot( - p, clippingPlanes[ i ].xyz ) > clippingPlanes[ i ].w + uCapClipTol ) discard;
+  }
+  #endif
+  vec3 world = transpose( mat3( viewMatrix ) ) * ( p - viewMatrix[ 3 ].xyz );
+  vec3 surface = vCapSurface;
+  // an unhinted part (the neutral fallback grey) shows the theme's lit tone, as its surface does
+  if ( distance( surface, uCapFallback ) < ${FALLBACK_EPS} ) surface = uCapNeutral;
+  vec3 fill;
+  vec3 line;
+  uhdCapTones( surface, uCapGroundL, uCapDarken, fill, line );
+  gl_FragColor = vec4( mix( fill, line, uhdHatchLine( world ) * uCapLineShare ), 1.0 );
+  #include <colorspace_fragment>
+}
+`;
+
+/**
+ * The part pass's material (see the header): back faces where the parity bit (bit 0) is set, depth-tested against the
+ * scene and written (the nearest back face wins), bit 1 set where it painted. Per draw it reads the drawn object's
+ * colour and glow (`onBeforeRender`); the shader takes the batcher's per-instance colour and glow and a merged mesh's
+ * vertex colour itself.
+ */
+function partMaterial(hatch: HatchUniforms): THREE.ShaderMaterial {
+  const u = {
+    ...hatch,
+    uCapPlane: { value: new THREE.Vector4(0, 0, 1, 0) },
+    uCapColor: { value: new THREE.Color(1, 1, 1) },
+    uCapEmissive: { value: new THREE.Color(0, 0, 0) },
+    uCapVertexColor: { value: 0 },
+    uCapSkip: { value: 0 },
+    uCapNeutral: { value: new THREE.Color(DARK_CAP_SCENE.neutral) },
+    uCapFallback: { value: new THREE.Color(NEUTRAL_FALLBACK) },
+    uCapGroundL: { value: 0 },
+    uCapDarken: { value: 0.45 },
+    uCapLineShare: { value: CAP_LINE_SHARE },
+    uCapClipTol: { value: CAP_CLIP_TOLERANCE_MM },
+  };
+  const m = new THREE.ShaderMaterial({
+    name: "section-cap-part",
+    uniforms: u,
+    vertexShader: PART_VERTEX,
+    fragmentShader: PART_FRAGMENT,
+    vertexColors: true,
+    clipping: true,
+    side: THREE.BackSide,
+    toneMapped: false,
+    depthTest: true,
+    depthWrite: true,
+    depthFunc: THREE.LessEqualDepth,
+    // the scene may have drawn the same far wall (a double-sided material): a hair in front so this pass wins it
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    stencilWrite: true,
+    stencilFunc: THREE.EqualStencilFunc,
+    stencilRef: 3,
+    stencilFuncMask: 1,
+    stencilWriteMask: 2,
+    stencilFail: THREE.KeepStencilOp,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilZPass: THREE.ReplaceStencilOp,
+  });
+  // attributes a drawn mesh may lack: white vertex colour, no glow (three binds these constants instead)
+  (m as unknown as { defaultAttributeValues: Record<string, number[]> }).defaultAttributeValues = { color: [1, 1, 1], uv: [0, 0], uv1: [0, 0], instanceEmissive: [0, 0, 0] };
+  m.onBeforeRender = (_renderer, _scene, _camera, _geometry, object, group) => {
+    const o = object as THREE.Mesh & { isInstancedMesh?: boolean; instanceColor?: THREE.InstancedBufferAttribute | null };
+    const mats = o.material;
+    const mat = (Array.isArray(mats) ? mats[(group as unknown as { materialIndex?: number } | null)?.materialIndex ?? 0] : mats) as THREE.MeshStandardMaterial | undefined;
+    // only solids: not lines or points, not x-ray shells, not what sections leave alone
+    const skip = !o.isMesh || !!o.userData.noSection || !!o.userData.xray || (!!mat?.transparent && (mat.opacity ?? 1) < CAP_MIN_OPACITY);
+    u.uCapSkip.value = skip ? 1 : 0;
+    if (o.isInstancedMesh && o.instanceColor) {
+      // the batcher's instances: colour and glow per instance (attributes)
+      u.uCapColor.value.setRGB(1, 1, 1);
+      u.uCapEmissive.value.setRGB(0, 0, 0);
+    } else {
+      if (mat?.color) u.uCapColor.value.copy(mat.color);
+      else u.uCapColor.value.setRGB(1, 1, 1);
+      const e = o.userData.emissive;
+      if (typeof e === "number") u.uCapEmissive.value.setHex(e);
+      else if (mat?.emissive) u.uCapEmissive.value.copy(mat.emissive).multiplyScalar(mat.emissiveIntensity ?? 1);
+      else u.uCapEmissive.value.setRGB(0, 0, 0);
+    }
+    u.uCapVertexColor.value = mat?.vertexColors ? 1 : 0;
+    m.uniformsNeedUpdate = true;
+  };
+  return m;
+}
+const _plane = new THREE.Plane();
+const _normalMatrix = new THREE.Matrix3();
 
 /** In-plane axes of a plane (u along the world axis least aligned with the normal, crossed; v = n x u). */
 export function planeAxes(normal: THREE.Vector3, u = new THREE.Vector3(), v = new THREE.Vector3()): { u: THREE.Vector3; v: THREE.Vector3 } {
@@ -158,7 +333,11 @@ export class SectionCaps {
   });
   /** The hatch the fill draws (ink, spacing, direction per plane). */
   readonly hatch = hatchUniforms();
-  /** The cap fill: where the bit is set, depth-tested, writing depth; unlit, the theme's tone with the hatch. */
+  /**
+   * The theme fill: where the parity bit is set and the part pass did not paint (bit 1 clear), depth-tested, writing
+   * depth; unlit, the theme's tone with the hatch. Drawn a second time with no colour over every remaining cap pixel
+   * (the plane's depth), which clears both bits.
+   */
   readonly fill = hatchMaterial(
     {
       color: 0x4a4640,
@@ -167,21 +346,28 @@ export class SectionCaps {
       stencilWrite: true,
       stencilFunc: THREE.EqualStencilFunc,
       stencilRef: 1,
-      stencilFuncMask: 1,
-      stencilWriteMask: 1,
+      stencilFuncMask: 3,
+      stencilWriteMask: 3,
       stencilFail: THREE.KeepStencilOp,
       stencilZFail: THREE.ZeroStencilOp,
       stencilZPass: THREE.ZeroStencilOp,
     },
     this.hatch,
   );
+  /** The part pass: each cap pixel in the tones of the part it cuts (R4-C). */
+  readonly part = partMaterial(this.hatch);
+  /** Whether caps take each part's colour (R4-C, DEFAULT on); off: every cap in the theme's tone, as before. */
+  partColours = true;
   private quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.fill);
   private holder = new THREE.Scene();
-  /** Last pass: planes capped and the GPU time is the caller's to measure. */
-  last = { planes: 0, ms: 0 };
+  /** Last pass: planes capped, CPU ms of the pass, draw calls it made (the GPU time is the caller's to measure). */
+  last = { planes: 0, ms: 0, draws: 0 };
   /** The ink was handed over by the scene (`setInk`): the luminance rule no longer picks it. */
   private inkSet = false;
+  /** The background and lit tone were handed over by the scene (`setSceneTones`). */
+  private sceneSet = false;
   private capHex = "#4a4640";
+  private tones: CapScene = DARK_CAP_SCENE;
 
   constructor() {
     this.quad.frustumCulled = false;
@@ -189,18 +375,57 @@ export class SectionCaps {
     this.holder.add(this.quad);
     this.holder.matrixWorldAutoUpdate = false;
     this.hatch.uHatchInk.value.set(inkFor(this.capHex));
+    this.applyTones();
   }
 
   setColor(hex: string): void {
     this.capHex = hex;
     this.fill.color.set(hex);
     if (!this.inkSet) this.hatch.uHatchInk.value.set(inkFor(hex));
+    this.guessTones();
   }
 
   /** The hatch ink (the theme's `sectionLine`); handed over by the scene with the look. */
   setInk(hex: string): void {
     this.inkSet = true;
     this.hatch.uHatchInk.value.set(hex);
+    this.guessTones();
+  }
+
+  /**
+   * The scene's background and lit tone (the theme's `sceneBackground`, or the scene's own background colour, and
+   * `modelToneLit`): the part tones are derived against them. Until a scene calls this, the two themes' scene tokens
+   * are used, chosen by the ink (paper's dark ink: paper).
+   */
+  setSceneTones(tones: CapScene): void {
+    this.sceneSet = true;
+    this.tones = { ...tones };
+    this.applyTones();
+  }
+
+  /** The tones the part caps are derived against (tests, observe). */
+  sceneTones(): CapScene {
+    return { ...this.tones };
+  }
+
+  private guessTones(): void {
+    if (this.sceneSet) return;
+    this.tones = this.inkTheme();
+    this.applyTones();
+  }
+
+  /** The theme the ink belongs to: a dark ink is the paper look's. */
+  private inkTheme(): CapScene {
+    const ink = `#${this.hatch.uHatchInk.value.getHexString()}`;
+    return contrast(ink, "#000000") < contrast(ink, "#ffffff") ? PAPER_CAP_SCENE : DARK_CAP_SCENE;
+  }
+
+  private applyTones(): void {
+    const p = capSceneParams(this.tones);
+    const u = this.part.uniforms;
+    u.uCapGroundL.value = p.groundL;
+    u.uCapDarken.value = p.darken;
+    (u.uCapNeutral.value as THREE.Color).copy(p.neutral);
   }
 
   /** The cap tone and ink in force (tests, observe). */
@@ -229,23 +454,56 @@ export class SectionCaps {
     this.hatch.uHatchScreenPx.value = HATCH_SCREEN_PX * dpr;
     this.hatch.uHatchLinePx.value = HATCH_LINE_PX * dpr;
     this.hatch.uHatchMinPx.value = HATCH_MIN_PX * dpr;
+    // the draws each pass made: the counter's growth (the scene turns autoReset off), or its value when every
+    // render() resets it
+    let draws = 0;
+    const info = renderer.info as THREE.WebGLInfo | undefined;
+    const count = (pass: () => void) => {
+      const before = info?.render.calls ?? 0;
+      pass();
+      if (info) draws += info.autoReset ? info.render.calls : info.render.calls - before;
+    };
+    // `globalThis.__uhdCapsPartColours = false` turns the part pass off on a live page (A/B measurement, R4-C)
+    const partPass = this.partColours && (globalThis as { __uhdCapsPartColours?: boolean }).__uhdCapsPartColours !== false;
+    const plane4 = this.part.uniforms.uCapPlane.value as THREE.Vector4;
     try {
       for (let i = 0; i < planes.length; i++) {
         const p = planes[i];
         renderer.clearStencil();
-        drawStencil(this.stencil, p);
+        count(() => drawStencil(this.stencil, p));
+        hatchAcross(p.normal, this.hatch.uHatchAcross.value);
+        if (partPass) {
+          // the plane in view space for the shader (n.p + w = 0)
+          camera.updateMatrixWorld();
+          _normalMatrix.getNormalMatrix(camera.matrixWorldInverse);
+          _plane.copy(p).applyMatrix4(camera.matrixWorldInverse, _normalMatrix);
+          plane4.set(_plane.normal.x, _plane.normal.y, _plane.normal.z, _plane.constant);
+          count(() => drawStencil(this.part, p));
+        }
         // the quad lies on plane i: clipped by the others only (by itself it would sit exactly on the boundary)
         setClipping(planes.filter((_, j) => j !== i));
         this.placeQuad(p, bounds);
-        hatchAcross(p.normal, this.hatch.uHatchAcross.value);
-        renderer.render(this.holder, camera);
+        // the theme fill where the part pass did not paint (bit 0 set, bit 1 clear); without the part pass, every cap
+        this.fill.stencilFuncMask = partPass ? 3 : 1;
+        count(() => renderer.render(this.holder, camera));
+        if (partPass) {
+          // the plane's depth under the part caps, both bits cleared (no colour)
+          this.fill.colorWrite = false;
+          this.fill.stencilFuncMask = 1;
+          try {
+            count(() => renderer.render(this.holder, camera));
+          } finally {
+            this.fill.colorWrite = true;
+          }
+        }
         setClipping([...planes]);
       }
     } finally {
+      this.fill.stencilFuncMask = 3;
       renderer.clearStencil();
       renderer.autoClear = autoClear;
     }
-    this.last = { planes: planes.length, ms: performance.now() - t0 };
+    this.last = { planes: planes.length, ms: performance.now() - t0, draws };
   }
 
   /** The quad on the plane, centred on the model's centre projected onto it, large enough to cover the cut. */
@@ -260,6 +518,7 @@ export class SectionCaps {
   dispose(): void {
     this.stencil.dispose();
     this.fill.dispose();
+    this.part.dispose();
     this.quad.geometry.dispose();
   }
 }

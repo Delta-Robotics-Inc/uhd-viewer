@@ -44,7 +44,7 @@ Which one shows:
 | Findings | `drcError`, `drcWarning`, `drcInfo`, `drcRisk`, `drcPass`, `drcUnknown` | Red, yellow, blue, orange, green, grey. Each one is at least 4.5:1 against its theme's ground and against a callout card (the test computes it). Colour is never the only signal: each severity has its own marker shape (red octagon, yellow triangle, orange diamond, green circle with a check, grey dashed circle). Orange belongs to "risk" alone. |
 | Callouts | `calloutSurface`, `calloutBorder`, `calloutText`, `calloutLabel`, `calloutLeader`, `calloutLeaderWidth`, `calloutDot`, `calloutGhost` | The card, its outline, its sentence text, the mono uppercase id on the shelf, the leader line and its width, the terminal dot on the part, and the ghosted form of a marker whose anchor is hidden behind a part. |
 | Dimensions, angles, paths | `dimLine`, `dimExtension`, `dimChip`, `dimChipBorder`, `dimText`, `dimTierSurface`, `explodePath` | The dimension line and an angle's arc and ticks (as strong as the silhouette ink), the dashed extension lines (at least 3:1), the label chip, its outline and text, the tier tag inside it, and the explode path lines (low contrast on purpose: at least 1.8:1 on the ground, always fainter than the extension lines). An angle's NOW is the accent and a hard stop the fail red, as on a finding. The test computes every pair. |
-| Sections | `sectionCap`, `sectionLine` | The flat fill where a plane cuts through solid material, and the exact cut outline drawn on it once the view is still. |
+| Sections | `sectionCap`, `sectionLine` | A cut part's cap is drawn in that part's own colour (below); `sectionCap` with `sectionLine` hatch fills only where the part's colour cannot be read. `sectionLine` is also the exact cut outline drawn on the caps once the view is still. |
 
 The brand colour is not a token of the 3D view. It belongs to the host's chrome and to exported stills, never to
 the model.
@@ -73,8 +73,22 @@ the model.
 - Up to three planes, each an axis of the assembly, a position along it and the side it keeps. With no side set,
   the plane keeps the half away from the camera, so the cut faces the viewer.
 - A plane cuts the whole model or one subtree (DEFAULT: one scope per view, shared by its planes).
-- While moving, the caps are a stencil fill in `sectionCap`; once the view is still, the exact cut is computed on
-  the CPU, drawn as an outline in `sectionLine`, and returned as data (polylines per part, in mm) by `observe()`.
+- While moving, the caps are a stencil fill; once the view is still, the exact cut is computed on the CPU, drawn as
+  an outline in `sectionLine`, and returned as data (polylines per part, in mm) by `observe()`.
+- Each cap is hatched with 45 degree lines 1.2 mm apart on the cut (screen-space lines 6 px apart when those would
+  crowd under 2 px).
+- Each cap is in the colour of the part it cuts (R4-C, 2026-11-02, Kevin: "The color of the cross-section hatch
+  system should match the color of the actual 3D model"). The colour is what the part's surface shows: its colour
+  plus its glow, so a selected part's cap is in the selection accent and a highlighted part's glows as its surface
+  does; a part with no colour of its own reads as the lit tone. The fill is that colour moved 12 % of the way to the
+  background in lightness (DEFAULT), so a cut reads as a section and not as the outer surface. The hatch lines are a
+  darker tone of the same hue, 45 % darker in the dark theme and 35 % on paper (DEFAULTs), and always at least 3:1
+  against the fill: where the darker tone falls short it goes darker still, and on a fill too dark for a darker 3:1
+  line (carbon, a board's dark green, black plastic) the lines are a lighter tone of the same hue instead. Hue is
+  kept; chroma never grows (paper's warm lit tone would otherwise give olive lines). The rule is in
+  `src/cad/sections/capColour.ts` (TypeScript and its GLSL twin); the tests compute every pair.
+- Where the part's colour cannot be read (an open mesh whose far wall is missing, part colours switched off), the
+  cap is `sectionCap` hatched in `sectionLine`.
 - Sections and tours agree by default: a tour step that sets planes uses the same planes a person would.
 
 ## Callouts, DRC markers and exploded-view labels

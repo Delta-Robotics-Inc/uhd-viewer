@@ -54,7 +54,10 @@ import type { ThemeToken } from "../theme/tokens";
 import { baseMaterialOf } from "./render/looks";
 import { longHoverMs, viewerSettings } from "./viewerSettings";
 import { applyBoardPose, boardGroups, componentTarget, measureBoard, planBoard, splitBoard, withBoard, type BoardAssembly, type BoardComponent, type BoardPartInput } from "./assembly";
-import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, goBack, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
+import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, VOID_MENU_TITLE, goBack, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, voidMenuFor, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
+import { createScaleReference, readScaleSettings, rememberScaleSetting, SCALE_KIND_INFO, type ScaleReference, type ScaleKind } from "./scaleref";
+import { mountGridLabel, type Units } from "./grid";
+import { PIVOT_EASE_MS, attachCameraPolicy, clampToMax, movePivot, pivotChange, pivotOf, radiusOf, type CameraPolicy } from "./camera";
 
 /** Render knobs from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -300,6 +303,8 @@ export function CadView({
     if (!ops.length) return;
     const r = store.dispatch(ops, { actor: HUMAN, label: `go to ${p.label}`.slice(0, 120), source: "nav" });
     if (r && "error" in r) console.warn(`[cad] history: ${r.error}`);
+    // R4-A: the place's own camera stands (the level's pivot rule is not put over it when its models settle)
+    if (p.camera) restoredCamera.current = p.scope;
     if (!p.camera && (p.selection?.body !== undefined || p.selection?.harness !== undefined)) look.current = true;
   };
   useLayoutEffect(() => {
@@ -359,6 +364,20 @@ export function CadView({
   const exploded = explodeT > 0;
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
+  // ---- R4-A: camera behaviour (./camera) and the void menu ----
+  /** Wheel zoom toward the cursor (R1-A's E1, DEFAULT on): the policy's, not OrbitControls' (which moved the pivot). */
+  const zoomCursor = useRef<boolean>(DEFAULT_ZOOM_TO_CURSOR);
+  const cameraPolicy = useRef<CameraPolicy | null>(null);
+  /** What the policy reads from this render (the drawn box, the point under the cursor). */
+  const cameraLive = useRef<{ drawn: () => THREE.Box3; hit: (x: number, y: number) => THREE.Vector3 | undefined; easePivot: () => void }>({ drawn: () => new THREE.Box3(), hit: () => undefined, easePivot: () => undefined });
+  /** R4-B's grid and scale reference, for the void menu (handoffs.md, "R4-A (CadView)"): an absent entry is left out. */
+  const viewExtras = useRef<{ grid?: { on: boolean; set: (on: boolean) => void }; scaleRef?: { on: boolean; choice: string; set: (on: boolean) => void } }>({});
+  /** An isolation or the hidden list changed without a camera: the pivot goes back to the rule once it is drawn. */
+  const pivotDue = useRef(false);
+  /** The level (system and scope) the pivot was last put on the rule for. */
+  const pivotLevel = useRef<string | null>(null);
+  /** A history place restored its own camera on this level: the level's pivot is not imposed over it. */
+  const restoredCamera = useRef<string | null>(null);
   const labelsRef = useRef<LabelLayer | null>(null);
   const bodies = useRef(new Map<string, BodyRec>());
   const hardware = useRef<HardwareRec[]>([]);
@@ -536,6 +555,21 @@ export function CadView({
   const annotActive = useRef(false);
   const annotWas = useRef(false);
 
+  // R4-B: the floor grid on/off (the void menu's item) and the scale reference (DEFAULT banana, hidden; units DEFAULT mm)
+  const [gridOn, setGridOn] = useState(true);
+  const scaleRef = useRef<ScaleReference | null>(null);
+  const [scale, setScale] = useState(() => ({ ...readScaleSettings(hub.settings), shown: false, note: undefined as string | undefined }));
+  const scaleBounds = useRef<() => THREE.Box3>(() => new THREE.Box3());
+  const saveSetting = (hub as { saveSetting?: (key: string, value: unknown) => unknown }).saveSetting;
+  // wave R4 gate: a change of the host's settings (the Settings page, an agent, another tab's chooser) reaches an open
+  // view on its next render (the mount puts a new settings object on the hub and re-renders)
+  const hostSettings = hub.settings;
+  useEffect(() => {
+    if (!hostSettings) return;
+    const s = readScaleSettings(hostSettings);
+    setScale((p) => (p.units === s.units && p.scaleReference === s.scaleReference ? p : { ...p, units: s.units, scaleReference: s.scaleReference }));
+  }, [hostSettings]);
+
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
     if (!host.current) return;
@@ -549,16 +583,30 @@ export function CadView({
       zoomToCursor: hub.controlOptions?.zoomToCursor ?? hub.opening.zoomToCursor ?? DEFAULT_ZOOM_TO_CURSOR,
     });
     handle.current = h;
+    zoomCursor.current = hub.controlOptions?.zoomToCursor ?? hub.opening.zoomToCursor ?? DEFAULT_ZOOM_TO_CURSOR;
+    // R4-A: the wheel is the camera policy's (Onshape-like steps, hard stops, the pivot kept on the model)
+    cameraPolicy.current = attachCameraPolicy(h, { drawn: () => cameraLive.current.drawn(), hit: (x, y) => cameraLive.current.hit(x, y), cursor: () => zoomCursor.current });
     hub.controls = (o) => {
       if (typeof o?.zoomToCursor === "boolean") {
         hub.controlOptions = { ...hub.controlOptions, zoomToCursor: o.zoomToCursor };
-        h.controls.zoomToCursor = o.zoomToCursor;
+        zoomCursor.current = o.zoomToCursor;
       }
-      return { zoomToCursor: h.controls.zoomToCursor };
+      return { zoomToCursor: zoomCursor.current };
     };
     // local crash and performance records (PB-1181, W1-E): frames, loads, context loss of this scene
     const stopTelemetry = attachSceneTelemetry(h);
     h.scene.add(harnessGroup.current);
+    // R4-B: the grid's scale label (bottom-left) and the scale reference: its own group in the scene (never fitted, exploded,
+    // picked or selected), standing beside the visible assembly's box, read each drawn frame while shown
+    const stopGridLabel = mountGridLabel(host.current, h.grid);
+    const sr = createScaleReference(h, { container: host.current, bounds: () => scaleBounds.current(), kind: scale.scaleReference, units: scale.units, shown: false });
+    scaleRef.current = sr;
+    const stopScaleNote = sr.onChange((s) =>
+      setScale((p) => {
+        const note = s.error ?? (s.loading ? `Loading the ${SCALE_KIND_INFO[s.kind].label}…` : s.kind === "cube" && s.edgeLabel ? `Cube edge: ${s.edgeLabel}` : undefined);
+        return note === p.note ? p : { ...p, note };
+      }),
+    );
     labelsRef.current = new LabelLayer(host.current);
     // callouts, marks, arrows and DRC markers (PB-1184): sprites in the overlay group, labels on the page
     const annot = new AnnotLayer(host.current, {
@@ -599,6 +647,12 @@ export function CadView({
       labelsRef.current?.dispose();
       stopTelemetry();
       hub.controls = undefined;
+      cameraPolicy.current?.dispose();
+      cameraPolicy.current = null;
+      stopScaleNote();
+      stopGridLabel();
+      scaleRef.current?.dispose();
+      scaleRef.current = null;
       h.dispose();
       handle.current = null;
     };
@@ -625,8 +679,17 @@ export function CadView({
     annotRef.current?.refreshColours(ground.r * 0.2126 + ground.g * 0.7152 + ground.b * 0.0722 < 0.5);
     dimsRef.current?.refreshColours();
     pathsRef.current?.refreshColours(el);
+    scaleRef.current?.setColors({ face: tokenColor(el, "modelToneLit", "#333333"), minor: tokenColor(el, "inkCrease", "#6a6a6a"), major: tokenColor(el, "inkSilhouette", "#d4d4d4") });
     h.invalidate();
   }, [theme]);
+  // R4-B: state to the scene
+  useEffect(() => {
+    const sr = scaleRef.current;
+    if (!sr) return;
+    sr.units = scale.units; // also sets h.grid.units (the floor grid and its label)
+    sr.kind = scale.scaleReference;
+    sr.shown = scale.shown;
+  }, [scale.units, scale.scaleReference, scale.shown]);
 
   /** The name of the module whose assembly places the shown one's parts (PB-1040). */
   const placedByName = (from: string) => (from ? (defAt(system, lookup, from.split("/"))?.name ?? from) : system.name);
@@ -1184,6 +1247,8 @@ export function CadView({
         ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
         applyExplode(ex.value);
         const cam = cameraTween.current;
+        // R4-A: an explode moved by the timeline or an agent (no camera tween): the pivot follows when it rests
+        if (!cam && ex.value === ex.target) cameraLive.current.easePivot();
         if (cam) {
           // the camera's share of the way, eased
           const k = Math.abs(ex.target - cam.start) > 0 ? Math.min(1, Math.abs(ex.value - cam.start) / Math.abs(ex.target - cam.start)) : 1;
@@ -1474,7 +1539,6 @@ export function CadView({
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
-    const grid = h.scene.children.find((o) => o instanceof THREE.GridHelper);
     const box = assembledBounds();
     // a cut body is a shell: draw the far side of its faces too, or a closed part (a battery) seen
     // through the cut shows only the faces that face the camera and seems to vanish (PB-873)
@@ -1493,9 +1557,11 @@ export function CadView({
     const planes = resolvePlanes(sections as ScopedSectionPlane[], box, { position: h.camera.position, target: h.controls.target });
     const scope = (sections[0] as ScopedSectionPlane | undefined)?.scope;
     h.sections.set(planes.length ? { planes: planes.map((p) => p.plane), ...(scope ? { scopePaths: [scope] } : {}) } : null);
-    if (grid) grid.visible = planes.length ? false : !present;
+    // R4-A: the grid is `h.grid` now (./grid, R4-B's module; it was found as a GridHelper among the scene's children)
+    h.grid.visible = gridOn && !planes.length && !present;
+    if (scaleRef.current) scaleRef.current.suppressed = planes.length > 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, loaded, model]);
+  }, [sections, loaded, model, gridOn]);
   /** Bodies that hold another (shells): what X-ray has to see through. None: the control is disabled and says so. */
   const [shells, setShells] = useState(0);
   useEffect(() => {
@@ -1750,6 +1816,22 @@ export function CadView({
     for (const hw of hardware.current) hw.obj.visible = showHardware && shownBy(hw.harness, isolation, hidden);
     h.invalidate();
   }, [isolation, hidden, loaded, settled, showHardware]);
+  // R4-A: an isolation or a change of what is hidden (the menu, a finding, an agent: not Back, which brings its own
+  // camera) puts the pivot back on the rule, after the visibility above is applied (this effect runs after it)
+  useEffect(
+    () =>
+      store.subscribe((c) => {
+        const prev = c.prev as Partial<ViewState>;
+        const next = c.state as Partial<ViewState>;
+        if (pivotChange({ isolation: prev.isolation, hidden: prev.visibility?.hidden, camera: prev.camera }, { isolation: next.isolation, hidden: next.visibility?.hidden, camera: next.camera })) pivotDue.current = true;
+      }),
+    [store],
+  );
+  useEffect(() => {
+    if (!pivotDue.current || !settledRef.current) return;
+    pivotDue.current = false;
+    cameraLive.current.easePivot();
+  }, [isolation, hidden]);
 
   // ---- picking ---------------------------------------------------------------
   /**
@@ -2049,13 +2131,94 @@ export function CadView({
 
   // ---- the part menu (R2-A, F2): on a right-click without a drag, at the pointer ---------------------------------
   const [menu, setMenu] = useState<{ x: number; y: number; under: PartUnder; title: string; items: MenuItem[] } | null>(null);
+  /** R4-A: the view's menu, from a right-click in empty space (universal items only, ./nav/void.ts). */
+  const [voidMenu, setVoidMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const closeMenu = useMemo(
     () => () => {
       menuOpen.current = false;
       setMenu(null);
+      setVoidMenu(null);
     },
     [],
   );
+  const voidItems = (): MenuItem[] => {
+    const x = viewExtras.current;
+    return voidMenuFor({
+      hidden: hidden.length,
+      isolated: Boolean(isolation),
+      exploded,
+      mode: explodeMode,
+      section: sections.length > 0,
+      ...(x.grid ? { grid: { on: x.grid.on } } : {}),
+      ...(x.scaleRef ? { scaleRef: { on: x.scaleRef.on, choice: x.scaleRef.choice } } : {}),
+      capture: handle.current ? true : "No view to capture yet",
+    });
+  };
+  const openVoid = (x: number, y: number) => {
+    hoverOff();
+    menuOpen.current = true;
+    setMenu(null);
+    setVoidMenu({ x, y, items: voidItems() });
+  };
+  /** Capture image without a host to save it: the view's PNG, downloaded (a host's Export takes it when there is one). */
+  const captureImage = () => {
+    if (hub.exportView) return exportNow("png");
+    const h = handle.current;
+    if (!h) return;
+    void h
+      .snapshot()
+      .then((shot) => {
+        if (!shot) return;
+        const url = URL.createObjectURL(shot.blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${(shown.name || "view").replace(/[<>:"/\\|?*\s]+/g, "-")}-view.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      })
+      .catch(() => undefined);
+  };
+  /** Reset view (R4-A): isometric (DEFAULT azimuth -45 deg, elevation 35.26 deg), fitted about what is drawn. */
+  const resetView = () => fit(visibleBounds(), -45, (Math.atan(1 / Math.SQRT2) * 180) / Math.PI);
+  const runVoid = (id: MenuItem["id"]) => {
+    switch (id) {
+      case "showAll": {
+        const ops: unknown[] = [];
+        if (hidden.length) ops.push({ op: "set", path: ["visibility", "hidden"], value: [] });
+        if (isolation) ops.push({ op: "isolate", paths: null });
+        if (!ops.length) return;
+        if (isolation) pushPlace("isolate", selRef.current, "everything", null);
+        return write(ops, "show everything");
+      }
+      case "unisolate":
+        if (!isolation) return;
+        pushPlace("isolate", selRef.current, "everything", null);
+        return write([{ op: "isolate", paths: null }], "show everything");
+      case "fit":
+        return fitAsSeen();
+      case "reset":
+        return resetView();
+      case "explode": {
+        const on = !(exploded && explodeMode === "radial");
+        setTimelineAsked(on);
+        return explodeWith("radial", on);
+      }
+      case "assemble":
+        // as the toolbar's Assemble: assembled, it takes the parts apart in order; apart, it puts them together
+        setTimelineAsked(true);
+        return explodeWith("sequence", !exploded);
+      case "sectionOff":
+        return write([{ op: "section", sections: [] }], "section view off");
+      case "grid":
+        return viewExtras.current.grid?.set(!viewExtras.current.grid.on);
+      case "scaleRef":
+        return viewExtras.current.scaleRef?.set(!viewExtras.current.scaleRef.on);
+      case "capture":
+        return captureImage();
+    }
+  };
   /** The module a part's "Explode this sub-assembly" explodes: the part itself when it has parts, else its parent. */
   const explodeScopeOf = (u: PartUnder): string | undefined => {
     if (u.harness !== undefined || u.key === undefined) return undefined;
@@ -2138,8 +2301,8 @@ export function CadView({
   };
 
   /** The handlers below run in an effect made once per model: they reach this render's functions through this. */
-  const live = useRef({ partUnder, openPart, openMenu, hoverAt, hoverOff, selectionOf });
-  live.current = { partUnder, openPart, openMenu, hoverAt, hoverOff, selectionOf };
+  const live = useRef({ partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf });
+  live.current = { partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf };
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
@@ -2171,6 +2334,8 @@ export function CadView({
       // a person's pick never frames: a focus still waiting to frame (a host's, on what had nothing drawn) is dropped
       look.current = false;
       const u = live.current.partUnder(e.clientX, e.clientY);
+      // R4-A: a right-click in empty space opens the view's menu and keeps the selection (DEFAULT; it cleared it before)
+      if (!u && d.button === 2) return live.current.openVoid(e.clientX, e.clientY);
       if (!u) setSel({});
       else if (u.harness !== undefined) setSel({ harness: u.harness });
       else {
@@ -2356,7 +2521,9 @@ export function CadView({
       const depth = p.dot(f);
       d = Math.max(d, Math.abs(p.dot(right)) / (tanH * Math.max(0.2, mx)) - depth, Math.abs(p.dot(up)) / (tanV * my) - depth);
     }
-    const target = c.clone().addScaledVector(right, d * tanH * panel);
+    // R4-A: the target is the box's centre (the pivot rule); the scene's view shift (`setViewShift`) draws it in the
+    // middle of the part of the view the inspector leaves free (the target was moved off the centre before)
+    const target = c.clone();
     // `?zoom=` (document mode): the fit comes that much closer
     orbit(azimuthDeg, elevationDeg, d / (hub.opening.zoom ?? 1), target);
   };
@@ -2413,7 +2580,10 @@ export function CadView({
       applyExplode(ex.value);
       h.root.updateMatrixWorld(true);
       const moved = before.reduce((m, p, i) => Math.max(m, after[i] ? p.distanceTo(after[i]) : 0), 0);
-      const next = explodeCamera({ from: fromBox, to: toBox, moved, position: h.camera.position, target: h.controls.target });
+      let next = explodeCamera({ from: fromBox, to: toBox, moved, position: h.camera.position, target: h.controls.target });
+      // R4-A: assembled or exploded, the pivot ends at the centre of what is drawn (the envelope's scale kept)
+      const pivot = pivotOf(toBox);
+      if (next && pivot) next = { target: pivot, position: pivot.clone().add(next.position.clone().sub(next.target)) };
       if (next) cameraTween.current = { from: [h.camera.position.clone(), h.controls.target.clone()], to: [next.position, next.target], start: ex.value };
       // wave R3 gate: judged from the player's reach in the mode asked for (radial or the steps), not from a pose
       // sampled mid-fade (a mode change fades from where the parts are, so a sample at once moved nothing and the
@@ -2554,6 +2724,42 @@ export function CadView({
     h.invalidate("view");
   };
   reportCameraRef.current = reportCamera;
+  /**
+   * R4-A: put the orbit pivot back on the rule (the centre of what is drawn: the visible assembly, exploded or not;
+   * the isolated set when isolated), carrying the camera with it, eased over PIVOT_EASE_MS so the view does not jump.
+   * A selection never calls this; a pan moves the pivot with the view until the next isolation, explode, Fit or level.
+   */
+  const easePivot = () => {
+    const h = handle.current;
+    if (!h || h.manual.on) return;
+    const drawn = drawnBox();
+    const pivot = pivotOf(drawn);
+    if (!pivot) return;
+    const to = movePivot({ position: h.camera.position, target: h.controls.target }, pivot, radiusOf(drawn));
+    if (!to) return;
+    cameraTween.current = null;
+    const reduced = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      h.controls.target.copy(to.target);
+      h.camera.position.copy(to.position);
+      h.camera.lookAt(to.target);
+      h.invalidate("view");
+      reportCamera(SYSTEM);
+      return;
+    }
+    viewTween.current = { from: { position: h.camera.position.clone(), target: h.controls.target.clone() }, to, start: performance.now(), ms: PIVOT_EASE_MS };
+    h.invalidate("view");
+  };
+  // R4-B: the scale reference stands beside what is drawn; the void menu's Grid and Scale reference items
+  scaleBounds.current = drawnBox;
+  viewExtras.current.grid = { on: gridOn, set: setGridOn };
+  viewExtras.current.scaleRef = { on: scale.shown, choice: SCALE_KIND_INFO[scale.scaleReference].label, set: (on) => setScale((p) => ({ ...p, shown: on })) };
+  cameraLive.current = {
+    drawn: drawnBox,
+    // the surface under the cursor anchors the zoom (only once every model is in: no pick structures during a load)
+    hit: (x, y) => (settledRef.current ? partUnder(x, y)?.hit.point.clone() : undefined),
+    easePivot,
+  };
   /** Bounds of each body as drawn now, from its precise local box (the same box from a sidecar or a plain GLB). */
   const drawnBounds = (rec: BodyRec): [[number, number, number], [number, number, number]] | null => {
     if (rec.box.isEmpty()) return null;
@@ -2790,6 +2996,21 @@ export function CadView({
       tour: (t: unknown) => playTour(t),
       /** Select a part by instance path from the root and frame it (a finding's "look at"; scripts and tests). */
       lookAt: (ref: string) => lookAtRef(ref),
+      /** R4-B: the scale reference (shown, kind, units) and the grid's levels, for the gates' scripts. */
+      scaleRef: (s?: { shown?: boolean; kind?: ScaleKind; units?: Units }) => {
+        if (s) setScale((p) => ({ ...p, ...(s.kind ? { scaleReference: s.kind } : {}), ...(s.units ? { units: s.units } : {}), ...(typeof s.shown === "boolean" ? { shown: s.shown } : {}) }));
+        return scaleRef.current?.status();
+      },
+      gridLevels: () => h.grid.levels(),
+      /** R4-A: the camera policy now: distance to the pivot, the pivot, the zoom stops and the drawn box's centre (mm). */
+      zoomInfo: () => {
+        const lim = cameraPolicy.current?.limits();
+        const drawn = drawnBox();
+        const r = (v: THREE.Vector3) => v.toArray().map((n) => Math.round(n * 1000) / 1000);
+        return { distance: Math.round(h.camera.position.distanceTo(h.controls.target) * 1000) / 1000, pivot: r(h.controls.target), centre: drawn.isEmpty() ? null : r(drawn.getCenter(new THREE.Vector3())), radius: Math.round(radiusOf(drawn) * 1000) / 1000, limits: lim ? { min: lim.min, max: lim.max } : null };
+      },
+      /** R4-A: zoom by wheel notches (negative in, positive out) about a client point, as the wheel does; false at a stop. */
+      zoom: (notches: number, clientX?: number, clientY?: number) => cameraPolicy.current?.zoomAt(notches, clientX, clientY) ?? false,
       /** Who is working where, as chips near the parts (PB-1184, until W3-A's bridge sends it): `[{who, ref, intent?}]`. */
       presence: (list: PresenceChip[]) => setPresenceSet(Array.isArray(list) ? list.slice(0, 16) : []),
     };
@@ -2846,6 +3067,18 @@ export function CadView({
         if (c.source === "view" || !c.state.camera || c.state.camera === c.prev.camera) return;
         openedByDefault.current = false;
         applyCamera(c.state.camera);
+        // R4-A: an agent's explicit camera may come closer than the wheel's stop, never farther than its far stop
+        const h = handle.current;
+        const lim = settledRef.current ? cameraPolicy.current?.limits() : undefined;
+        if (h && lim && (c.source === "bridge" || c.entry?.actor.kind === "agent")) {
+          const held = clampToMax({ position: h.camera.position, target: h.controls.target }, lim.max);
+          if (held.position !== h.camera.position) {
+            h.camera.position.copy(held.position);
+            h.camera.lookAt(h.controls.target);
+            h.invalidate("view");
+            reportCamera(SYSTEM);
+          }
+        }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [store],
@@ -2926,6 +3159,12 @@ export function CadView({
     target: saved?.target ? new THREE.Vector3(...saved.target) : undefined,
   };
   const framed = useRef(false);
+  /**
+   * Wave R4 gate: the opening camera is this scope's own record in the view state (the person was here before, a
+   * host restored the tab's state): the pivot ease on the first settle leaves it where it was (a remount of the same
+   * level re-centred the person's pan).
+   */
+  const cameraFromRecord = useRef(false);
   /** The camera is still the default opening orbit this view put there (no one chose it). */
   const openedByDefault = useRef(false);
   useEffect(() => {
@@ -2935,6 +3174,7 @@ export function CadView({
     const have = store.get().camera;
     if (have) {
       applyCamera(have);
+      cameraFromRecord.current = !openedByDefault.current;
       // the camera this view placed itself by default (React's development double mount runs this twice): still
       // to be fitted once the models are in, not a camera someone chose (R1-A, M1)
       if (openedByDefault.current) framed.current = false;
@@ -2966,6 +3206,7 @@ export function CadView({
     const drawn = visibleBounds();
     const memo = `${system.id}|${at}`;
     const placed = framed.current || urlOpen.focus || opening.dist !== undefined;
+    let refitted = false;
     if (!placed) {
       framed.current = true;
       openedByDefault.current = false;
@@ -2973,11 +3214,26 @@ export function CadView({
       fit(drawn, opening.az, opening.el);
     } else if (needsRefit(fittedBoxes.get(memo), drawn, true)) {
       fitAsSeen();
+      refitted = true;
     }
     if (opening.dist !== undefined) framed.current = true;
     if (!drawn.isEmpty()) fittedBoxes.set(memo, drawn.clone());
+    // R4-A: another level orbits about its own centre (a camera kept from the last level, or the opening one, is
+    // carried there); a rebuild of the same level keeps the person's pan; a place restored by Back keeps its camera
+    if (pivotLevel.current !== memo) {
+      const restored = restoredCamera.current === at || cameraFromRecord.current;
+      pivotLevel.current = memo;
+      restoredCamera.current = null;
+      cameraFromRecord.current = false;
+      if (placed && !refitted && !restored && !urlOpen.camera) easePivot();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, model]);
+  // R4-A: the inspector card covers the right of the view: the projection is shifted so the pivot (the model's centre)
+  // is drawn in the middle of what is left free (DEFAULT 380 px, only on a view wider than 900 px: the fit's numbers)
+  useEffect(() => {
+    handle.current?.setViewShift(!present && !noChrome && hub.opening.panel !== "none" && inspector ? 380 : 0, 900);
+  }, [present, noChrome, inspector, hub]);
   // gate R1 (M1): what the person shows (isolation, hidden parts) is the size the next rebuild compares with: isolating
   // the board after the whole assembly was fitted made the next rebuild refit the camera (the drawn bounds shrank
   // past REFIT_RATIO against the memo of the whole assembly)
@@ -3385,13 +3641,17 @@ export function CadView({
     h.beforeRender.add(f);
     const el = h.renderer.domElement;
     const input = () => tour.current?.playback.userInput();
+    // wave R4 gate: the wheel on the holder in the capture phase, as R4-A's zoom policy takes it (it stops the event
+    // there, so a listener on the canvas never heard the wheel and a playing tour undid the zoom)
+    const wheelAt = el.parentElement ?? el;
+    const wheelInput = (e: Event) => e.target === el && input();
     el.addEventListener("pointerdown", input);
-    el.addEventListener("wheel", input, { passive: true });
+    wheelAt.addEventListener("wheel", wheelInput, { capture: true, passive: true });
     window.addEventListener("keydown", input);
     return () => {
       h.beforeRender.delete(f);
       el.removeEventListener("pointerdown", input);
-      el.removeEventListener("wheel", input);
+      wheelAt.removeEventListener("wheel", wheelInput, { capture: true });
       window.removeEventListener("keydown", input);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3774,6 +4034,21 @@ export function CadView({
             onDirection={setDirection}
             onFit={fitAsSeen}
             onFocus={lookAlongNormal}
+            scaleRef={{
+              shown: scale.shown,
+              kind: scale.scaleReference,
+              units: scale.units,
+              note: scale.note,
+              onShown: (on) => setScale((p) => ({ ...p, shown: on })),
+              onKind: (k: ScaleKind) => {
+                setScale((p) => ({ ...p, scaleReference: k }));
+                rememberScaleSetting("scaleReference", k, saveSetting);
+              },
+              onUnits: (u: Units) => {
+                setScale((p) => ({ ...p, units: u }));
+                rememberScaleSetting("units", u, saveSetting);
+              },
+            }}
             availability={toolbarAvail}
             canFocus={sel.body !== undefined}
             onTimeline={setTimelineAsked}
@@ -3880,6 +4155,7 @@ export function CadView({
         )}
         {hoverTip && !menu && !present && <HoverTip tip={hoverTip.tip} stage={hoverTip.stage} part={hoverTip.part} pointer={hoverTip.pointer} view={hoverTip.view} />}
         {menu && <PartMenu x={menu.x} y={menu.y} title={menu.title} items={menu.items} onRun={(id) => runMenu(id, menu)} onClose={closeMenu} />}
+        {voidMenu && <PartMenu kind="void" x={voidMenu.x} y={voidMenu.y} title={VOID_MENU_TITLE} items={voidMenu.items} onRun={runVoid} onClose={closeMenu} />}
         {loadSnap && !shot && (
           <LoadingScreen
             state={loadSnap}

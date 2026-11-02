@@ -198,10 +198,8 @@ function CadPreview({ def, url, appearance }: { def: ModuleDef; url?: string; ap
     if (!host.current || !url) return;
     setState("loading");
     const h = createScene(host.current);
-    // a product shot, not a workspace: no floor grid
-    h.scene.traverse((o) => {
-      if (o instanceof THREE.GridHelper) o.visible = false;
-    });
+    // a product shot, not a workspace: no floor grid (wave R4 gate: `h.grid`, ../cad/grid, R4-A's handoff)
+    h.grid.visible = false;
     h.controls.autoRotate = true;
     h.controls.autoRotateSpeed = 1.6;
     const stop = () => (h.controls.autoRotate = false);

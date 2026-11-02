@@ -6,5 +6,6 @@ export * from "./history";
 export * from "./colour";
 export * from "./target";
 export * from "./tip";
+export * from "./void";
 export { NavButtons, PartMenu, HoverTip } from "./ui";
 export { ensureNavStyle, NAV_CSS } from "./style";

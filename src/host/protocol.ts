@@ -148,7 +148,7 @@ export function parseNavigateEvent(data: unknown): Extract<ViewerEvent, { type: 
 
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
-  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState", "uhd-viewer:presence", "uhd-viewer:navigate", "uhd-viewer:history", "uhd-viewer:export"].includes((data as { type?: string }).type ?? "");
+  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState", "uhd-viewer:presence", "uhd-viewer:navigate", "uhd-viewer:history", "uhd-viewer:export", "uhd-viewer:setting"].includes((data as { type?: string }).type ?? "");
 
 /**
  * `origin` is one of `allowed`: an exact origin, `scheme://*` (any origin

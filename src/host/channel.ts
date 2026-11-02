@@ -101,6 +101,9 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
     // R2-E (G3): the 3D toolbar's Export
     case "uhd-viewer:export":
       return options.onExport?.({ format: event.format, ...(event.target !== undefined ? { target: event.target } : {}) });
+    // wave R4 gate: a viewer setting changed in the view (the scale chooser, units)
+    case "uhd-viewer:setting":
+      return options.onSetting?.({ key: event.key, value: event.value });
   }
 }
 
