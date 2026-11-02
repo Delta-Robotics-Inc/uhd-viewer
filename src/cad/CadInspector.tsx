@@ -271,7 +271,7 @@ export function CadInspector({
               <>
                 <div className="section-title">FINDINGS ON THE MODEL · {findings.length}</div>
                 {findings.map((f) => (
-                  <button key={f.id} className={`cad-finding ${f.severity}`} onClick={() => onSel(f.select)}>
+                  <button key={f.id} className={`cad-finding ${f.severity}`} onClick={() => onSel(f.select)} {...(f.raw ? { title: f.raw } : {})}>
                     <Icon name={f.severity === "error" ? "octagon-x" : "triangle-alert"} size={13} />
                     <span>
                       <b>{f.title}</b>

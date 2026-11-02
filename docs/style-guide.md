@@ -78,8 +78,9 @@ the model.
 
 ## Callouts, DRC markers and exploded-view labels
 
-Revised in fix wave R1 (R1-C, 2026-11-01) from Kevin's walkthrough (items D1 to D5, M10, M12). Values marked
-DEFAULT are in code comments and can be revisited.
+Revised in fix wave R1 (R1-C, 2026-11-01) from Kevin's walkthrough (items D1 to D5, M10, M12), and in wave R2
+(R2-C, 2026-11-02: plain-language text, crowded columns, instanced markers). Values marked DEFAULT are in code
+comments and can be revisited.
 
 - **The card.** Rounded with the app's `radius` (8 px), not chamfered; a fill one step off the ground
   (`calloutSurface`: `#242424` on the `#131313` void, `#efefec` on the `#fbfbfa` paper) and a 1 px outline
@@ -92,11 +93,18 @@ DEFAULT are in code comments and can be revisited.
 - **The DRC marker.** Attached to the part, not over its bounds: a terminal dot on the part's surface nearest the
   top centre of its bounds (found on its meshes, straight down first, then along the camera's ray), a 12 px stem up
   the screen (DEFAULT), the severity marker on top. All three are depth-tested; the ghost copy shows a hidden
-  marker. The marker grows with the part on screen, never under 16 px and never over 26 px (DEFAULT).
-- **Hover tiers.** A short hover (the 80 ms intent delay) shows the title; a hover held 600 ms (DEFAULT) adds a
-  one-line description (the message's first clause, parentheticals dropped, at most 120 characters); a click pins
-  the card with the raw rows (AT path, BY validator, MORE n) and the full message and asks the host to open the
-  finding in the Inspector. Keyboard focus shows both tiers at once.
+  marker. The marker grows with the part on screen, never under 16 px and never over 26 px (DEFAULT). All dots and
+  markers are one instanced draw (pictures from a small atlas), their ghosts a second, all stems a third, however
+  many markers there are (R2-C; it was five draws a marker). A marker finds its part's surface once the view has
+  settled, a few per frame (at most 6 ms of searching a frame, DEFAULT), and appears as it is found.
+- **Hover tiers, in plain words.** A short hover (the 80 ms intent delay) shows the title; a hover held 900 ms
+  (DEFAULT, Kevin 2026-11-02; the part tooltips use the same value) adds the one-line summary; a click pins the card
+  with the title and summary, and the raw diagnostic (its message, and CODE, AT, BY, MORE rows) folded under a
+  "Details" disclosure, and asks the host to open the finding in the Inspector. Keyboard focus shows both tiers at
+  once. The title and summary are the stack's plain `title` and `summary` (R2-D) when a diagnostic carries them: the
+  title is set in the sans face, sentence case; without them the title is the code in words (mono, uppercase) and
+  the summary the message's first clause (parentheticals dropped, at most 120 characters). The marker's accessible
+  name and the Findings list rows use the same title and summary.
 - **The wheel.** Over a card, pin, marker or exploded-view label the wheel zooms the view (the event is forwarded
   to the canvas); hover and click stay on the label.
 - **Exploded-view labels.** The coloured end bar is on the side the leader enters. A label keeps its column until
@@ -104,7 +112,18 @@ DEFAULT are in code comments and can be revisited.
   eases over 120 ms, ease-out (DEFAULT), while ordinary motion follows the anchor in the same frame; labels are
   clamped to the view and never push a neighbour off it. Labels whose anchor is behind the model's centre are drawn
   at 60 % (DEFAULT). A subtitle is the part's refdes or MPN, or nothing; how the viewer placed a part ("placed by a
-  display hint") is never shown.
+  display hint") is never shown. A long move eases longer: 120 ms plus 0.25 ms a pixel, at most 400 ms (DEFAULT).
+- **Crowded columns.** Cards never overlap. A side whose full cards do not fit the view's height goes compact: one
+  line, title only, 16 px tall, at most 160 px wide, 18 px apart (DEFAULT); it goes back to full cards only when they
+  fit with 10 % to spare. Still too many: a second column one label width further out, or further in over the model
+  when the first is against the view's edge, never over another column. Still too many: the least important labels
+  (lowest severity, then farthest from the camera) collapse into a "+N" chip at the outer column's end, which lists
+  them on hover. When both sides' columns would be clamped into the same strip (the model against an edge), the side
+  with less room sends its labels across.
+- **Out of the view.** A label whose anchor leaves the view (or goes behind the camera) is a small pin on the view's
+  edge pointing toward it; a click on the pin does what a click on the card does.
+- **Refdes and MPN labels.** A board's parts: the id in the label face, a muted end bar (an MPN's doubled); they are
+  the labels that usually go compact.
 
 ## What is deliberately not done
 

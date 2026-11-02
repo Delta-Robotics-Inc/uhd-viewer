@@ -213,6 +213,85 @@ export interface ViewerOptions {
   onSavePoint?: (point: ViewerSavePoint) => void;
   /** Replies to `uhd-viewer:sequence` commands (the assembly sequence player, PB-1183). */
   onSequenceState?: (reply: ViewerSequenceReply) => void;
+  /**
+   * Open a part's own 3D model (R2-A, walkthrough F1 and F3): a double-click on a part in the 3D view (`how:
+   * "replace"`, the host shows it in the same tab), a Ctrl+double-click or the 3D context menu's "Open in new tab"
+   * (`"newTab"`). Giving this option says the host takes navigation (a frame's parent says it with the host message
+   * `uhd-viewer:hostCapabilities`). Not given: a double-click opens the part with `onOpenModule` when that is given,
+   * else selects and frames it in place. A `replace` of a module in the same bundle is answered best with
+   * `uhd-viewer:drill` (the viewer keeps its own history across it).
+   */
+  onNavigate?: (request: NavigateRequest) => void;
+  /** The viewer's own back and forward history changed (R2-A, F1): for a host header's back and forward buttons. */
+  onHistory?: (state: ViewerHistoryState) => void;
+  /**
+   * The 3D toolbar's Export (R2-E, G3; R2 integration): a picture of the view (PNG) or a model of the selected part
+   * (STEP, STL, GLB). The host writes the file (the VS Code extension: to the export folder, no dialog). Before a
+   * `png` request the view takes a save point of itself as it is now (`onSavePoint`, reason "settle"), so the host
+   * has the picture first. Giving this option (or a frame's parent) enables the button; else it is disabled and says why.
+   */
+  onExport?: (request: ExportRequest) => void;
+  /**
+   * The person's viewer settings (R2-E, J1: the stack's `<home>/settings.json`), given at mount and again with
+   * `update({ settings })` on every change. Anything absent or out of range takes its DEFAULT (shown).
+   */
+  settings?: ViewerHostSettings;
+}
+
+/** The person's viewer settings a host passes (R2-E, J1). Every field optional; the DEFAULT in brackets. */
+export interface ViewerHostSettings {
+  /** The host turns a `replace` navigate into a new tab when off (the host's own; the viewer only carries it) [true]. */
+  openModelsInPlace?: boolean;
+  /** The wheel zooms toward the pointer in the 3D view [true]. */
+  zoomToCursor?: boolean;
+  /** The model info card (G-code summary and legend, a CAD file's name and size) open when a view opens [true]; the person's own toolbar choice, kept in local storage, still wins. */
+  modelInfo?: boolean;
+  /** The long-hover tier of callouts and part tooltips, ms, 200 to 5000 [900]. */
+  hoverLongDelayMs?: number;
+}
+
+/** What the 3D toolbar's Export asks the host for (R2-E, G3). */
+export interface ExportRequest {
+  format: "png" | "glb" | "step" | "stl";
+  /** The part, by instance path from the root. Absent: the module the view shows (a `png` is always of the view). */
+  target?: string;
+}
+
+/**
+ * What a navigation opens (R2-A, F1 and F3): a module's own 3D level by its instance path from the root (a
+ * sub-assembly; a bought part whose body GLB is its vendor model), or a model artifact of a part that has no body of
+ * its own (named as `openArtifact` names it; `path` is the instance it was opened from).
+ */
+export type NavigateTarget = { module: string } | { model: { defId: string; artifactId: string; path?: string } };
+
+/** A navigation the viewer asks its host for (`ViewerOptions.onNavigate`, the `uhd-viewer:navigate` event). */
+export interface NavigateRequest {
+  target: NavigateTarget;
+  /** `replace`: show it in this tab (the default action); `newTab`: a tab of its own (Ctrl, the context menu). */
+  how: "replace" | "newTab";
+  /** The view to open it on: the 3D view always asks for "3d". */
+  view?: "3d";
+  /** The level the viewer shows now, by instance path from the root ("" the root): where Back returns. */
+  from?: string;
+}
+
+/** One place in the viewer's own history (R2-A, F1). */
+export interface ViewerHistoryEntry {
+  /** The level, by instance path from the root ("" the root). */
+  scope: string;
+  /** What to call it (a module's name, the framed part's refdes or name). */
+  label: string;
+  /** How it was reached: opened, drilled into, a part framed, a part isolated. */
+  kind: "open" | "drill" | "frame" | "isolate";
+}
+
+/** The viewer's back and forward history (`ViewerOptions.onHistory`, the `uhd-viewer:history` event). */
+export interface ViewerHistoryState {
+  index: number;
+  length: number;
+  canBack: boolean;
+  canForward: boolean;
+  entries: ViewerHistoryEntry[];
 }
 
 /** A save point the 3D view hands its host (`onSavePoint`). */
@@ -253,11 +332,21 @@ export interface ViewerSnapshotMessage {
   currentBundleHash?: string;
 }
 
-/** A command for the assembly sequence player (W2-C, `src/cad/sequence`); see `SequenceCommand` there. */
+/**
+ * A command for the assembly sequence player (W2-C, `src/cad/sequence`); see `SequenceCommand` there. R2-B (H2) adds
+ * two, checked by the host protocol: `{ action: "mode", mode?: "radial" | "sequence", instant?: boolean }` (Explode
+ * all at once, or the steps) and `{ action: "scope", scope?: string, instant?: boolean }` (only the parts at or under
+ * an instance path; absent: the whole assembly).
+ */
 export interface ViewerSequenceCommand {
   action: string;
   [key: string]: unknown;
 }
+
+/** R2-B's `mode` command (see `ViewerSequenceCommand`). */
+export type ViewerSequenceModeCommand = { action: "mode"; mode?: "radial" | "sequence"; instant?: boolean };
+/** R2-B's `scope` command (see `ViewerSequenceCommand`). */
+export type ViewerSequenceScopeCommand = { action: "scope"; scope?: string; instant?: boolean };
 
 export interface ViewerSequenceReply {
   type: "uhd-viewer:sequenceState";
@@ -354,7 +443,17 @@ export type ViewerHostMessage =
    * its repeats, the first finding with `code` that names `path` (from the root) or a part under it. The findings
    * layer is turned on. Ignored on the diagram.
    */
-  | { type: "uhd-viewer:openFinding"; id: string; code: string; path?: string };
+  | { type: "uhd-viewer:openFinding"; id: string; code: string; path?: string }
+  /**
+   * Move through the viewer's own history (R2-A, F1): `delta` -1 is Back, +1 Forward (an integer, -50 to 50, not
+   * 0). A host header's back and forward buttons send it while `uhd-viewer:history` says `canBack` / `canForward`.
+   */
+  | { type: "uhd-viewer:historyGo"; delta: number }
+  /**
+   * What a frame's parent takes (R2-A): `navigate: true` says the host answers `uhd-viewer:navigate` (a library
+   * host says it by giving `ViewerOptions.onNavigate`); false withdraws it.
+   */
+  | { type: "uhd-viewer:hostCapabilities"; navigate?: boolean; /** The parent draws back and forward of its own from `uhd-viewer:history`: the 3D view leaves out its in-page pair (R2 integration). */ history?: boolean };
 
 /** Viewer → host events (posted to the parent window, or the options' callbacks). */
 export type ViewerEvent =
@@ -374,7 +473,13 @@ export type ViewerEvent =
   /** The reply to a sequence command. */
   | ViewerSequenceReply
   /** Leases, intents and who drives the camera changed ("agent X is working on U3"): for a chip near the part. */
-  | { type: "uhd-viewer:presence"; presence: Presence };
+  | { type: "uhd-viewer:presence"; presence: Presence }
+  /** Open a part's own 3D model, in place or in a new tab (`ViewerOptions.onNavigate`; R2-A, F1 and F3). */
+  | ({ type: "uhd-viewer:navigate" } & NavigateRequest)
+  /** The viewer's own back and forward history (`ViewerOptions.onHistory`; R2-A, F1). */
+  | ({ type: "uhd-viewer:history" } & ViewerHistoryState)
+  /** The 3D toolbar's Export (`ViewerOptions.onExport`; R2-E, G3). */
+  | ({ type: "uhd-viewer:export" } & ExportRequest);
 
 export interface ViewerHandle {
   /**
@@ -450,7 +555,11 @@ export interface ViewSelection {
   harness?: string;
 }
 
-export type LabelKind = "module" | "harness" | "interface" | "finding";
+/**
+ * Kinds of 3D label. `refdes` and `mpn` (R2-A, applying R1-C's handoff): one label per placed component drawn inside
+ * a body (a board's parts), titled by its reference designator or its manufacturer part number; R2-C renders them.
+ */
+export type LabelKind = "module" | "harness" | "interface" | "finding" | "refdes" | "mpn";
 export type InterfaceDirection = "feature" | "artifact" | "procedural";
 
 /** What is drawn. */
@@ -482,6 +591,20 @@ export interface SectionPlane {
    * first plane's; at most 512 characters.
    */
   scope?: string;
+  /**
+   * R2-B (walkthrough G5), additive: where a placed plane came from, an origin plane of the model's frame or a picked
+   * face. Absent: the legacy axis plane (`axis`/`at` alone). `axis` and `at` stay required; the viewer keeps them in
+   * step with a placed plane (`sections/planes.ts`).
+   */
+  source?: "origin" | "face";
+  /** The base plane's unit normal (world mm, Z up); with `point`, both or neither. */
+  normal?: Vec3;
+  /** A point on the base plane (world mm). */
+  point?: Vec3;
+  /** mm along `normal` from the base plane (DEFAULT 0); at most 100 000 either way. */
+  offset?: number;
+  /** The picked face: the part's instance path, its face id, its body key, and whether it is flat. */
+  face?: { path: string; face?: number; body?: string; planar?: boolean };
 }
 
 /** A theme the view state asks for (PB-1189); absent: follow the host (its `theme` option, else the system). */
@@ -496,6 +619,17 @@ export interface ExplodeState {
    * never by its index (indices move when a patch adds a step). A saved state with a number is read as null.
    */
   step: string | null;
+  /**
+   * Explode only this sub-assembly (R2-A, the 3D context menu's "Explode this sub-assembly"): an instance path in the
+   * view's scope; absent, the whole assembly. Additive; the explode behaviour (R2-B) reads it. At most 512 characters.
+   */
+  scope?: string;
+  /**
+   * R2-B (walkthrough H2), additive: how the parts come apart. `radial`: every part at once along its mounting face's
+   * normal (the toolbar's Explode); `sequence`: the assembly steps (the toolbar's Assemble). Absent: read as
+   * `step ? "sequence" : "radial"` (DEFAULT).
+   */
+  mode?: "radial" | "sequence";
 }
 
 /** A view saved by name (deliberate presentation: written to the display file only on an explicit save). */
@@ -525,6 +659,11 @@ export interface ViewState {
   selection: ViewSelection;
   /** Instance paths drawn highlighted (besides the selection): what an agent points at. */
   highlight: string[];
+  /**
+   * The highlight's colour (R2-A, A3: the agent picks it per `highlight` call): a theme token name (`drcError`,
+   * `highlight`, ...) or a hex colour (`#rgb`, `#rrggbb`); absent, the theme's highlight glow. Live, per scope.
+   */
+  highlightColor?: string;
   /** Instance paths drawn alone (null: everything). */
   isolation: string[] | null;
   visibility: Visibility;
@@ -604,9 +743,9 @@ export interface AnnotRecord {
 }
 
 /** Top-level keys a writer may set. */
-export type WritableKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme" | "namedViews" | "annotations";
+export type WritableKey = "camera" | "selection" | "highlight" | "highlightColor" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme" | "namedViews" | "annotations";
 /** The live, per-user keys (`.protoboard/local/viewer-state.json`, a webview's own state). */
-export type LiveKey = "camera" | "selection" | "highlight" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme";
+export type LiveKey = "camera" | "selection" | "highlight" | "highlightColor" | "isolation" | "visibility" | "direction" | "sections" | "explode" | "placements" | "theme";
 
 /** One write: a top-level key, or one entry of it (`["visibility", "labels"]`, `["namedViews", "Front"]`). `value` undefined removes the entry. */
 export interface SetOp {

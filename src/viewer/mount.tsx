@@ -19,7 +19,9 @@ import { mergeOptions } from "../options";
 import { commandBus, connectParent, deliver, type ChannelWindow, type ParentChannel } from "../host/channel";
 import { parseHostMessage } from "../host/protocol";
 import type { ViewerHostMessage, ViewerSequenceCommand, ViewerSequenceReply, ViewerTheme, ViewerThemeAdapter, ViewerThemeOption } from "../api";
-import { BRIDGE_REQUEST, handleBridgeMessage, presentation, same, splitBridgeReply, viewHub, watchLiveState, type ViewState, type ViewStore } from "../cad/state";
+import { BRIDGE_REQUEST, WRITABLE_KEYS, handleBridgeMessage, presentation, same, splitBridgeReply, viewHub, watchLiveState, type ViewState, type ViewStore } from "../cad/state";
+import { connectNav, navHostMessage } from "../cad/nav";
+import { applyViewerSettings } from "../cad/viewerSettings";
 import { resolveTheme, themeFromUrl } from "../theme/resolve";
 
 /**
@@ -78,10 +80,14 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
     hub.savePoint = current.onSavePoint ? (p) => current.onSavePoint?.(p) : undefined;
   };
   savePoints();
+  // R2-E's viewer settings (J1; R2 integration): on the hub for the 3D view (long hover, model info), zoom to the
+  // pointer through the hub's camera controls; again on every `update({ settings })`
+  applyViewerSettings(hub, props.settings);
   if (props.viewState) store.restore(props.viewState.scopes, "host");
   const hostActor: { kind: "host"; id: string } = { kind: "host", id: "host" };
   const setState = (state: Partial<ViewState>) => {
-    const keys = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme", "namedViews", "annotations"].filter((k) => k in state);
+    // every writable key (R2-A's `highlightColor` included: a hard-coded list dropped it)
+    const keys = WRITABLE_KEYS.filter((k) => k in state);
     const r = store.dispatch(
       keys.map((k) => ({ op: "set", path: [k], value: (state as Record<string, unknown>)[k] })),
       { actor: hostActor, label: "set by the host", source: "host" },
@@ -93,6 +99,8 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
   const bridge = (request: Parameters<ViewerHandle["bridge"]>[0]) => handleBridgeMessage(store, request, { observe: hub.observer ? () => hub.observer!({ components: false }) : undefined, view: () => hub.view });
   /** Host messages that are about the view state go to the store; the rest to the viewer component. */
   const route = (message: ViewerHostMessage) => {
+    // R2-A (F1): `uhd-viewer:historyGo` and `uhd-viewer:hostCapabilities` are navigation's
+    if (navHostMessage(hub, message)) return;
     switch (message.type) {
       case "uhd-viewer:setViewState":
         try {
@@ -136,6 +144,14 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
     deliver(current, event);
     parent?.post(event);
   };
+  // R2-A (F1): the viewer's own history and navigate requests reach the host; Back across levels is a drill here.
+  // A library host takes navigate by giving `onNavigate`; a frame's parent says so with `uhd-viewer:hostCapabilities`.
+  const stopNav = connectNav(hub, { emit, apply: (m) => route(m), navigates: () => Boolean(current.onNavigate), historyButtons: () => Boolean(current.onHistory) });
+  // R2-E (G3): the toolbar's Export goes to a host that takes it (`onExport`, or a frame's parent); else it is disabled
+  const exports = () => {
+    hub.exportView = current.onExport || parent ? (request) => emit({ type: "uhd-viewer:export", ...request }) : undefined;
+  };
+  exports();
   // the live view state, 400 ms after it last changed (and when the page hides): the host saves it per user
   const live = watchLiveState(store, (file) => emit({ type: "uhd-viewer:viewState", file }));
   const flush = () => live.flush();
@@ -199,12 +215,15 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       current = mergeOptions(current, options as Partial<P>);
       if ("parentWindow" in options && JSON.stringify(before) !== JSON.stringify(current.parentWindow)) connect(current.parentWindow);
       if (options.viewState) store.restore(options.viewState.scopes, "host");
+      if ("settings" in options) applyViewerSettings(hub, current.settings);
       savePoints();
+      exports();
       draw();
     },
     unmount: () => {
       live.flush();
       live.stop();
+      stopNav();
       stopPresentation();
       stopPresence();
       if (presenceTimer) clearTimeout(presenceTimer);
@@ -217,6 +236,7 @@ export function renderViewer<P extends AppProps>(element: HTMLElement, props: P,
       hub.saveCallouts = undefined;
       hub.snapshot = undefined;
       hub.onSnapshot = undefined;
+      hub.exportView = undefined;
     },
     focus: (path) => void post({ type: "uhd-viewer:focus", path }),
     select: (ids, options) => void post({ type: "uhd-viewer:select", ids, ...(options?.reveal === false ? { reveal: false } : {}) }),

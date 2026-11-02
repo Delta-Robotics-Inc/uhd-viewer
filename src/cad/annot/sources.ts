@@ -8,6 +8,7 @@
 import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { ScopedDiagnostic } from "../../model/diagnostics";
 import type { FindingInput, FindingLocation } from "./findings-anchors";
+import { findingText, plainKey, type FindingText } from "./plain";
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const pair = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number" && Number.isFinite(x));
@@ -28,9 +29,14 @@ export function locationOf(raw: unknown): FindingLocation | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** The view's own checks first, then the host's (each host diagnostic keeps its location when it has one). */
-export function findingInputs(system: ScopedDiagnostic[], host: UhdBundleDiagnostic[]): FindingInput[] {
-  const out: FindingInput[] = [];
+/**
+ * The view's own checks first, then the host's (each host diagnostic keeps its location when it has one, and its
+ * plain-language `title` and `summary` when the stack wrote them: R2-D's fields, read by ./plain.ts). `text`: the
+ * plain text of the host's copies of the viewer's own checks (./plain.ts `plainTextIndex` over the bundle's
+ * diagnostics), put on the viewer's own findings by code and message.
+ */
+export function findingInputs(system: ScopedDiagnostic[], host: UhdBundleDiagnostic[], text?: ReadonlyMap<string, FindingText>): (FindingInput & FindingText)[] {
+  const out: (FindingInput & FindingText)[] = [];
   for (const d of system) {
     // the most specific ref first: a pin or interface, then a link
     const refs = [...d.refs.filter((r) => !r.startsWith("link:")), ...d.refs.filter((r) => r.startsWith("link:"))];
@@ -41,12 +47,13 @@ export function findingInputs(system: ScopedDiagnostic[], host: UhdBundleDiagnos
       message: d.message,
       ...(ref !== undefined ? { entity: ref.startsWith("link:") ? { kind: "link", id: ref.slice(5) } : { kind: "instance", id: ref } } : {}),
       validator: "uhd-viewer/system",
+      ...(text?.get(plainKey(d.rule, d.message)) ?? {}),
     });
   }
   for (const d of host) {
     const loc = locationOf((d as { location?: unknown }).location);
     const risk = (d as { risk?: unknown }).risk === true;
-    out.push({ code: d.code, severity: d.severity, message: d.message, ...(d.entity ? { entity: { kind: d.entity.kind, id: d.entity.id } } : {}), ...(d.validator ? { validator: d.validator } : {}), ...(loc ? { location: loc } : {}), ...(risk ? { risk } : {}) });
+    out.push({ code: d.code, severity: d.severity, message: d.message, ...(d.entity ? { entity: { kind: d.entity.kind, id: d.entity.id } } : {}), ...(d.validator ? { validator: d.validator } : {}), ...(loc ? { location: loc } : {}), ...(risk ? { risk } : {}), ...findingText(d) });
   }
   return out;
 }

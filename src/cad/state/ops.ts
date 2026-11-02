@@ -41,10 +41,13 @@ export type ViewOp =
   | SetOp
   | { op: "camera"; camera: CameraState }
   | { op: "select"; selection: ViewSelection }
-  | { op: "highlight"; paths: string[] }
+  /** R2-A (A3): `color`, a theme token name or a hex colour, for this highlight; absent, the theme's glow. */
+  | { op: "highlight"; paths: string[]; color?: string }
   | { op: "isolate"; paths: string[] | null }
   | { op: "hide"; paths: string[]; hidden?: boolean }
-  | { op: "explode"; t: number; step?: string | null }
+  /** R2-A: `scope`, an instance path, explodes only that sub-assembly (the 3D context menu); R2-B draws it. */
+  /** R2-B (H2): `mode`, radial (Explode) or sequence (Assemble); absent keeps the state's mode (merged). */
+  | { op: "explode"; t: number; step?: string | null; scope?: string; mode?: "radial" | "sequence" }
   | { op: "section"; sections: SectionPlane[] }
   | { op: "saveView"; name: string; view?: NamedView }
   | { op: "deleteView"; name: string }
@@ -110,7 +113,11 @@ export function expandOp(state: ViewState, raw: unknown, ctx: OpContext = {}): S
     case "select":
       return [{ op: "set", path: ["selection"], value: clone(op.selection ?? {}) }];
     case "highlight":
-      return [{ op: "set", path: ["highlight"], value: clone(op.paths) }];
+      // R2-A (A3): each highlight call sets its colour, or clears it back to the theme's glow
+      return [
+        { op: "set", path: ["highlight"], value: clone(op.paths) },
+        { op: "set", path: ["highlightColor"], value: op.color },
+      ];
     case "isolate":
       return [{ op: "set", path: ["isolation"], value: op.paths === null ? null : clone(op.paths) }];
     case "hide": {
@@ -119,8 +126,11 @@ export function expandOp(state: ViewState, raw: unknown, ctx: OpContext = {}): S
       for (const p of op.paths) op.hidden === false ? now.delete(p) : now.add(p);
       return [{ op: "set", path: ["visibility", "hidden"], value: [...now] }];
     }
-    case "explode":
-      return [{ op: "set", path: ["explode"], value: { t: op.t, step: op.step ?? null } }];
+    case "explode": {
+      // R2-B: the mode is merged (a host's `explode {t}` and the player's step write-back keep it)
+      const mode = op.mode ?? state.explode.mode;
+      return [{ op: "set", path: ["explode"], value: { t: op.t, step: op.step ?? null, ...(op.scope !== undefined ? { scope: op.scope } : {}), ...(mode ? { mode } : {}) } }];
+    }
     case "section":
       return [{ op: "set", path: ["sections"], value: clone(op.sections) }];
     case "saveView": {
@@ -287,5 +297,5 @@ export function applyOps(state: ViewState, ops: unknown[], ctx: OpContext = {}):
 /** A fresh state's values for the keys a scope keeps of its own (live keys), for a scope seen for the first time. */
 export const freshLive = (scope: string) => {
   const d = defaultViewState(scope);
-  return { camera: d.camera, selection: d.selection, highlight: d.highlight, isolation: d.isolation, sections: d.sections, explode: d.explode };
+  return { camera: d.camera, selection: d.selection, highlight: d.highlight, highlightColor: d.highlightColor, isolation: d.isolation, sections: d.sections, explode: d.explode };
 };

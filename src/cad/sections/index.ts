@@ -16,24 +16,62 @@ import * as THREE from "three";
 import { instancePathIn, partInstanceIdOf } from "../render/ids";
 import { shown } from "../render/pick";
 import { slicePlane, type SectionCut, type SliceTarget } from "./slice";
+import { HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, INK_ON_LIGHT, hatchAcross, hatchMaterial, inkFor } from "./caps";
+import { capTriangles, meshIsClosed } from "./cpuCaps";
+import { planeMeta, type PlaneMeta } from "./planes";
 
-export { SectionCaps } from "./caps";
+export { SectionCaps, HATCH_DEG, HATCH_MIN_PX, HATCH_MM, HATCH_SCREEN_PX, HATCH_LINE_PX, contrast, hatchAcross, hatchMaterial, inkFor, luminance } from "./caps";
+export { capTriangles, meshIsClosed } from "./cpuCaps";
 export { slicePlane, sliceGeometry, chainSegments, clipSegment, WELD_MM, MAX_POINTS_PER_PART, type SectionCut, type PartCut, type SliceTarget } from "./slice";
-export { resolvePlane, resolvePlanes, nextPlane, flipped, MAX_SECTIONS, type ResolvedPlane, type ScopedSectionPlane } from "./planes";
+export {
+  resolvePlane,
+  resolvePlanes,
+  nextPlane,
+  flipped,
+  autoFlipOf,
+  facePlane,
+  originPlane,
+  withOffset,
+  withLegacy,
+  offsetOf,
+  offsetRange,
+  planeFrame,
+  isPlaced,
+  dominantAxis,
+  planeMeta,
+  ORIGIN_PLANES,
+  ORIGIN_INNER_SHARE,
+  COPLANAR_KEEP_MM,
+  MAX_SECTIONS,
+  type PlacedPlaneFields,
+  type PlaneMeta,
+  type ResolvedPlane,
+  type ScopedSectionPlane,
+} from "./planes";
 
 /** Wait after the last change of the planes or the model before the exact cut is computed (DEFAULT). */
 export const SLICE_DEBOUNCE_MS = 250;
 
 /** What `observe()` reports about sections. */
 export interface SectionsReport {
-  /** Planes in force (world mm: n·p + constant = 0, n toward the kept side). */
-  planes: { normal: [number, number, number]; constant: number }[];
+  /**
+   * Planes in force (world mm: n·p + constant = 0, n toward the kept side). R2-B, additive: where each came from
+   * (`source`: the axis form, an origin plane, a picked face), its offset from its base plane (mm) and the face.
+   */
+  planes: ({ normal: [number, number, number]; constant: number } & Partial<PlaneMeta>)[];
   /** Instance paths the planes cut ("all": the whole model). */
   scope: string[] | "all";
   /** The exact cut per plane, once the view settled after the last change (null while it is being computed). */
   cuts: SectionCut[] | null;
   /** The live caps' last pass: planes capped, CPU ms of the pass. */
   caps: { planes: number; ms: number };
+  /** The caps' hatch (R2-B): spacing in model mm, angle, and the screen-space fallback (DEFAULTs in ./caps.ts). */
+  hatch: { mm: number; deg: number; minPx: number; screenPx: number };
+  /**
+   * Parts whose mesh is open (not watertight), once the cut is computed (R2-B): their live cap may be speckled.
+   * `cap: "cpu"`: filled from the closed cut chains instead; `"none"`: the cut does not close, no cap.
+   */
+  open: { instancePath: string; cap: "cpu" | "none"; note: string }[] | null;
 }
 
 export interface SectionsInput {
@@ -109,6 +147,9 @@ export class SceneSections {
   /** The outline of the settled cut (world mm), drawn on the caps. */
   readonly outline = new THREE.Group();
   private lineMaterial = new THREE.LineBasicMaterial({ color: 0xd4d4d4, toneMapped: false, depthFunc: THREE.LessEqualDepth });
+  /** CPU caps of open meshes (R2-B): the cap tone with the hatch, over the live cap (drawn after it, unclipped). */
+  private capMaterial = hatchMaterial({ color: 0x4a4640, side: THREE.DoubleSide, toneMapped: false, depthFunc: THREE.LessEqualDepth, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  private open: SectionsReport["open"] = null;
   caps = { planes: 0, ms: 0 };
 
   constructor(
@@ -187,7 +228,22 @@ export class SceneSections {
     const cuts = planes.map((p, i) => slicePlane(p, targets, { keep: planes.filter((_, j) => j !== i) }));
     this.cuts = cuts;
     this.cutVersion = this.version;
-    this.drawOutline(cuts, planes);
+    // which parts are open meshes (R2-B): their caps come from the CPU cut where it closes
+    const openPaths = new Set<string>();
+    for (const t of targets) if (!meshIsClosed(t.mesh.geometry)) openPaths.add(t.instancePath);
+    const open: NonNullable<SectionsReport["open"]> = [];
+    for (const cut of cuts)
+      for (const part of cut.parts) {
+        if (!openPaths.has(part.instancePath) || open.some((o) => o.instancePath === part.instancePath)) continue;
+        const fills = part.closed.some(Boolean);
+        open.push({
+          instancePath: part.instancePath,
+          cap: fills ? "cpu" : "none",
+          note: fills ? "open mesh: the cap is filled from the exact cut once the view settles; the live cap may be speckled" : "open mesh and the cut does not close: no cap",
+        });
+      }
+    this.open = open;
+    this.drawOutline(cuts, planes, openPaths);
     this.deps.invalidate();
     return cuts;
   }
@@ -197,15 +253,32 @@ export class SceneSections {
     if (!planes.length) return undefined;
     const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
     return {
-      planes: planes.map((p) => ({ normal: [r4(p.normal.x), r4(p.normal.y), r4(p.normal.z)], constant: r4(p.constant) })),
+      planes: planes.map((p) => {
+        const meta = planeMeta.get(p);
+        const normal: [number, number, number] = [r4(p.normal.x), r4(p.normal.y), r4(p.normal.z)];
+        return { normal, constant: r4(p.constant), ...(meta ? { source: meta.source, ...(meta.offset !== undefined ? { offset: r4(meta.offset) } : {}), ...(meta.face ? { face: meta.face } : {}) } : {}) };
+      }),
       scope: this.input?.scope?.length ? (this.input.scopePaths ?? []) : "all",
       cuts: this.cutVersion === this.version ? this.cuts : null,
       caps: { planes: this.caps.planes, ms: Math.round(this.caps.ms * 100) / 100 },
+      hatch: { mm: HATCH_MM, deg: HATCH_DEG, minPx: HATCH_MIN_PX, screenPx: HATCH_SCREEN_PX },
+      open: this.cutVersion === this.version ? this.open : null,
     };
   }
 
   setLineColor(hex: string): void {
     this.lineMaterial.color.set(hex);
+    // the CPU caps' hatch ink is the outline's ink (the theme's sectionLine)
+    this.capMaterial.userData.hatch.uHatchInk.value.set(hex);
+    // until the scene hands the cap tone over (`setCapColor`): the theme's cap for that ink (paper's dark ink, dark's light)
+    if (!this.capSet) this.capMaterial.color.set(inkFor(hex) === INK_ON_LIGHT ? "#4a4640" : "#dcd7cd");
+  }
+  private capSet = false;
+
+  /** The cap tone of the CPU caps (the theme's sectionCap, as the live caps'). */
+  setCapColor(hex: string): void {
+    this.capSet = true;
+    this.capMaterial.color.set(hex);
   }
 
   private clearOutline(): void {
@@ -215,11 +288,25 @@ export class SceneSections {
     }
   }
 
-  private drawOutline(cuts: SectionCut[], planes: THREE.Plane[]): void {
+  private drawOutline(cuts: SectionCut[], planes: THREE.Plane[], openPaths: Set<string> = new Set()): void {
     this.clearOutline();
     const eye = this.deps.eye();
     cuts.forEach((cut, i) => {
       const p = planes[i];
+      // CPU caps of open meshes, under the outline (R2-B)
+      const fill: number[] = [];
+      for (const part of cut.parts) if (openPaths.has(part.instancePath)) fill.push(...capTriangles(part.polylines, part.closed, p.normal));
+      if (fill.length) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(fill, 3));
+        const m = new THREE.Mesh(g, this.capMaterial);
+        m.frustumCulled = false;
+        m.renderOrder = 19;
+        m.userData.noSection = true;
+        m.userData.noBatch = true;
+        m.onBeforeRender = () => void hatchAcross(p.normal, this.capMaterial.userData.hatch.uHatchAcross.value);
+        this.outline.add(m);
+      }
       // lifted 0.02 mm off the cap toward the viewer, so the line is not lost in the cap's own depth
       const lift = p.distanceToPoint(eye) >= 0 ? 0.02 : -0.02;
       const dx = p.normal.x * lift;
@@ -251,5 +338,6 @@ export class SceneSections {
     if (this.timer) clearTimeout(this.timer);
     this.clearOutline();
     this.lineMaterial.dispose();
+    this.capMaterial.dispose();
   }
 }

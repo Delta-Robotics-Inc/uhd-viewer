@@ -72,7 +72,7 @@ describe("view state: schema and verbs", () => {
     expect(s.schema).toBe(VIEW_STATE_SCHEMA);
     expect(s.scope).toBe("stack");
     expect(s.camera).toBeNull();
-    expect([...LIVE_KEYS].sort()).toEqual(["camera", "direction", "explode", "highlight", "isolation", "placements", "sections", "selection", "theme", "visibility"]); // placements: W3-D, PB-1187; theme: gate 3 (W3-C)
+    expect([...LIVE_KEYS].sort()).toEqual(["camera", "direction", "explode", "highlight", "highlightColor", "isolation", "placements", "sections", "selection", "theme", "visibility"]); // placements: W3-D, PB-1187; theme: gate 3 (W3-C); highlightColor: R2-A (A3)
     expect([...PRESENTATION_KEYS]).toEqual(["namedViews", "annotations"]);
   });
 

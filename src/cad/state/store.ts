@@ -161,7 +161,7 @@ export interface StoreOptions {
   seed?: { nextId?: number; retired?: string[] };
 }
 
-const SCOPED: LiveKey[] = ["camera", "selection", "highlight", "isolation", "sections", "explode"];
+const SCOPED: LiveKey[] = ["camera", "selection", "highlight", "highlightColor", "isolation", "sections", "explode"];
 /** Entries kept in memory; older ones drop (a batch older than that is refused as stale with what is left). DEFAULT. */
 const LOG_CAP = 1000;
 /** Replies remembered by batchId. DEFAULT. */

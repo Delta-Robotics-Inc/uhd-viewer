@@ -361,7 +361,7 @@ describe("the toolbar's section planes", () => {
     expect(html).toContain("Add plane");
     expect(html).toContain("Whole model");
     expect(html).toContain("Only lid");
-    expect(html).toContain('aria-label="Plane 1 position along Z"');
+    expect(html).toContain('aria-label="Plane 1 offset along Z (mm)"');
   });
 
   it("says when three planes are in", () => {

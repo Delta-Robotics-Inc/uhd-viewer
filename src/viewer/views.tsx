@@ -627,6 +627,7 @@ export function Scene3D({ inspector, scope, emptyHint }: Scene3DProps) {
       source={c.source}
       diagnostics={c.diagnostics}
       hostDiagnostics={c.hostDiagnostics}
+      findingText={c.findingText}
       focusOn={c.cadFocus}
       findingOn={c.cadFinding}
       onSelect={c.onCadSelect}

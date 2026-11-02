@@ -164,11 +164,12 @@ export const CALLOUT_MAX_W = 320;
 /** Lines a row value or a card's sentence shows before an ellipsis (long instance paths). DEFAULT 4 (R1-C). */
 export const CALLOUT_MAX_LINES = 4;
 /**
- * Hover tiers on a DRC marker (walkthrough D3): a short hover (the intent delay, REVEAL_MS.intent) shows the title;
- * a hover held this long adds the one-line description; a click pins the card with its raw rows and asks the host
- * to open the finding in the Inspector. DEFAULT 600 ms (R1-C).
+ * Hover tiers on a DRC marker (walkthrough D3): a short hover (the intent delay, REVEAL_MS.intent, 80 ms) shows the
+ * title; a hover held this long adds the one-line description; a click pins the card with its raw rows and asks the
+ * host to open the finding in the Inspector. DEFAULT 900 ms (Kevin 2026-11-02: "make the long hover take a little
+ * bit longer, just a small nudge"; R1-C had 600). The part tooltips (R2-A) use the same value.
  */
-export const LONG_HOVER_MS = 600;
+export const LONG_HOVER_MS = 900;
 /** The app's corner radius when the theme sets none (tokens `radius`: 8 px in both themes). */
 export const CALLOUT_RADIUS_PX = 8;
 /** The leader's terminal dot radius (4 px diameter, the sheet's terminal). DEFAULT. */
@@ -220,6 +221,12 @@ ${(["fail", "risk", "warn", "info", "pass", "unknown"] as FindingSeverity[])
 .cad-annot .annot-text { font-family: var(--uhd-font-sans, system-ui, sans-serif); margin-top: 2px; color: var(--uhd-text, #e5e5e5); }
 .cad-annot .annot-by { margin-top: 2px; font-size: 9px; letter-spacing: 0.06em; color: var(--uhd-text-muted, #8b949e); text-transform: uppercase; }
 .cad-annot .annot-hint { margin-top: 3px; font-size: 9px; letter-spacing: 0.04em; color: var(--uhd-text-muted, #8b949e); }
+/* a pinned finding's raw diagnostic, folded (R2-C, D3: the plain title and summary first, the raw text on demand) */
+.cad-annot .annot-details { margin-top: 4px; }
+.cad-annot .annot-details > summary { cursor: pointer; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--uhd-text-muted, #8b949e); }
+.cad-annot .annot-details > summary:focus-visible { outline: 1.5px solid var(--uhd-focus-ring, #5aa9ff); outline-offset: 1px; }
+/* a plain title (R2-D's words) reads as a sentence, not as an uppercase code */
+.cad-annot .annot-sheet.plain .annot-title { text-transform: none; letter-spacing: 0.01em; font-family: var(--uhd-font-sans, system-ui, sans-serif); font-size: 11px; font-weight: 600; }
 .cad-annot .annot-sheet.ghost { opacity: 0.3; }
 .cad-annot .annot-sheet.closed { opacity: 0; clip-path: inset(0 100% 0 0 round var(--uhd-radius, ${CALLOUT_RADIUS_PX}px)); pointer-events: none; transition: opacity ${REVEAL_MS.retract}ms ease-in, clip-path ${REVEAL_MS.retract}ms ease-in; }
 .cad-annot .annot-sheet.side-l.closed { clip-path: inset(0 0 0 100% round var(--uhd-radius, ${CALLOUT_RADIUS_PX}px)); }
@@ -241,6 +248,7 @@ ${(["fail", "risk", "warn", "info", "pass", "unknown"] as FindingSeverity[])
 .annot-findings .annot-row { display: grid; grid-template-columns: 16px 1fr; gap: 6px; width: 100%; text-align: left; padding: 4px 6px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .annot-findings .annot-row:hover, .annot-findings .annot-row[aria-current="true"] { background: var(--uhd-accent-tint, rgba(90,169,255,.15)); }
 .annot-findings .annot-row-code { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.annot-findings .annot-row-title { font-size: 11.5px; font-weight: 600; font-family: var(--uhd-font-sans, system-ui, sans-serif); }
 .annot-findings .annot-row-msg { font-size: 11px; color: var(--uhd-text-muted, #8b949e); font-family: var(--uhd-font-sans, system-ui, sans-serif); overflow-wrap: anywhere; }
 .annot-findings .annot-noloc { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--uhd-text-muted, #8b949e); margin-left: 4px; }
 .annot-findings .annot-group { margin-top: 6px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--uhd-text-muted, #8b949e); }

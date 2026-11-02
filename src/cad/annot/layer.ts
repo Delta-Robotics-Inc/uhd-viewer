@@ -2,10 +2,11 @@
  * The callout and DRC marker layer (PB-1184). Two halves:
  *
  * - in the scene (`group`, added to the scene handle's overlay group):
- *   anchor dots and severity markers as camera-facing sprites of a constant
+ *   anchor dots and severity markers as camera-facing quads of a constant
  *   pixel size, depth-tested, so the GPU hides a dot behind geometry with no
  *   test of ours; a 30 % "ghost" copy without depth test shows where a hidden
- *   one is. Rings, boxes and crosshairs are lines, depth-tested the same way;
+ *   one is. All dots and markers are one instanced draw (and one for the
+ *   ghosts), all marker stems another (./batch.ts, R2-C). Rings, boxes and crosshairs are lines, depth-tested the same way;
  *   a ring sits on the camera side of its part's bounding sphere so the part
  *   itself (a board under a chip) never cuts it.
  * - on the page (`root`): label sheets, option A leaders (./leader.ts),
@@ -28,7 +29,10 @@ import type { FindingAnchors, FindingSeverity } from "./findings-anchors";
 import { leaderPath, polylineLength, type Box, type Pt } from "./leader";
 import { placeLabels, screenBox, type PlaceItem } from "./place";
 import { anchorOnPart, markerPx, surfacePoint, towardCamera, worldPerPx, type PartHit } from "./resolve";
-import { CALLOUT_RADIUS_PX, DRC_COLOURS, LEADER_PX, LONG_HOVER_MS, REVEAL_MS, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg, svgNode } from "./style";
+// the long-hover delay: the host's `settings.hoverLongDelayMs` (R2-E, J1), else LONG_HOVER_MS (R2 integration)
+import { longHoverMs } from "../viewerSettings";
+import { CALLOUT_RADIUS_PX, DRC_COLOURS, LEADER_PX, REVEAL_MS, SEVERITY_LABEL, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg, svgNode } from "./style";
+import { QuadBatch, StemBatch, type AtlasDraw, type QuadInstance, type StemInstance } from "./batch";
 import { attachWheelForward, canvasIn } from "./wheel";
 
 /**
@@ -101,8 +105,14 @@ export interface AnnotStatus {
   ref?: string;
 }
 
-/** DEFAULT (gate R1): after the host allows it (the view settled), markers wait this long before looking for their part's surface; a frame drawn later anchors at once. */
-export const ANCHOR_DELAY_MS = 400;
+/**
+ * Markers look for their part's surface (a raycast that builds the part's BVH, ~16 ms a part on ClientX's board) as
+ * soon as the host allows it (the view settled), a few per frame: each frame spends at most this long on it (at
+ * least one marker), and the view draws another frame for the rest. DEFAULT 6 ms (R2-C). The gate's 400 ms wait and
+ * all-in-one-frame anchoring (R1, `ANCHOR_DELAY_MS`) are gone: they avoided a screen-filling glyph whose cause was a
+ * sprite added in a camera-only frame with no world matrix (./batch.ts); the instanced draws add no objects.
+ */
+export const ANCHOR_BUDGET_MS = 6;
 
 /** DEFAULT (PB-1184): open callouts above this many collapse to numbered pins (round 1 said about 8; 12 is the brief's drone test). */
 export const MAX_OPEN_CALLOUTS = 12;
@@ -158,6 +168,8 @@ interface LabelView {
   el: HTMLDivElement;
   path: SVGPathElement;
   content: string;
+  /** The "Details" disclosure is open (kept across content changes of the same card). */
+  detailsOpen?: boolean;
   w: number;
   h: number;
   slot?: string;
@@ -166,26 +178,13 @@ interface LabelView {
   seen: boolean;
 }
 
-interface SpritePair {
-  key: string;
-  live: THREE.Sprite;
-  ghost: THREE.Sprite;
-  tex: string;
-}
-
 const SVGNS = "http://www.w3.org/2000/svg";
-const texCache = new Map<string, THREE.CanvasTexture>();
 
-function spriteTexture(kind: "dot" | FindingSeverity, colour: string, count = 1): THREE.CanvasTexture {
-  const key = `${kind}|${colour}|${count}`;
-  let t = texCache.get(key);
-  if (t) return t;
-  const px = 64;
-  const canvas = typeof document !== "undefined" ? document.createElement("canvas") : undefined;
-  if (canvas) {
-    canvas.width = canvas.height = px;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
+/** The picture of a dot or a severity marker for the atlas (colour and count badge baked in): its key and drawer. */
+function glyph(kind: "dot" | FindingSeverity, colour: string, count = 1): { key: string; draw: AtlasDraw } {
+  return {
+    key: `${kind}|${colour}|${count}`,
+    draw: (ctx, px) => {
       if (kind === "dot") {
         ctx.beginPath();
         ctx.arc(px / 2, px / 2, px / 2 - 6, 0, Math.PI * 2);
@@ -195,23 +194,8 @@ function spriteTexture(kind: "dot" | FindingSeverity, colour: string, count = 1)
         ctx.strokeStyle = "rgba(10,10,10,0.85)";
         ctx.stroke();
       } else drawMarker(ctx, kind, colour, px, count);
-    }
-  }
-  t = new THREE.CanvasTexture(canvas ?? (undefined as unknown as HTMLCanvasElement));
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 1;
-  texCache.set(key, t);
-  return t;
-}
-
-function makeSprite(tex: THREE.Texture, depth: boolean): THREE.Sprite {
-  const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: depth, depthWrite: false, sizeAttenuation: false, opacity: depth ? 1 : 0.3, toneMapped: false });
-  const s = new THREE.Sprite(m);
-  s.renderOrder = depth ? 20 : 19;
-  s.userData.noBatch = true;
-  s.userData.annot = true;
-  s.frustumCulled = false;
-  return s;
+    },
+  };
 }
 
 /** A CSS colour as a hex string THREE and canvas both read (resolves oklch and variables through the canvas). */
@@ -241,8 +225,13 @@ export class AnnotLayer {
   private host: AnnotHost;
   private input: AnnotInput = { records: [], markers: [], open: new Set(), presence: [], ghosts: true, motion: true };
   private labels = new Map<string, LabelView>();
-  private dots = new Map<string, SpritePair>();
-  private markerSprites = new Map<string, SpritePair>();
+  /** All dots and marker glyphs (one instanced draw, and one for the ghosts) and all stems (one), R2-C. */
+  private quads = new QuadBatch();
+  private stemBatch = new StemBatch();
+  /** This frame's quads (dots before glyphs: a glyph draws over a dot) and stems, written once at the frame's end. */
+  private frameDots: QuadInstance[] = [];
+  private frameGlyphs: QuadInstance[] = [];
+  private frameStems: StemInstance[] = [];
   private hits = new Map<string, HTMLButtonElement>();
   private lines = new Map<string, THREE.Object3D>();
   private pins = new Map<string, HTMLButtonElement>();
@@ -255,10 +244,6 @@ export class AnnotLayer {
   private longTimer: ReturnType<typeof setTimeout> | undefined;
   /** A marker's point on its part, in its body's frame (found once; follows explode and moves), by marker key. */
   private markerAnchors = new Map<string, { local: THREE.Vector3; obj: string }>();
-  private anchorTimer: ReturnType<typeof setTimeout> | undefined;
-  /** When markers may look for their part's surface (gate R1): ANCHOR_DELAY_MS after the view first allowed it. */
-  private anchorAt: number | undefined;
-  private stems = new Map<string, THREE.Mesh>();
   private drawnMarkers = 0;
   private wheelOff: () => void;
   /** Where wheel events over labels go (the renderer's canvas; found in the container when unset). */
@@ -294,6 +279,9 @@ export class AnnotLayer {
     container.appendChild(this.root);
     this.group.name = "annotations";
     this.group.userData.noBatch = true;
+    // the batches live here from the start (their matrices never change; only their instance buffers do), so a frame
+    // that only moved the camera draws them as placed in it (R2-C; see ./batch.ts for the R1 glyph they replace)
+    this.group.add(this.quads.ghost, this.stemBatch.mesh, this.quads.live);
     this.root.addEventListener("keydown", (e) => this.onKey(e));
     // wheel over a sheet, pin or marker zooms the view (walkthrough D2): forwarded to the canvas's controls
     this.wheelOff = attachWheelForward(this.root, () => this.wheelTarget ?? canvasIn(container));
@@ -307,8 +295,7 @@ export class AnnotLayer {
       dark,
       drc: Object.fromEntries(Object.entries(DRC_COLOURS).map(([k, v]) => [k, cssColour(el, SEVERITY_VAR[k as FindingSeverity], dark ? v.dark : v.light)])) as Record<FindingSeverity, string>,
     };
-    // textures are keyed by colour: new ones are made as markers are drawn
-    for (const p of [...this.dots.values(), ...this.markerSprites.values()]) p.tex = "";
+    // atlas pictures are keyed by colour: new cells are drawn as the markers are
     for (const o of this.lines.values()) o.traverse((x) => ((x as THREE.Line).material as THREE.LineBasicMaterial | undefined)?.color?.set(this.lineColour(x.userData.tone)));
   }
 
@@ -318,8 +305,6 @@ export class AnnotLayer {
 
   setInput(input: AnnotInput) {
     this.input = input;
-    if (input.anchorParts === false) this.anchorAt = undefined;
-    else if (input.anchorParts === true) this.anchorAt ??= performance.now() + ANCHOR_DELAY_MS;
     this.fullKey = "";
   }
 
@@ -359,7 +344,9 @@ export class AnnotLayer {
       return [((v.x + 1) / 2) * width, ((1 - v.y) / 2) * height, on];
     };
     const status: AnnotStatus[] = [];
-    const keepDots = new Set<string>();
+    this.frameDots = [];
+    this.frameGlyphs = [];
+    this.frameStems = [];
     const keepLines = new Set<string>();
     const keepLabels = new Set<string>();
     const keepPins = new Set<string>();
@@ -386,9 +373,13 @@ export class AnnotLayer {
       priority: number;
       ref?: string;
       n?: number;
-      /** A finding card's one-line description (the long hover tier) and its hint. */
+      /** A finding card's one-line description (the long hover tier and pinned) and its hint. */
       description?: string;
       hint?: string;
+      /** A pinned finding card's raw rows and message, under a "Details" disclosure (R2-C, D3). */
+      details?: { rows: [string, string][]; text: string };
+      /** The title is the stack's plain wording (set as a sentence, not an uppercase code). */
+      plain?: boolean;
       /** The finding a card shows (a click on the card pins it and opens it in the Inspector). */
       finding?: string;
     }
@@ -427,7 +418,7 @@ export class AnnotLayer {
       const [x, y, on] = toPx(anchor);
       const tone = r.tone ?? "accent";
       if (r.kind === "mark") {
-        this.drawMark(r, hit, anchor, camera, height, tone, keepLines, keepDots);
+        this.drawMark(r, hit, anchor, camera, height, tone, keepLines);
         status.push({ id: r.id, kind: "mark", status: on ? "placed" : "offscreen", anchorPx: [Math.round(x), Math.round(y)] });
         if (r.shape === "pin") {
           pinNo++;
@@ -443,14 +434,14 @@ export class AnnotLayer {
         }
         const b = r.toPoint ? new THREE.Vector3(...r.toPoint).applyMatrix4(other.frame) : surfacePoint(camera, other, pickOn);
         const [bx, by, bon] = toPx(b);
-        this.dotAt(`a0:${r.id}`, anchor, camera, height, keepDots);
+        this.dotAt(anchor, camera, height);
         this.arrowAt(r.id, [x, y], [bx, by], tone, keepArrows, on && bon);
         status.push({ id: r.id, kind: "arrow", status: on && bon ? "placed" : "offscreen", anchorPx: [Math.round(x), Math.round(y)] });
         continue;
       }
       // a callout: its anchor dot in the scene (placed after the visible-point search), its label on the page
       if (!on || x < -20 || y < -20 || x > width + 20 || y > height + 20) {
-        this.dotAt(`c:${r.id}`, anchor, camera, height, keepDots);
+        this.dotAt(anchor, camera, height);
         status.push({ id: r.id, kind: "callout", status: "offscreen", anchorPx: [Math.round(x), Math.round(y)] });
         continue;
       }
@@ -478,30 +469,35 @@ export class AnnotLayer {
     // walkthrough D1: the marker is attached to the part (a dot on its surface, a short stem), not floating over its
     // bounds; D3: hover tiers (title, then the one-line description), a click pins the card with its raw rows
     const keepMarkers = new Set<string>();
-    const keepStems = new Set<string>();
-    // gate R1: finding a part's surface raycasts it (a BVH build, ~16 ms a part on ClientX's board): not while the
-    // model loads, and only ANCHOR_DELAY_MS after it settled, all markers in one frame (markers drawn a few per frame
-    // showed a screen-filling marker glyph in the frames between; not root-caused, R2)
+    // R2-C: markers look for their part's surface once the host allows it (the view settled: no BVH builds during the
+    // load, gate R1), as they resolve, within ANCHOR_BUDGET_MS a frame; the rest wait for the next frame, which the
+    // layer asks for (update returns true). Nothing is added to the scene for them (./batch.ts), so a camera-only
+    // frame draws them correctly.
     let anchorsWaiting = false;
-    const now = performance.now();
+    let anchorMs = 0;
+    let anchored = 0;
     this.input.markers.forEach((m, index) => {
       const ref = m.anchor.component ?? m.anchor.body;
       const hit = this.host.resolve(ref) ?? (m.anchor.component ? this.host.resolve(m.anchor.body) : null);
       if (!hit || hit.hidden || hit.box.isEmpty()) return;
-      if (!m.anchor.local && this.markerAnchors.get(m.key)?.obj !== (hit.objects[0]?.uuid ?? "")) {
+      const needsSurface = !m.anchor.local && this.markerAnchors.get(m.key)?.obj !== (hit.objects[0]?.uuid ?? "");
+      if (needsSurface) {
         if (this.input.anchorParts === false) return;
-        // a host that says when (anchorParts given): the wait, counted from when it allowed it (setInput), so a frame
-        // drawn later (a capture's single frame) anchors at once; none (a test, a bare layer): at once
-        if (this.anchorAt !== undefined && now < this.anchorAt) {
+        if (anchored > 0 && anchorMs >= ANCHOR_BUDGET_MS) {
           anchorsWaiting = true;
           return;
         }
       }
+      const tA = needsSurface ? performance.now() : 0;
       const p = this.markerSurface(m, hit, camera);
+      if (needsSurface) {
+        anchorMs += performance.now() - tA;
+        anchored++;
+      }
       keepMarkers.add(m.key);
       const box = partBox(hit);
       const size = markerPx(box ? Math.hypot(box.w, box.h) : undefined, MARKER_PX, MARKER_MAX_PX) + (this.hovered === m.key ? 4 : 0);
-      const head = this.markerAt(m, p, camera, height, size, keepDots, keepStems);
+      const head = this.markerAt(m, p, camera, height, size);
       const [x, y, on] = toPx(head);
       this.hitAt(m, x, y, on, index, size);
       const pinnedFinding = m.findings.find((f) => this.input.open.has(f.id));
@@ -519,36 +515,22 @@ export class AnnotLayer {
           own: hit.objects,
           tone: showCard.severity,
           severity: showCard.severity,
+          // R2-C (walkthrough D3, plain language): the short tier is the plain title; the long tier adds the summary;
+          // pinned shows both and, under a "Details" disclosure, the raw message and the AT / BY / MORE rows
           title: card.title,
-          // the raw rows (AT path, BY validator, MORE n) and the full message only when pinned (walkthrough D3)
-          rows: tier === "pinned" ? [...card.rows, ...more] : [],
-          ...(tier === "pinned" ? { text: card.text } : {}),
-          ...(tier === "long" && card.description ? { description: card.description, hint: "Click for details" } : {}),
+          plain: !!showCard.title,
+          ...(tier !== "short" && card.description ? { description: card.description } : {}),
+          ...(tier === "long" ? { hint: "Click for details" } : {}),
+          ...(tier === "pinned" ? { details: { rows: [...card.rows, ...more], text: card.text } } : {}),
+          rows: [],
           priority: this.hovered === m.key ? 5 : 3,
           ref,
           finding: showCard.id,
         });
       }
     });
-    if (anchorsWaiting && !this.anchorTimer) {
-      // a frame when the wait is over (the view renders on demand). A scene frame: the markers' sprites are added in
-      // it, and a view-only frame draws the scene as it was grouped (they were not drawn, or drawn unplaced)
-      this.anchorTimer = setTimeout(() => {
-        this.anchorTimer = undefined;
-        if (this.onSceneChange) this.onSceneChange();
-        else this.onChange?.();
-      }, Math.max(0, (this.anchorAt ?? now) - now) + 1);
-    }
-    for (const [k, pair] of this.markerSprites) if (!keepMarkers.has(k)) this.dropSprite(this.markerSprites, k, pair);
     for (const k of [...this.markerAnchors.keys()]) if (!keepMarkers.has(k)) this.markerAnchors.delete(k);
     this.drawnMarkers = keepMarkers.size;
-    for (const [k, mesh] of this.stems)
-      if (!keepStems.has(k)) {
-        this.group.remove(mesh);
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
-        this.stems.delete(k);
-      }
     for (const [k, b] of this.hits)
       if (!keepMarkers.has(k)) {
         b.remove();
@@ -643,7 +625,7 @@ export class AnnotLayer {
         o.children.forEach((c, i) => {
           if (i < 2) c.visible = !hiddenRefs.has(o.userData.ref);
         });
-    for (const l of open) if (l.kind === "callout") this.dotAt(`c:${l.id.slice(2)}`, l.anchor, camera, height, keepDots);
+    for (const l of open) if (l.kind === "callout") this.dotAt(l.anchor, camera, height);
     const occMs = performance.now() - tOcc;
 
     // ---- cap, then place --------------------------------------------------------------------------
@@ -713,7 +695,6 @@ export class AnnotLayer {
         a.head.remove();
         this.arrows.delete(id);
       }
-    for (const [k, pair] of this.dots) if (!keepDots.has(k)) this.dropSprite(this.dots, k, pair);
     for (const [k, o] of this.lines)
       if (!keepLines.has(k)) {
         this.group.remove(o);
@@ -757,6 +738,13 @@ export class AnnotLayer {
         this.chips.delete(k);
       }
 
+    // ---- the instanced draws: every dot and marker, their ghosts, every stem (R2-C) ------------------------------
+    this.quads.flush([...this.frameDots, ...this.frameGlyphs], camera, height, this.input.ghosts);
+    this.stemBatch.flush(this.frameStems, camera, height);
+    // the host brought the scene's matrices up to date before this call; lines placed above (rings, boxes) and the
+    // batches get theirs here, so a camera-only frame never draws one at a stale or identity matrix
+    this.group.updateMatrixWorld(true);
+
     this.snap = false;
     this.status = status;
     const total = performance.now() - t0;
@@ -765,49 +753,18 @@ export class AnnotLayer {
       push(this.times.occlusion, occMs);
       push(this.times.total, total);
     }
-    return pendingTest;
+    return pendingTest || anchorsWaiting;
   }
 
   // ---- pieces ---------------------------------------------------------------------------------
 
-  private sprite(map: Map<string, SpritePair>, key: string, kind: "dot" | FindingSeverity, colour: string, count = 1): SpritePair {
-    let pair = map.get(key);
-    const texKey = `${kind}|${colour}|${count}`;
-    if (!pair) {
-      const tex = spriteTexture(kind, colour, count);
-      pair = { key, live: makeSprite(tex, true), ghost: makeSprite(tex, false), tex: texKey };
-      this.group.add(pair.ghost, pair.live);
-      map.set(key, pair);
-    } else if (pair.tex !== texKey) {
-      const tex = spriteTexture(kind, colour, count);
-      (pair.live.material as THREE.SpriteMaterial).map = tex;
-      (pair.ghost.material as THREE.SpriteMaterial).map = tex;
-      pair.tex = texKey;
-    }
-    return pair;
+  /** A camera-facing quad of `px` CSS px at `p`, moved toward the camera by its own radius so a tilted surface does not cut it. */
+  private quadAt(list: QuadInstance[], p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, px: number, look: { key: string; draw: AtlasDraw }) {
+    list.push({ centre: towardCamera(p, camera, px / 2 + 1, height), px, key: look.key, draw: look.draw });
   }
 
-  private dropSprite(map: Map<string, SpritePair>, key: string, pair: SpritePair) {
-    this.group.remove(pair.live, pair.ghost);
-    pair.live.material.dispose();
-    pair.ghost.material.dispose();
-    map.delete(key);
-  }
-
-  private placeSprite(pair: SpritePair, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, px: number) {
-    // a camera-facing quad of `px` CSS px, moved toward the camera by its own radius so a tilted surface does not cut it
-    const at = towardCamera(p, camera, px / 2 + 1, height);
-    const s = (px * 2 * Math.tan((camera.fov * Math.PI) / 360)) / Math.max(1, height);
-    for (const sp of [pair.live, pair.ghost]) {
-      sp.position.copy(at);
-      sp.scale.set(s, s, 1);
-    }
-    pair.ghost.visible = this.input.ghosts;
-  }
-
-  private dotAt(key: string, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, keep: Set<string>) {
-    keep.add(key);
-    this.placeSprite(this.sprite(this.dots, key, "dot", this.colours.accent), p, camera, height, DOT_PX);
+  private dotAt(p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number) {
+    this.quadAt(this.frameDots, p, camera, height, DOT_PX, glyph("dot", this.colours.accent));
   }
 
   /**
@@ -834,42 +791,30 @@ export class AnnotLayer {
    * the screen, and the severity marker on top; each depth-tested (the ghost copies show hidden ones). Returns the
    * marker's centre in the world (the hover target and the card's leader start there).
    */
-  private markerAt(m: DrcMarker, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, px: number, keepDots: Set<string>, keepStems: Set<string>): THREE.Vector3 {
+  private markerAt(m: DrcMarker, p: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, px: number): THREE.Vector3 {
     const colour = this.colours.drc[m.severity];
-    keepDots.add(`t:${m.key}`);
-    this.placeSprite(this.sprite(this.dots, `t:${m.key}`, "dot", colour), p, camera, height, TERMINAL_DOT_PX);
+    this.quadAt(this.frameDots, p, camera, height, TERMINAL_DOT_PX, glyph("dot", colour));
     const base = towardCamera(p, camera, 1, height);
     const camPos = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
-    const perPx = worldPerPx(camera, camPos.distanceTo(base), height);
+    const fwd = new THREE.Vector3();
+    camera.getWorldDirection(fwd);
+    // world per px at the base's view depth (the stem's shader scales by the same depth, so its top meets the marker)
+    const perPx = worldPerPx(camera, Math.max(1e-6, base.clone().sub(camPos).dot(fwd)), height);
     // the screen's up in the world (the camera's own y axis)
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
     const head = base.clone().addScaledVector(up, perPx * (STEM_PX + px / 2));
-    this.placeSprite(this.sprite(this.markerSprites, m.key, m.severity, colour, m.findings.length), head, camera, height, px);
-    // the stem: a camera-facing quad LEADER_PX wide (a WebGL line is 1 px whatever its width), depth-tested
-    keepStems.add(m.key);
-    let stem = this.stems.get(m.key);
-    if (!stem) {
-      stem = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: colour, depthTest: true, depthWrite: false, transparent: true, toneMapped: false }));
-      stem.renderOrder = 20;
-      stem.frustumCulled = false;
-      stem.userData.noBatch = true;
-      stem.userData.annot = true;
-      this.group.add(stem);
-      this.stems.set(m.key, stem);
-    }
-    (stem.material as THREE.MeshBasicMaterial).color.set(colour);
-    stem.position.copy(base).addScaledVector(up, (perPx * STEM_PX) / 2);
-    stem.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(camera.matrixWorld));
-    stem.scale.set(perPx * LEADER_PX, perPx * STEM_PX, 1);
-    stem.updateMatrixWorld();
+    // the marker itself, nudged along its line of sight toward the camera (its pixel place and size do not change)
+    this.quadAt(this.frameGlyphs, head, camera, height, px, glyph(m.severity, colour, m.findings.length));
+    // the stem: LEADER_PX wide and STEM_PX long up the screen from the base (a WebGL line is 1 px whatever its width)
+    this.frameStems.push({ base, widthPx: LEADER_PX, lengthPx: STEM_PX, colour });
     return head;
   }
 
   /** A mark: ring (a circle on the camera side of the part's bounding sphere), box (its bounds), crosshair, dot. */
-  private drawMark(r: AnnotRecord, hit: PartHit, anchor: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, tone: string, keepLines: Set<string>, keepDots: Set<string>) {
+  private drawMark(r: AnnotRecord, hit: PartHit, anchor: THREE.Vector3, camera: THREE.PerspectiveCamera, height: number, tone: string, keepLines: Set<string>) {
     const shape = r.shape ?? "ring";
     if (shape === "dot" || shape === "pin") {
-      this.dotAt(`m:${r.id}`, anchor, camera, height, keepDots);
+      this.dotAt(anchor, camera, height);
       return;
     }
     const key = `${shape}:${r.id}`;
@@ -912,8 +857,8 @@ export class AnnotLayer {
     obj.updateMatrixWorld(true);
   }
 
-  private labelView(l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; description?: string; hint?: string; by?: string; tone: string; severity?: FindingSeverity; ref?: string; finding?: string }, doc: Document): LabelView {
-    const content = JSON.stringify([l.title, l.rows, l.text, l.description, l.hint, l.by, l.tone]);
+  private labelView(l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; description?: string; hint?: string; details?: { rows: [string, string][]; text: string }; plain?: boolean; by?: string; tone: string; severity?: FindingSeverity; ref?: string; finding?: string }, doc: Document): LabelView {
+    const content = JSON.stringify([l.title, l.rows, l.text, l.description, l.hint, l.details, l.plain, l.by, l.tone]);
     let v = this.labels.get(l.id);
     if (!v) {
       const el = doc.createElement("div");
@@ -950,10 +895,10 @@ export class AnnotLayer {
         d.textContent = breakable(l.description);
         el.appendChild(d);
       }
-      if (l.rows.length) {
+      const rowsOf = (rows: [string, string][]) => {
         const grid = doc.createElement("div");
         grid.className = "annot-rows";
-        for (const [k, val] of l.rows) {
+        for (const [k, val] of rows) {
           const kk = doc.createElement("span");
           kk.className = "annot-k";
           kk.textContent = k;
@@ -962,13 +907,37 @@ export class AnnotLayer {
           vv.textContent = breakable(val);
           grid.append(kk, vv);
         }
-        el.appendChild(grid);
-      }
-      if (l.text) {
+        return grid;
+      };
+      const textOf = (text: string) => {
         const t = doc.createElement("div");
         t.className = "annot-text";
-        t.textContent = breakable(l.text);
-        el.appendChild(t);
+        t.textContent = breakable(text);
+        return t;
+      };
+      if (l.rows.length) el.appendChild(rowsOf(l.rows));
+      if (l.text) el.appendChild(textOf(l.text));
+      if (l.details && (l.details.rows.length || l.details.text)) {
+        // the raw diagnostic (walkthrough D3: "the raw diagnostic text stays in the Inspector"): on the pinned card it
+        // is folded under "Details"; the card is measured again when it opens or closes
+        const det = doc.createElement("details") as HTMLDetailsElement;
+        det.className = "annot-details";
+        const sum = doc.createElement("summary");
+        sum.textContent = "Details";
+        // opening the details is not a click on the card (which would pin it and ask the Inspector again)
+        sum.addEventListener("click", (e) => e.stopPropagation());
+        det.appendChild(sum);
+        if (l.details.text) det.appendChild(textOf(l.details.text));
+        if (l.details.rows.length) det.appendChild(rowsOf(l.details.rows));
+        if (v.detailsOpen) det.open = true;
+        det.addEventListener("toggle", () => {
+          const card = v!;
+          card.detailsOpen = det.open;
+          card.w = Math.ceil(el.offsetWidth) || card.w;
+          card.h = Math.ceil(el.offsetHeight) || card.h;
+          this.onChange?.();
+        });
+        el.appendChild(det);
       }
       if (l.hint) {
         const hnt = doc.createElement("div");
@@ -982,10 +951,11 @@ export class AnnotLayer {
         by.textContent = `by ${l.by}`;
         el.appendChild(by);
       }
-      el.setAttribute("aria-label", [l.title, l.description ?? "", ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? ""].filter(Boolean).join(", "));
+      el.setAttribute("aria-label", [l.title, l.description ?? "", ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? "", ...(l.details ? [l.details.text, ...l.details.rows.map(([a, b]) => `${a} ${b}`)] : [])].filter(Boolean).join(", "));
       el.dataset.tone = l.tone;
       el.classList.remove(...[...el.classList].filter((c) => c.startsWith("tone-")));
       el.classList.add(`tone-${l.tone}`);
+      el.classList.toggle("plain", !!l.plain);
       if (l.ref || l.finding) {
         el.onclick = (e) => {
           if (e.detail === 2 && l.ref) this.host.onLookAt?.(l.ref);
@@ -1120,7 +1090,10 @@ export class AnnotLayer {
       this.hits.set(m.key, b);
     }
     const f = m.findings[0];
-    b.setAttribute("aria-label", `${f.severity}: ${f.code.replace(/_/g, " ")}${f.entity ? `, ${f.entity.id}` : ""}${m.findings.length > 1 ? `, and ${m.findings.length - 1} more` : ""}`);
+    // the marker's name (its tooltip for assistive tech): the plain title when the stack wrote one (R2-C, D3), else
+    // the code in words and what it names
+    const name = findingSummary(f);
+    b.setAttribute("aria-label", `${SEVERITY_LABEL[f.severity]}: ${name.title}${!name.plain && f.entity ? `, ${f.entity.id}` : ""}${m.findings.length > 1 ? `, and ${m.findings.length - 1} more` : ""}`);
     b.tabIndex = index === 0 ? 0 : -1;
     b.style.color = this.colours.drc[m.severity];
     b.classList.toggle("pinned", m.findings.some((x) => this.input.open.has(x.id)));
@@ -1168,13 +1141,28 @@ export class AnnotLayer {
         if (this.hovered !== key) return;
         this.hoverTier = "long";
         this.onChange?.();
-      }, LONG_HOVER_MS);
+      }, longHoverMs());
     }
   }
 
   /** Markers drawn on the last frame (their part resolved and shown in this view): 0 lets the Findings control say so. */
   markersDrawn(): number {
     return this.drawnMarkers;
+  }
+
+  /**
+   * The instanced draws on the last frame (R2-C): quads (dots and markers), stems, and the draw calls they cost (the
+   * live quads, their ghosts when shown, the stems; 0 for an empty batch).
+   */
+  drawStats(): { quads: number; stems: number; draws: number; atlasCells: number } {
+    const q = this.quads.count;
+    const st = this.stemBatch.count;
+    return { quads: q, stems: st, draws: (q ? 1 : 0) + (q && this.quads.ghost.visible ? 1 : 0) + (st ? 1 : 0), atlasCells: this.quads.atlas.size };
+  }
+
+  /** One quad as written on the last frame (tests). */
+  quadInstance(i: number) {
+    return this.quads.instance(i);
   }
 
   /** The hovered marker and its tier (tests, `__cad.annotations()`). */
@@ -1215,15 +1203,17 @@ export class AnnotLayer {
   }
 
   dispose() {
-    if (this.anchorTimer) clearTimeout(this.anchorTimer);
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
     if (this.longTimer) clearTimeout(this.longTimer);
     this.wheelOff();
     for (const v of this.labels.values()) if (v.removeTimer) clearTimeout(v.removeTimer);
     this.group.removeFromParent();
+    this.group.remove(this.quads.live, this.quads.ghost, this.stemBatch.mesh);
+    this.quads.dispose();
+    this.stemBatch.dispose();
     this.group.traverse((o) => {
-      const x = o as THREE.Line | THREE.Sprite;
-      if ((x as THREE.Line).geometry && !(x as THREE.Sprite).isSprite) (x as THREE.Line).geometry.dispose();
+      const x = o as THREE.Line;
+      x.geometry?.dispose();
       (x.material as THREE.Material | undefined)?.dispose?.();
     });
     this.root.remove();

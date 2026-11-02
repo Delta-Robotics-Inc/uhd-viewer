@@ -175,3 +175,85 @@ export function planStackRises(elements: readonly { key: string; objects: THREE.
     exit: (holder, part) => exitByRays(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
   });
 }
+
+// ---- facings for the radial explode (R2-B, ./explode.ts `planRadial`) ---------------------------------------------
+
+/** At most this many triangles are read per part (a stride beyond; DEFAULT: a board's 870 k triangles cost ~60 k reads). */
+export const FACING_MAX_TRIANGLES = 60_000;
+/** Direction bins: normals are rounded to this many steps per unit (DEFAULT 20: about 3 degrees). */
+export const FACING_BINS = 20;
+/** How many of a part's largest facings are kept (DEFAULT). */
+export const FACING_KEEP = 8;
+
+const _fa = new THREE.Vector3();
+const _fb = new THREE.Vector3();
+const _fc = new THREE.Vector3();
+const _fn = new THREE.Vector3();
+const _fm = new THREE.Matrix4();
+
+/**
+ * A part's surface by the way it faces (world mm, Z up): every triangle of its visible meshes (named bodies in `skip`
+ * left out) adds its area to the bin of its outward normal; the bins' area-weighted normals, largest first. A flat
+ * face is one bin, so the largest bin is the part's largest face (a shell panel's outer face and its inner face are
+ * two bins pointing opposite ways). Read at the assembled pose (the caller puts the objects there).
+ */
+export function facings(objects: THREE.Object3D[], skip: Set<THREE.Object3D> = new Set(), maxTriangles = FACING_MAX_TRIANGLES): { normal: [number, number, number]; area: number }[] {
+  const meshes = meshesOf(objects, skip);
+  let total = 0;
+  for (const m of meshes) {
+    const g = m.geometry as THREE.BufferGeometry;
+    const p = g?.getAttribute("position");
+    if (!p) continue;
+    const inst = m as THREE.InstancedMesh;
+    total += ((g.index ? g.index.count : p.count) / 3) * (inst.isInstancedMesh ? inst.count : 1);
+  }
+  const stride = Math.max(1, Math.ceil(total / maxTriangles));
+  const bins = new Map<number, { x: number; y: number; z: number; area: number }>();
+  const B = FACING_BINS;
+  const add = (g: THREE.BufferGeometry, world: THREE.Matrix4) => {
+    const p = g.getAttribute("position") as THREE.BufferAttribute;
+    const idx = g.index;
+    const tris = (idx ? idx.count : p.count) / 3;
+    const mirrored = world.determinant() < 0;
+    for (let t = 0; t < tris; t += stride) {
+      _fa.fromBufferAttribute(p, idx ? idx.getX(t * 3) : t * 3).applyMatrix4(world);
+      _fb.fromBufferAttribute(p, idx ? idx.getX(t * 3 + 1) : t * 3 + 1).applyMatrix4(world);
+      _fc.fromBufferAttribute(p, idx ? idx.getX(t * 3 + 2) : t * 3 + 2).applyMatrix4(world);
+      _fn.copy(_fb).sub(_fa).cross(_fc.sub(_fa));
+      const twice = _fn.length();
+      if (twice < 1e-12) continue;
+      if (mirrored) _fn.negate();
+      const area = (twice / 2) * stride;
+      const nx = _fn.x / twice;
+      const ny = _fn.y / twice;
+      const nz = _fn.z / twice;
+      const key = (Math.round(nx * B) + B) * (2 * B + 1) * (2 * B + 1) + (Math.round(ny * B) + B) * (2 * B + 1) + (Math.round(nz * B) + B);
+      let bin = bins.get(key);
+      if (!bin) bins.set(key, (bin = { x: 0, y: 0, z: 0, area: 0 }));
+      bin.x += nx * area;
+      bin.y += ny * area;
+      bin.z += nz * area;
+      bin.area += area;
+    }
+  };
+  for (const m of meshes) {
+    const g = m.geometry as THREE.BufferGeometry;
+    if (!g?.getAttribute("position")) continue;
+    m.updateWorldMatrix(true, false);
+    const inst = m as THREE.InstancedMesh;
+    if (inst.isInstancedMesh) {
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, _fm);
+        add(g, _fm.premultiply(m.matrixWorld));
+      }
+    } else add(g, m.matrixWorld);
+  }
+  return [...bins.values()]
+    .filter((b) => b.area > 0)
+    .sort((a, b) => b.area - a.area)
+    .slice(0, FACING_KEEP)
+    .map((b) => {
+      const l = Math.hypot(b.x, b.y, b.z) || 1;
+      return { normal: [b.x / l, b.y / l, b.z / l] as [number, number, number], area: Math.round(b.area * 100) / 100 };
+    });
+}

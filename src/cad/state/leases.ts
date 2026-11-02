@@ -73,6 +73,8 @@ export function touchedPaths(sets: SetOp[], before: Record<string, unknown>): st
     switch (key) {
       case "camera":
       case "selection":
+      // R2-A: the highlight's colour is how the highlight is drawn; the paths are the highlight's own
+      case "highlightColor":
         break;
       case "highlight":
       case "isolation":
