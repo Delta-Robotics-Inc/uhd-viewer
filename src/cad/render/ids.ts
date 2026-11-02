@@ -23,6 +23,17 @@ const extrasOf = (o: THREE.Object3D): ProtoboardExtras | undefined => {
   return p && typeof p === "object" ? (p as ProtoboardExtras) : undefined;
 };
 
+/**
+ * The instance path of one entry of a GPU-instanced node's id list (R3-A): the view-model writes
+ * `extras.protoboard.instances` as objects (`{partInstanceId, refdes, ...}`), the sidecar and older files as plain
+ * strings. Empty or anything else: undefined (an instance the board export could not match to a UHD part).
+ */
+export function instanceIdOf(entry: unknown): string | undefined {
+  if (typeof entry === "string") return entry || undefined;
+  const id = entry && typeof entry === "object" ? (entry as { partInstanceId?: unknown }).partInstanceId : undefined;
+  return typeof id === "string" && id ? id : undefined;
+}
+
 /** The nearest `partInstanceId` at or above `obj`, stopping at `stop` (a body's group), with the node that carries it. */
 export function partInstanceIdOf(obj: THREE.Object3D, stop?: THREE.Object3D): { id: string; node: THREE.Object3D } | undefined {
   for (let o: THREE.Object3D | null = obj; o && o !== stop; o = o.parent) {
@@ -99,7 +110,9 @@ export function idsAt(mesh: THREE.Object3D, triangle: number | undefined, stop?:
     for (let o: THREE.Object3D | null = mesh; o && o !== stop; o = o.parent) {
       const list = ((o.userData.protoboard as { instances?: unknown } | undefined)?.instances ?? o.userData.protoboardInstances) as unknown;
       if (Array.isArray(list)) {
-        if (typeof list[instance] === "string" && list[instance]) out.partInstanceId = list[instance];
+        // R3-A: the view-model's entries are objects, the sidecar's strings (both read)
+        const id = instanceIdOf(list[instance]);
+        if (id) out.partInstanceId = id;
         break;
       }
     }

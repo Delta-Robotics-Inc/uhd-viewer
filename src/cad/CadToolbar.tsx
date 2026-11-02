@@ -49,6 +49,12 @@ export interface CadToolbarProps {
   /** R2-B: Assemble (step by step): true brings the parts together through the steps, false takes them apart through them. */
   onAssemble?: (assembled: boolean) => void;
   /**
+   * R3-B (the assembly timeline, Kevin 2026-11-02: "pop up underneath the toolbar … when the exploded view or the
+   * assembly view is selected"): true when Explode is turned on or Assemble is clicked (either way), false when
+   * Explode is turned off. CadView keeps it and passes it to `TimelinePanel` (`requested`). Absent: nothing asks.
+   */
+  onTimeline?: (on: boolean) => void;
+  /**
    * R2-B: the 3D view's scene (CadView's `handle` ref): the section popover's face pick, plane outline and drag
    * handle draw in it. Absent: the popover offers the origin planes and the offset only.
    */
@@ -280,12 +286,15 @@ export function CadToolbar(p: CadToolbarProps) {
   const explodeOn = p.exploded && mode === "radial";
   const assembled = !p.exploded;
   const explode = (on: boolean) => {
+    p.onTimeline?.(on);
     if (p.onExplode) return p.onExplode(on);
     setOwnMode("radial");
     hubMode("radial");
     p.onExploded(on);
   };
   const assemble = (together: boolean) => {
+    // R3-B: the assembly view is selected either way (taking it apart or putting it together in order)
+    p.onTimeline?.(true);
     if (p.onAssemble) return p.onAssemble(together);
     setOwnMode("sequence");
     hubMode("sequence");

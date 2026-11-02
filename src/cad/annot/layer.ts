@@ -31,7 +31,7 @@ import { placeLabels, screenBox, type PlaceItem } from "./place";
 import { anchorOnPart, markerPx, surfacePoint, towardCamera, worldPerPx, type PartHit } from "./resolve";
 // the long-hover delay: the host's `settings.hoverLongDelayMs` (R2-E, J1), else LONG_HOVER_MS (R2 integration)
 import { longHoverMs } from "../viewerSettings";
-import { CALLOUT_RADIUS_PX, DRC_COLOURS, LEADER_PX, REVEAL_MS, SEVERITY_LABEL, SEVERITY_VAR, drawMarker, ensureAnnotStyles, markerSvg, svgNode } from "./style";
+import { CALLOUT_RADIUS_PX, DRC_COLOURS, FRAME_SVG, LEADER_PX, REVEAL_MS, SEVERITY_LABEL, SEVERITY_VAR, SPARK_SVG, TIER_ORDER, drawMarker, ensureAnnotStyles, markerSvg, svgNode } from "./style";
 import { QuadBatch, StemBatch, type AtlasDraw, type QuadInstance, type StemInstance } from "./batch";
 import { attachWheelForward, canvasIn } from "./wheel";
 
@@ -97,7 +97,7 @@ export interface AnnotInput {
 
 export interface AnnotStatus {
   id: string;
-  kind: "callout" | "mark" | "arrow" | "finding";
+  kind: "callout" | "mark" | "arrow" | "finding" | "dimension" | "angle";
   status: "placed" | "pinned" | "occluded" | "offscreen" | "orphan" | "hidden";
   anchorPx?: [number, number];
   labelBox?: Box;
@@ -382,6 +382,11 @@ export class AnnotLayer {
       plain?: boolean;
       /** The finding a card shows (a click on the card pins it and opens it in the Inspector). */
       finding?: string;
+      /** R3-C (concept A's card): the measured value row, the tier chips, who wrote it (the pill), the action row. */
+      value?: string;
+      tier?: string;
+      author?: string;
+      actions?: boolean;
     }
     const open: Live[] = [];
     const partBox = (hit: PartHit): Box | undefined => {
@@ -456,9 +461,12 @@ export class AnnotLayer {
         own: hit.objects,
         tone,
         title: r.title ?? r.ref,
-        rows: r.rows ?? [],
+        // R3-C: a VALUE row and a TIER row (one of nominal, mesh, exact, measured) are drawn as the card's value
+        // row and tier chips (concept A), the rest as rows
+        ...cardRows(r.rows ?? []),
         ...(r.text ? { text: r.text } : {}),
         by: authorLabel(r.author),
+        author: r.author,
         priority: r.visibility === "hover" ? -1 : r.author === "user" ? 2 : 1,
         ref: r.ref,
         ...(r.n ? { n: r.n } : {}),
@@ -522,6 +530,11 @@ export class AnnotLayer {
           ...(tier !== "short" && card.description ? { description: card.description } : {}),
           ...(tier === "long" ? { hint: "Click for details" } : {}),
           ...(tier === "pinned" ? { details: { rows: [...card.rows, ...more], text: card.text } } : {}),
+          // R3-C (concept A's risk card): the value and tier when the check states them; on the pinned card the
+          // LOOK AT / DETAILS / previous-next row
+          ...(tier !== "short" && showCard.value ? { value: showCard.value } : {}),
+          ...(tier !== "short" && showCard.tier ? { tier: showCard.tier } : {}),
+          ...(tier === "pinned" ? { actions: true } : {}),
           rows: [],
           priority: this.hovered === m.key ? 5 : 3,
           ref,
@@ -857,8 +870,11 @@ export class AnnotLayer {
     obj.updateMatrixWorld(true);
   }
 
-  private labelView(l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; description?: string; hint?: string; details?: { rows: [string, string][]; text: string }; plain?: boolean; by?: string; tone: string; severity?: FindingSeverity; ref?: string; finding?: string }, doc: Document): LabelView {
-    const content = JSON.stringify([l.title, l.rows, l.text, l.description, l.hint, l.details, l.plain, l.by, l.tone]);
+  private labelView(
+    l: { id: string; kind: "callout" | "finding"; title: string; rows: [string, string][]; text?: string; description?: string; hint?: string; details?: { rows: [string, string][]; text: string }; plain?: boolean; by?: string; tone: string; severity?: FindingSeverity; ref?: string; finding?: string; value?: string; tier?: string; author?: string; actions?: boolean },
+    doc: Document,
+  ): LabelView {
+    const content = JSON.stringify([l.title, l.rows, l.text, l.description, l.hint, l.details, l.plain, l.by, l.tone, l.value, l.tier, l.author, l.actions]);
     let v = this.labels.get(l.id);
     if (!v) {
       const el = doc.createElement("div");
@@ -881,9 +897,28 @@ export class AnnotLayer {
       v.content = content;
       const el = v.el;
       el.replaceChildren();
+      // the title row (R3-C, concept A): a finding's severity glyph and word ("RISK ·"), or the author's pill
+      // ("AGENT") before a callout's title; who wrote it in full is the pill's tooltip
       const title = doc.createElement("div");
       title.className = "annot-title";
-      if (l.severity) title.prepend(svgNode(markerSvg(l.severity, 12)));
+      if (l.severity) {
+        title.append(svgNode(markerSvg(l.severity, 12)));
+        const w = doc.createElement("span");
+        w.className = "annot-sev-word";
+        w.textContent = `${SEVERITY_LABEL[l.severity]} ·`;
+        title.append(w);
+      }
+      const pill = l.author !== undefined ? authorPill(l.author) : undefined;
+      if (pill) {
+        const p = doc.createElement("span");
+        p.className = `annot-pill pill-${pill.kind}`;
+        if (pill.kind === "agent") p.append(svgNode(SPARK_SVG));
+        const pt = doc.createElement("span");
+        pt.textContent = pill.text;
+        p.append(pt);
+        p.title = l.by ?? "";
+        title.append(p);
+      }
       const tt = doc.createElement("span");
       tt.className = "annot-title-text";
       tt.textContent = breakable(l.title);
@@ -917,10 +952,38 @@ export class AnnotLayer {
       };
       if (l.rows.length) el.appendChild(rowsOf(l.rows));
       if (l.text) el.appendChild(textOf(l.text));
+      if (l.value) {
+        // VALUE  3.1 mm ±0.2 (concept A): the key in the label face, the number in mono
+        const row = doc.createElement("div");
+        row.className = "annot-value";
+        const k = doc.createElement("span");
+        k.className = "annot-k";
+        k.textContent = "VALUE";
+        const val = doc.createElement("span");
+        val.className = "annot-value-v";
+        val.textContent = l.value;
+        row.append(k, val);
+        el.appendChild(row);
+      }
+      if (l.tier) {
+        // the four tiers as one segmented strip, the one that holds lit (colour is not the only signal: it is bold and
+        // named in the strip's label)
+        const strip = doc.createElement("div");
+        strip.className = "annot-tiers";
+        strip.setAttribute("aria-label", `Tier: ${l.tier}`);
+        for (const t of TIER_ORDER) {
+          const c = doc.createElement("span");
+          c.className = t === l.tier ? "annot-tier on" : "annot-tier";
+          c.textContent = t.toUpperCase();
+          strip.append(c);
+        }
+        el.appendChild(strip);
+      }
+      let det: HTMLDetailsElement | undefined;
       if (l.details && (l.details.rows.length || l.details.text)) {
         // the raw diagnostic (walkthrough D3: "the raw diagnostic text stays in the Inspector"): on the pinned card it
         // is folded under "Details"; the card is measured again when it opens or closes
-        const det = doc.createElement("details") as HTMLDetailsElement;
+        det = doc.createElement("details") as HTMLDetailsElement;
         det.className = "annot-details";
         const sum = doc.createElement("summary");
         sum.textContent = "Details";
@@ -930,28 +993,36 @@ export class AnnotLayer {
         if (l.details.text) det.appendChild(textOf(l.details.text));
         if (l.details.rows.length) det.appendChild(rowsOf(l.details.rows));
         if (v.detailsOpen) det.open = true;
+        const d = det;
         det.addEventListener("toggle", () => {
           const card = v!;
-          card.detailsOpen = det.open;
+          card.detailsOpen = d.open;
           card.w = Math.ceil(el.offsetWidth) || card.w;
           card.h = Math.ceil(el.offsetHeight) || card.h;
           this.onChange?.();
         });
-        el.appendChild(det);
       }
+      el.classList.toggle("has-actions", !!l.actions);
+      if (l.actions) el.appendChild(this.actionRow(l, det, doc));
+      if (det) el.appendChild(det);
       if (l.hint) {
         const hnt = doc.createElement("div");
         hnt.className = "annot-hint";
         hnt.textContent = l.hint;
         el.appendChild(hnt);
       }
-      if (l.by) {
+      // the author: the pill says who (agent, host, check); a person's own callout says nothing more; any other
+      // author keeps the small "by" line
+      if (l.by && !pill && l.author !== undefined && l.author !== "user") {
         const by = doc.createElement("div");
         by.className = "annot-by";
         by.textContent = `by ${l.by}`;
         el.appendChild(by);
       }
-      el.setAttribute("aria-label", [l.title, l.description ?? "", ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? "", ...(l.details ? [l.details.text, ...l.details.rows.map(([a, b]) => `${a} ${b}`)] : [])].filter(Boolean).join(", "));
+      const spoken = [pill ? `${pill.text}:` : "", l.severity ? `${SEVERITY_LABEL[l.severity]}:` : "", l.title, l.description ?? "", ...l.rows.map(([a, b]) => `${a} ${b}`), l.text ?? "", l.value ? `value ${l.value}` : "", l.tier ? `tier ${l.tier}` : ""];
+      if (l.details) spoken.push(l.details.text, ...l.details.rows.map(([a, b]) => `${a} ${b}`));
+      if (pill && l.by) spoken.push(`by ${l.by}`);
+      el.setAttribute("aria-label", spoken.filter(Boolean).join(", "));
       el.dataset.tone = l.tone;
       el.classList.remove(...[...el.classList].filter((c) => c.startsWith("tone-")));
       el.classList.add(`tone-${l.tone}`);
@@ -975,6 +1046,63 @@ export class AnnotLayer {
       el.style.transform = was;
     }
     return v;
+  }
+
+  /**
+   * The pinned card's action row (R3-C, concept A): LOOK AT (frames the part), DETAILS (opens the raw diagnostic),
+   * and the previous and next findings (P, N: the next marker's card is pinned in this one's place). Each button's
+   * click stays on the button (a click on the card itself pins it and asks the Inspector).
+   */
+  private actionRow(l: { ref?: string; finding?: string }, det: HTMLDetailsElement | undefined, doc: Document): HTMLDivElement {
+    const row = doc.createElement("div");
+    row.className = "annot-actions";
+    const button = (cls: string, label: string, aria: string, run: () => void, icon?: string) => {
+      const b = doc.createElement("button");
+      b.type = "button";
+      b.className = `annot-btn${cls ? ` ${cls}` : ""}`;
+      if (icon) b.append(svgNode(icon));
+      const t = doc.createElement("span");
+      t.textContent = label;
+      b.append(t);
+      b.setAttribute("aria-label", aria);
+      b.title = aria;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        run();
+      });
+      return b;
+    };
+    if (l.ref) {
+      const ref = l.ref;
+      row.append(button("primary", "Look at", "Look at the part", () => this.host.onLookAt?.(ref), FRAME_SVG));
+    }
+    if (det) {
+      const d = det;
+      row.append(button("", "Details", "Show the raw diagnostic", () => (d.open = !d.open)));
+    }
+    const spacer = doc.createElement("span");
+    spacer.className = "annot-spacer";
+    row.append(spacer);
+    if (l.finding && this.input.markers.length > 1) {
+      const f = l.finding;
+      row.append(button("annot-kbd", "P", "Previous finding (P)", () => this.stepCard(f, -1)), button("annot-kbd", "N", "Next finding (N)", () => this.stepCard(f, 1)));
+      const nx = doc.createElement("span");
+      nx.className = "annot-next-label";
+      nx.textContent = "Next";
+      row.append(nx);
+    }
+    return row;
+  }
+
+  /** The previous or next marker's finding pinned in place of `findingId`'s (the pinned card's P and N). */
+  private stepCard(findingId: string, d: 1 | -1) {
+    const ms = this.input.markers;
+    const i = ms.findIndex((m) => m.findings.some((f) => f.id === findingId));
+    const next = ms[(Math.max(0, i) + d + ms.length) % ms.length];
+    const f = next?.findings[0];
+    if (!f || f.id === findingId) return;
+    this.host.onFinding?.(findingId, "close");
+    this.inspect(f.id, next.anchor.component ?? next.anchor.body);
   }
 
   private showLabel(v: LabelView, motion: boolean, _length: number) {
@@ -1273,4 +1401,29 @@ function crossObject(colour: string): THREE.Object3D {
   l.renderOrder = 21;
   l.frustumCulled = false;
   return l;
+}
+
+/**
+ * A callout's VALUE and TIER rows taken out of its rows (R3-C, concept A): the value row and the tier chips draw them;
+ * a TIER row that names no tier stays a row.
+ */
+export function cardRows(rows: [string, string][]): { rows: [string, string][]; value?: string; tier?: string } {
+  let value: string | undefined;
+  let tier: string | undefined;
+  const rest: [string, string][] = [];
+  for (const [k, v] of rows) {
+    const key = k.trim().toUpperCase();
+    if (key === "VALUE" && value === undefined) value = v;
+    else if (key === "TIER" && tier === undefined && (TIER_ORDER as readonly string[]).includes(v.trim().toLowerCase())) tier = v.trim().toLowerCase();
+    else rest.push([k, v]);
+  }
+  return { rows: rest, ...(value !== undefined ? { value } : {}), ...(tier !== undefined ? { tier } : {}) };
+}
+
+/** The pill before a callout's title (R3-C, concept A's "AGENT U3 · PIN 1"): none for the person's own. */
+export function authorPill(author: string): { kind: string; text: string } | undefined {
+  if (author === "user") return undefined;
+  const kind = author.split(":")[0];
+  if (kind === "agent" || kind === "host" || kind === "check") return { kind, text: kind.toUpperCase() };
+  return undefined;
 }

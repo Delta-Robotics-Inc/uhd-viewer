@@ -11,12 +11,22 @@
  * order (the shared function keeps input order and skips only info findings unless asked for them).
  */
 import { findingsAnchors as anchorsOf, severityOf, type FindingAnchors, type FindingInput, type FindingsAnchorsOptions, type SceneBody } from "./findings-anchors";
+import { DIM_TIERS, type DimTier } from "../dims/record";
 
-/** The plain-language fields a finding may carry (R2-D writes them on bundle diagnostics). */
+/**
+ * The plain-language fields a finding may carry (R2-D writes `title` and `summary` on bundle diagnostics). R3-C adds
+ * two optional ones the card shows when a check states them (concept A's risk card): `value`, the measured number
+ * as shown ("3.1 mm ±0.2"), and `tier`, how it was measured (nominal, mesh, exact, measured).
+ */
 export interface FindingText {
   title?: string;
   summary?: string;
+  value?: string;
+  tier?: DimTier;
 }
+
+/** DEFAULT (R3-C): the longest value shown on a card, in characters. */
+export const PLAIN_VALUE_MAX = 40;
 
 /** DEFAULT (R2-C): the longest plain title and summary shown, in characters (longer is cut with an ellipsis). */
 export const PLAIN_TITLE_MAX = 80;
@@ -36,10 +46,12 @@ export function plainString(v: unknown, max: number): string | undefined {
 /** The plain-language fields of a raw diagnostic (anything not a usable string is left out). */
 export function findingText(raw: unknown): FindingText {
   if (!raw || typeof raw !== "object") return {};
-  const r = raw as { title?: unknown; summary?: unknown };
+  const r = raw as { title?: unknown; summary?: unknown; value?: unknown; tier?: unknown };
   const title = plainString(r.title, PLAIN_TITLE_MAX);
   const summary = plainString(r.summary, PLAIN_SUMMARY_MAX);
-  return { ...(title ? { title } : {}), ...(summary ? { summary } : {}) };
+  const value = plainString(typeof r.value === "number" && Number.isFinite(r.value) ? String(r.value) : r.value, PLAIN_VALUE_MAX);
+  const tier = typeof r.tier === "string" && DIM_TIERS.includes(r.tier.toLowerCase() as DimTier) ? (r.tier.toLowerCase() as DimTier) : undefined;
+  return { ...(title ? { title } : {}), ...(summary ? { summary } : {}), ...(value ? { value } : {}), ...(tier ? { tier } : {}) };
 }
 
 /**
@@ -84,6 +96,8 @@ export function findingsAnchors(findings: (FindingInput & FindingText)[], bodies
     const t = findingText(d);
     if (t.title) out[i].title = t.title;
     if (t.summary) out[i].summary = t.summary;
+    if (t.value) out[i].value = t.value;
+    if (t.tier) out[i].tier = t.tier;
   });
   return out;
 }

@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { focusMaterial, type SceneColors } from "../scene";
 import { baseMaterialOf, setMeshLook } from "./looks";
+import { instanceIdOf } from "./ids";
 
 /**
  * The highlight surface for one instance of a GPU-instanced node (R1-A, A1): the instance's own material with the
@@ -80,7 +81,8 @@ export function paintComponent(rec: { obj: THREE.Object3D; body: { key: string }
     const list = ((o.userData.protoboard as { instances?: unknown } | undefined)?.instances ?? o.userData.protoboardInstances) as unknown;
     if (!im.isInstancedMesh || !Array.isArray(list) || !im.parent) return;
     list.forEach((p, i) => {
-      if (i >= im.count || !names(p)) return;
+      // R3-A: an entry is a plain path (sidecar) or the view-model's `{partInstanceId}` object
+      if (i >= im.count || !names(instanceIdOf(p))) return;
       const at = new THREE.Matrix4();
       im.getMatrixAt(i, at);
       const base = baseMaterialOf(im);

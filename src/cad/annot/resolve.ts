@@ -13,6 +13,7 @@
  * caller's own resolver).
  */
 import * as THREE from "three";
+import { instanceIdOf } from "../render/ids";
 
 export interface PartHit {
   objects: THREE.Object3D[];
@@ -58,9 +59,16 @@ export function componentIn(body: THREE.Object3D, rel: string, full: string): { 
       node = o;
       return;
     }
-    const list = extras(o).instances;
-    if ((o as THREE.InstancedMesh).isInstancedMesh && Array.isArray(list)) {
-      const i = list.findIndex((p) => p === rel || p === full);
+    if (!(o as THREE.InstancedMesh).isInstancedMesh) return;
+    // wave R3 gate (R3-A's handoff): the view-model writes each entry as an object (`{partInstanceId, ...}`), the
+    // sidecar as a string; the list sits on the instanced mesh or on the node above it (one mesh per primitive)
+    let list: unknown;
+    for (let x: THREE.Object3D | null = o; x && list === undefined; x = x === body ? null : x.parent) list = extras(x).instances ?? x.userData.protoboardInstances;
+    if (Array.isArray(list)) {
+      const i = list.findIndex((p) => {
+        const id = instanceIdOf(p);
+        return id === rel || id === full;
+      });
       if (i >= 0 && i < (o as THREE.InstancedMesh).count) inst = { mesh: o as THREE.InstancedMesh, i };
     }
   });

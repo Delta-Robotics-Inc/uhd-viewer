@@ -35,6 +35,11 @@ export interface RadialPlan {
   parts?: RadialPart[];
   up?: [number, number, number];
   overrides?: ReadonlyMap<string, { direction?: [number, number, number]; distance?: number }>;
+  /**
+   * Wave R3 gate (additive): a board drawn as an assembly is in the plan (../assembly/plan.ts `withBoard`): its
+   * components leave along the board's normal, not radially; `holder` is the board's body key (it stays put).
+   */
+  board?: { holder: string; components: number };
 }
 
 /** A resolved sequence with the radial plan beside it (CadView's; tests may build a player without one). */
@@ -58,8 +63,9 @@ export type SequenceCommand =
   /** Explode or assemble everything (or up to `step`), animated unless `instant`. */
   | { action: "explode" | "assemble"; step?: string; instant?: boolean }
   /** Play from `from` (default the current state) to `to`. */
-  | { action: "play"; mode?: PlayMode; from?: string; to?: string }
-  | { action: "loop"; on?: boolean; mode?: PlayMode; from?: string; to?: string }
+  /** `keep` (R3-B's handoff, applied by R3-A): play in the explode mode in force (radial stays radial); without it, the steps. */
+  | { action: "play"; mode?: PlayMode; from?: string; to?: string; keep?: boolean }
+  | { action: "loop"; on?: boolean; mode?: PlayMode; from?: string; to?: string; keep?: boolean }
   | { action: "stop" }
   /** Only this step's members move (undefined clears). */
   | { action: "isolate"; step?: string }
@@ -96,7 +102,7 @@ export interface PlayerSnapshot {
   explodeMode?: ExplodeMode;
   /** The sub-assembly that comes apart (R2-A's `explode.scope`); absent: the whole model. */
   scope?: string;
-  radial?: { parts: number; distanceMm: number; ms: number; from: Record<string, number> };
+  radial?: { parts: number; distanceMm: number; ms: number; from: Record<string, number>; board?: { components: number } };
 }
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -324,6 +330,7 @@ export class SequencePlayer {
     // a mode change fading between poses keeps the view drawing
     if (this.blendK() !== undefined) moving = true;
     this.notifyStep();
+    if (moving) this.notifyChange();
     return moving;
   }
 
@@ -370,6 +377,31 @@ export class SequencePlayer {
       out.set(key, multiply(tr, base.get(key) ?? identity()));
     }
     return out;
+  }
+
+  /**
+   * Wave R3 gate: how far the part that travels farthest goes between together and apart in the mode in force
+   * (mm, the level's frame; the scope applied; a running mode fade ignored). 0: nothing comes apart in this mode, the
+   * one case the view's "nothing to explode in this model" note is for (R1-A M11).
+   */
+  reach(): number {
+    const moves = this.radialMoves();
+    const scope = this.scopeNow;
+    if (this.explodeMode === "radial" && moves) {
+      let d = 0;
+      for (const m of moves.values()) d = Math.max(d, m.distance);
+      return d;
+    }
+    const resolved = this.extraJoints.length ? { ...this.resolved, joints: this.joints } : this.resolved;
+    const a = poseAt(resolved, { t: 0, joints: this.values });
+    const b = poseAt(resolved, { t: 1, joints: this.values });
+    let d = 0;
+    for (const [key, m] of b) {
+      if (scope && !underScope(key, scope)) continue;
+      const o = a.get(key) ?? identity();
+      d = Math.max(d, Math.hypot(m[12] - o[12], m[13] - o[13], m[14] - o[14]));
+    }
+    return d;
   }
 
   /** Members of a step (to highlight or show alone). */
@@ -437,12 +469,34 @@ export class SequencePlayer {
   run(cmd: SequenceCommand): { ok: boolean; error?: string; held?: JointLimitFlag } {
     const r = this.runCommand(cmd);
     this.notifyStep();
+    this.notifyChange();
     return r;
+  }
+
+  private changeListeners = new Set<() => void>();
+  /**
+   * R3-B's handoff (applied by R3-A): called after every tick that moved something and after every command, so a
+   * panel (the assembly timeline) can follow the player without polling. Returns the unsubscribe function.
+   */
+  onChange(cb: () => void): () => void {
+    this.changeListeners.add(cb);
+    return () => void this.changeListeners.delete(cb);
+  }
+
+  private notifyChange() {
+    for (const cb of this.changeListeners) {
+      try {
+        cb();
+      } catch (e) {
+        console.error("sequence change listener", e);
+      }
+    }
   }
 
   private runCommand(cmd: SequenceCommand): { ok: boolean; error?: string; held?: JointLimitFlag } {
     // the steps' own commands play the steps (R2-B): a goto, a play, a loop, an isolate, a step explode or assemble
-    if (cmd.action === "goto" || cmd.action === "play" || cmd.action === "loop" || cmd.action === "isolate" || ((cmd.action === "explode" || cmd.action === "assemble") && cmd.step !== undefined)) this.setMode("sequence");
+    const keep = (cmd.action === "play" || cmd.action === "loop") && cmd.keep === true;
+    if (cmd.action === "goto" || ((cmd.action === "play" || cmd.action === "loop") && !keep) || cmd.action === "isolate" || ((cmd.action === "explode" || cmd.action === "assemble") && cmd.step !== undefined)) this.setMode("sequence");
     if (cmd.action === "scope") {
       if (cmd.scope !== undefined && (typeof cmd.scope !== "string" || cmd.scope.length > 512)) return { ok: false, error: "scope must be an instance path" };
       this.setScope(cmd.scope, { instant: cmd.instant });
@@ -568,6 +622,13 @@ export function radialSummary(plan: RadialPlan): NonNullable<PlayerSnapshot["rad
   for (const m of plan.moves.values()) {
     from[m.from] = (from[m.from] ?? 0) + 1;
     distance = Math.max(distance, m.distance);
+  }
+  // wave R3 gate: with a board in the plan, the parts that come off (its components; the board itself stays) and
+  // the word for how (the timeline names "along the board normal", not "radial")
+  if (plan.board) {
+    let moving = 0;
+    for (const m of plan.moves.values()) if (m.distance > 0) moving++;
+    return { parts: moving, distanceMm: Math.round(distance * 10) / 10, ms: plan.ms, from, board: { components: plan.board.components } };
   }
   return { parts: plan.moves.size, distanceMm: Math.round(distance * 10) / 10, ms: plan.ms, from };
 }

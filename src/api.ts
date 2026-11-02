@@ -721,7 +721,8 @@ export interface PlacementOverride {
 export interface AnnotRecord {
   /** Issued by the view for an agent's new record (`a.<epoch>.<n>`); deterministic when a host generates one. */
   id: string;
-  kind: "callout" | "mark" | "arrow";
+  /** R3-C (applied by R3-A, additive): "dimension" and "angle" records are drawn by the dims layer (src/cad/dims). */
+  kind: "callout" | "mark" | "arrow" | "dimension" | "angle";
   /** What it points at: an instance path from the root ("" = the root), a harness key, or `link:<id>`. */
   ref: string;
   /** "user", `agent:<name>`, `host:<name>`, `check:<validator>`. */
@@ -740,6 +741,15 @@ export interface AnnotRecord {
   visibility?: "on" | "hover" | "off";
   n?: number;
   source?: { diagnostic?: string; requirement?: string; recipe?: string };
+  /** A dimension's tier (R3-C): from the UHD numbers, the meshes, the exact B-rep, or measured on the part. */
+  tier?: "nominal" | "mesh" | "exact" | "measured";
+  /** A dimension's value and tolerance, mm. */
+  valueMm?: number;
+  toleranceMm?: number;
+  /** Where its label sits off the measured line, mm, the assembly root's frame. */
+  offset?: Vec3;
+  /** An angle's joint id. */
+  joint?: string;
 }
 
 /** Top-level keys a writer may set. */

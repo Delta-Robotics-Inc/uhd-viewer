@@ -22,6 +22,8 @@
  */
 import type { AnnotRecord } from "../../api";
 import type { FindingSeverity, Vec3 } from "./findings-anchors";
+// R3-C: dimension and angle records (additive kinds of the same list, drawn by ../dims)
+import { DIM_KINDS, parseDimFields, type DimKind, type DimRecord } from "../dims/record";
 
 export const ANNOTATION_SCHEMA = "uhd-viewer.annotation/v0";
 
@@ -32,6 +34,11 @@ export type AnnotTone = "accent" | "neutral" | FindingSeverity;
 
 /** The record (declared in the published contract, `src/api.ts`, so the two cannot drift: W3-A's handoff). */
 export type { AnnotRecord };
+/**
+ * Any entry of `annotations`: a callout, mark or arrow, or (R3-C) a dimension or an angle (`../dims/record.ts`;
+ * `src/api.ts` still declares the first three only: handoff to its owner).
+ */
+export type AnyRecord = AnnotRecord | DimRecord;
 
 /**
  * Size limits (DEFAULT, PB-1184; W3-A owns the store-side caps in `state/schema.ts` and may set them lower).
@@ -54,7 +61,7 @@ export function cleanText(v: unknown, max: number): string | undefined {
 }
 
 /** A record from untrusted JSON, or why not. Unknown fields are dropped; text is capped, never interpreted. */
-export function parseRecord(raw: unknown): { record: AnnotRecord } | { error: string } {
+export function parseRecord(raw: unknown): { record: AnyRecord } | { error: string } {
   if (!isObj(raw)) return { error: "an annotation must be an object" };
   let size = 0;
   try {
@@ -65,10 +72,13 @@ export function parseRecord(raw: unknown): { record: AnnotRecord } | { error: st
   if (size > LIMITS.bytes) return { error: `an annotation is at most ${LIMITS.bytes} bytes of JSON (this one is ${size})` };
   const id = typeof raw.id === "string" ? raw.id : "";
   if (!id || id.length > LIMITS.id || /[\u0000-\u001f]/.test(id)) return { error: `an annotation needs an id of 1 to ${LIMITS.id} characters` };
-  if (!KINDS.includes(raw.kind as AnnotKind)) return { error: `${id}: kind must be ${KINDS.join(", ")}` };
+  const dim = DIM_KINDS.includes(raw.kind as DimKind);
+  if (!KINDS.includes(raw.kind as AnnotKind) && !dim) return { error: `${id}: kind must be ${[...KINDS, ...DIM_KINDS].join(", ")}` };
   if (typeof raw.ref !== "string" || raw.ref.length > LIMITS.ref || /[\u0000-\u001f]/.test(raw.ref)) return { error: `${id}: ref must be an instance path` };
   const author = cleanText(raw.author, LIMITS.author);
   if (!author) return { error: `${id}: author is required (who made it)` };
+  // R3-C: a dimension or an angle (../dims/record.ts)
+  if (dim) return parseDimFields(raw, { id, kind: raw.kind as DimKind, ref: raw.ref, author });
   const r: AnnotRecord = { id, kind: raw.kind as AnnotKind, ref: raw.ref, author };
   if (raw.point !== undefined) {
     if (!isVec3(raw.point)) return { error: `${id}: point must be [x, y, z] mm` };
@@ -121,14 +131,17 @@ export function parseRecord(raw: unknown): { record: AnnotRecord } | { error: st
   return { record: r };
 }
 
-/** The records of a view state's annotations: valid ones by id (a later duplicate replaces an earlier), and the rejects. */
+/**
+ * The callouts, marks and arrows of a view state's annotations: valid ones by id (a later duplicate replaces an
+ * earlier), and the rejects. Dimensions and angles are valid but not returned here (R3-C: `dimRecordsOf`, ../dims).
+ */
 export function recordsOf(list: unknown[]): { records: AnnotRecord[]; rejected: { index: number; error: string }[] } {
   const byId = new Map<string, AnnotRecord>();
   const rejected: { index: number; error: string }[] = [];
   list.slice(0, LIMITS.records).forEach((raw, index) => {
     const p = parseRecord(raw);
     if ("error" in p) rejected.push({ index, error: p.error });
-    else byId.set(p.record.id, p.record);
+    else if (KINDS.includes(p.record.kind as AnnotKind)) byId.set(p.record.id, p.record as AnnotRecord);
   });
   return { records: [...byId.values()], rejected };
 }
