@@ -649,6 +649,13 @@ export interface ExplodeState {
    * `step ? "sequence" : "radial"` (DEFAULT).
    */
   mode?: "radial" | "sequence";
+  /**
+   * R5 (Kevin: "The explode and assembly buttons are individual on and off toggles, not one or the other"), additive:
+   * the toolbar's Explode toggle. Absent: read as `t > 0 && mode is radial` (a state written before R5).
+   */
+  on?: boolean;
+  /** R5, additive: the toolbar's Assemble toggle (step by step), on or off independently of `on`. Absent: `t > 0 && mode is sequence`. */
+  assemble?: boolean;
 }
 
 /** A view saved by name (deliberate presentation: written to the display file only on an explicit save). */

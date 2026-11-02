@@ -23,7 +23,7 @@ import { DimsLayer, ExplodePaths, MeasureControl, MeasureTool, dimRecordsOf, pat
 import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, findingForHost, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode, type FindingText } from "./annot";
 import { DIRECTIONS, defAt, explodeParts, glbFor, interfaceRows, loadManifests, type CadBody, type CadModel, type Direction, type InterfaceRow } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
-import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, DEFAULT_ZOOM_TO_CURSOR, EXPLODE_STILL_MM, HIGHLIGHT_GLOW, hoverMaterial, ownColour, cadWrapper, cameraBetween, createScene, dominantNormal, explodeCamera, principalNormal, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, lookAlong, materialFor, needsRefit, proceduralGeometry, toMatrix4, triangleNormal, type AntialiasMode, type LoadedModel, type SceneColors, type SceneHandle } from "./scene";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, DEFAULT_ZOOM_TO_CURSOR, EXPLODE_STILL_MM, HIGHLIGHT_GLOW, bodyPartsOf, hoverMaterial, ownColour, cadWrapper, cameraBetween, createScene, dominantNormal, explodeCamera, principalNormal, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, lookAlong, materialFor, needsRefit, proceduralGeometry, toMatrix4, triangleNormal, type AntialiasMode, type LoadedModel, type SceneColors, type SceneHandle } from "./scene";
 import { buildAll, bvhStats, pick } from "./render/pick";
 import { setMeshLook } from "./render/looks";
 import { paintComponent, swapMaterial } from "./render/glow";
@@ -35,7 +35,7 @@ import { exactRequest, measureBounds, measureCylinder, measureFaceFace, measureP
 import { TourPlayback, parseTour, tourOps, type Tour } from "./tour";
 import { LoadingScreen, attachLoadTracker, glbPlacements, useLoadTiers, type LoadSnapshot, type LoadTier } from "./loading";
 import { resolvePlanes, type ScopedSectionPlane } from "./sections/planes";
-import { SequencePlayer, applyCadPose, applyUrlState, fetchSequenceBeside, resolveForCad, sequenceUrlState, type PlayerSnapshot, type SequenceCommand, type SequenceFile } from "./sequence";
+import { EXPLODE_TRAVEL_S, MotionController, SequencePlayer, applyCadPose, applyUrlState, fetchSequenceBeside, resolveForCad, sequenceUrlState, type PlayerSnapshot, type SequenceCommand, type SequenceFile } from "./sequence";
 import { Icon } from "../canvas/Icon";
 import { layOutRow } from "./row";
 import { intoScope, outOfScope, scopeRef, scopedModel, scopedPlacements, shownSummary } from "./scope";
@@ -54,7 +54,7 @@ import type { ThemeToken } from "../theme/tokens";
 import { baseMaterialOf } from "./render/looks";
 import { longHoverMs, viewerSettings } from "./viewerSettings";
 import { applyBoardPose, boardGroups, componentTarget, measureBoard, planBoard, splitBoard, withBoard, type BoardAssembly, type BoardComponent, type BoardPartInput } from "./assembly";
-import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, VOID_MENU_TITLE, goBack, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, voidMenuFor, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
+import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, VOID_MENU_TITLE, goBack, hasCalloutSelection, pressToggle, releaseAction, timelineOpenFor, togglesOf, type MotionToggle, type MotionToggles, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, voidMenuFor, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
 import { createScaleReference, readScaleSettings, rememberScaleSetting, SCALE_KIND_INFO, type ScaleReference, type ScaleKind } from "./scaleref";
 import { mountGridLabel, type Units } from "./grid";
 import { PIVOT_EASE_MS, attachCameraPolicy, clampToMax, movePivot, pivotChange, pivotOf, radiusOf, type CameraPolicy } from "./camera";
@@ -336,6 +336,10 @@ export function CadView({
   const explodeStep = useViewSlice(store, (s) => s.explode.step);
   const explodeMode = useViewSlice(store, (s) => (s.explode as { mode?: "radial" | "sequence" }).mode) ?? "radial";
   const explodeScope = useViewSlice(store, (s) => (s.explode as { scope?: string }).scope);
+  // R5-B: Explode and Assemble, two independent toggles (./nav/toggles.ts): the view state's flags, or read from t
+  // and the mode for a state written before R5. The toolbar, the void menu and an agent's `explode` op share them.
+  const explodeOnFlag = useViewSlice(store, (s) => (s.explode as { on?: boolean }).on);
+  const assembleFlag = useViewSlice(store, (s) => (s.explode as { assemble?: boolean }).assemble);
   const highlight = useViewSlice(store, (s) => s.highlight);
   /** R2-A (A3): the colour an agent gave its highlight (a token or a hex); absent, the theme's glow. */
   const highlightColor = useViewSlice(store, (s) => s.highlightColor);
@@ -362,6 +366,7 @@ export function CadView({
   // R3-B's handoff (applied by R3-A): apart at all is "exploded" (the timeline's slider can rest anywhere between; with
   // R2-B's old 0.5 threshold a click on Explode under half way turned it on again instead of off)
   const exploded = explodeT > 0;
+  const storeToggles: MotionToggles = togglesOf({ t: explodeT, mode: explodeMode, step: explodeStep, ...(explodeOnFlag !== undefined ? { on: explodeOnFlag } : {}), ...(assembleFlag !== undefined ? { assemble: assembleFlag } : {}) });
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   // ---- R4-A: camera behaviour (./camera) and the void menu ----
@@ -396,7 +401,8 @@ export function CadView({
   /** Every model load has finished (or failed). */
   const [settled, setSettled] = useState(false);
   /** The camera's move while the model comes apart or together: from where it was to a fit of where it ends. */
-  const cameraTween = useRef<{ from: [THREE.Vector3, THREE.Vector3]; to: [THREE.Vector3, THREE.Vector3]; start: number } | null>(null);
+  /** R5-B: `end`, the amount a toggle's play ends at (the tween follows the player's t, not the store-driven ease). */
+  const cameraTween = useRef<{ from: [THREE.Vector3, THREE.Vector3]; to: [THREE.Vector3, THREE.Vector3]; start: number; end?: number } | null>(null);
   /** A timed camera move (R1-A, E3 "Look along normal"): eased from one pose to another over `ms`. */
   const viewTween = useRef<{ from: { position: THREE.Vector3; target: THREE.Vector3 }; to: { position: THREE.Vector3; target: THREE.Vector3 }; start: number; ms: number } | null>(null);
   /** The face under the person's last pick (world normal) and what that pick selected (R1-A, E3). */
@@ -719,9 +725,13 @@ export function CadView({
     // in a larger assembly (key not "") stays one part, exactly as before (Kevin: "the simple version is in the large
     // assembly, and then the PCB becomes its own assembly that can explode"). DEFAULT: only the level's own body.
     const assembly = body.key === "" && (body.def.children?.length ?? 0) > 0 && !explodeParts(body.def, body.glb, manifest) ? splitBoard(top) : undefined;
-    for (const part of top.children) {
+    // wave R5 gate (ClientX colours): a model that is one mesh node (a merged view sidecar, a one-mesh GLB) is its own
+    // only part. Before, its children (none) were walked, so it kept the colour baked into the sidecar and the
+    // project's display colours (display.json `spatial.appearance`) never reached it.
+    const { parts: topParts, lone } = bodyPartsOf(top);
+    for (const part of topParts) {
       // feature pads show only while their interface is selected
-      if (!vendorModel && featureNames.has(part.name) && !components.has(part.name)) {
+      if (!lone && !vendorModel && featureNames.has(part.name) && !components.has(part.name)) {
         part.userData.feature = part.name;
         part.visible = false;
         continue;
@@ -731,7 +741,8 @@ export function CadView({
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
         // shared materials (PB-1175): the GLB's own (one per glTF material, shared by every clone) or one per look
-        if (!vendor) mesh.material = materialFor(body.def, part.name, appearanceOf(body.def.id));
+        // a lone mesh is the whole body (no sub-body name: the fallback colour is the whole part's)
+        if (!vendor) mesh.material = materialFor(body.def, lone ? "" : part.name, appearanceOf(body.def.id));
         mesh.userData.bodyKey = body.key;
         // R1-E's C1 handoff: a board's layer sheets (copper, mask/paste, silkscreen) are drawn in front of the one
         // below them by their rank (DEFAULT -rank / -2 rank), so coplanar layers do not z-fight
@@ -1152,6 +1163,8 @@ export function CadView({
   /** True while a player command runs (its step write-back carries the player's own t). */
   const seqDriving = useRef(false);
   /** Resolve the sequence for what is loaded now (the stack planner samples it: 125 ms drone, 369 ms ClientX). */
+  /** R5 gate: the model and sequence file the player was last resolved for. */
+  const resolvedFor = useRef<{ model: unknown; file: unknown } | null>(null);
   const resolveSequence = () => {
     const h = handle.current;
     if (!h || !model) return;
@@ -1183,6 +1196,7 @@ export function CadView({
       if (seqUrl.step || seqUrl.play) applyUrlState(player.current, seqUrl);
     }
     applyExplode(player.current.t, true);
+    resolvedFor.current = { model, file: seqFile };
     h.invalidate();
   };
   // after the first frame with everything in it (W2-C: the planner never delays the first frame)
@@ -1196,7 +1210,9 @@ export function CadView({
     const off = h.onFrame(() => {
       off();
       setTimeout(() => {
-        if (!done) resolveSequence();
+        // R5 gate: the toggles' effect may have resolved this model already (a restored `on: true`): not twice
+        const r = resolvedFor.current;
+        if (!done && !(player.current && r && r.model === model && r.file === seqFile)) resolveSequence();
       }, 0);
     });
     h.invalidate();
@@ -1226,6 +1242,45 @@ export function CadView({
     }
     return { ...r, state: p.snapshot() };
   };
+  // ---- R5: the motion controller (R5-A, ./sequence/motion.ts): the toolbar's two toggles and the timeline's play --
+  const runSeqRef = useRef(runSequence);
+  runSeqRef.current = runSequence;
+  const writeRef = useRef(write);
+  writeRef.current = write;
+  const motion = useMemo(() => new MotionController({ player: () => player.current, run: (c) => runSeqRef.current(c), write: (ops, label) => writeRef.current(ops, label) }), []);
+  /** The toggles as the player has them (only these: the controller also reports every frame of a play). */
+  const [motionToggles, setMotionToggles] = useState<(MotionToggles & { ready: boolean }) | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const m = motion.state();
+      setMotionToggles((was) => (was && was.ready === m.ready && was.explode === m.explode && was.assemble === m.assemble ? was : { ready: m.ready, explode: m.explode, assemble: m.assemble }));
+    };
+    read();
+    return motion.subscribe(read);
+  }, [motion]);
+  /** R5-B: what the toolbar and the void menu show: the player's toggles once it exists, else the view state's. */
+  const toggles: MotionToggles = motionToggles?.ready ? { explode: motionToggles.explode, assemble: motionToggles.assemble } : storeToggles;
+  // R5-B: the timeline is asked for while either toggle is on, and not when both are off (from the toolbar, the void
+  // menu or an agent's `explode {on, assemble}`; R5 gate: it closes as soon as both are off, no linger)
+  const timelineOpen = timelineOpenFor(toggles);
+  useEffect(() => setTimelineAsked(timelineOpen), [timelineOpen]);
+  // R5-B: an agent's or a host's `explode {on, assemble}` (the bridge) drives the same controller as the toolbar. The
+  // controller's own write carries the player's flags, so it finds them equal and does nothing (no loop). Run again
+  // when the view settles: the player resolves lazily, so a flag that arrived while loading lands then.
+  // R5 gate: both flags in one `toggle` command (the player orders them: the one turned on first, so on+off never
+  // sends the parts home on the way), resolved first (a restored `on: true` is often already the player's pose), and
+  // not written back (the agent's write is the record: no extra entries in the person's undo). DEFAULT: a flag that
+  // changes the toggles wins over a `t` in the same write (the toggle plays from where the parts are to its end).
+  useEffect(() => {
+    if (!settled) return;
+    if ((explodeOnFlag || assembleFlag) && !player.current && settledRef.current) resolveSequence();
+    const m = motion.state();
+    const want: { explode?: boolean; assemble?: boolean } = {};
+    if (explodeOnFlag !== undefined && (m.ready ? m.explode !== explodeOnFlag : explodeOnFlag)) want.explode = explodeOnFlag;
+    if (assembleFlag !== undefined && (m.ready ? m.assemble !== assembleFlag : assembleFlag)) want.assemble = assembleFlag;
+    if (want.explode !== undefined || want.assemble !== undefined) motion.setToggles(want, { write: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explodeOnFlag, assembleFlag, settled, motion]);
   const reportCameraRef = useRef<(actor: Actor) => void>(() => {});
   const showWiresRef = useRef(showWires);
   showWiresRef.current = showWires;
@@ -1243,9 +1298,16 @@ export function CadView({
         moving = true;
         // the parts move: their placements only (the batches rewrite matrices, nothing is regrouped)
         h.invalidate("pose");
-        const step = dt / 1.4; // 1.4 s full travel
+        // 1.4 s full travel at 1x; R5 gate: the timeline's speed applies here too (the slider, an agent's `explode t`)
+        const step = (dt * (player.current?.speed ?? 1)) / EXPLODE_TRAVEL_S;
         ex.value = ex.target > ex.value ? Math.min(ex.target, ex.value + step) : Math.max(ex.target, ex.value - step);
         applyExplode(ex.value);
+        // R5 gate: a toggle play's camera move (`end` set) measured against the player, not this ease: an agent's
+        // `explode t` that interrupts the play stops it where it got to (it snapped to the play's end fit before)
+        if (cameraTween.current?.end !== undefined) {
+          cameraTween.current = null;
+          reportCameraRef.current(SYSTEM);
+        }
         const cam = cameraTween.current;
         // R4-A: an explode moved by the timeline or an agent (no camera tween): the pivot follows when it rests
         if (!cam && ex.value === ex.target) cameraLive.current.easePivot();
@@ -1285,8 +1347,27 @@ export function CadView({
         ex.value = ex.target = p.t;
         applyExplode(p.t, true);
         h.invalidate("pose");
+        // R5-B: a toggle's play carries the camera toward the fit of where it ends (`cameraForPlay`)
+        const cam = cameraTween.current;
+        if (cam && cam.end !== undefined) {
+          const span = Math.abs(cam.end - cam.start);
+          const k = span > 0 ? Math.min(1, Math.abs(p.t - cam.start) / span) : 1;
+          const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+          h.camera.position.lerpVectors(cam.from[0], cam.to[0], e);
+          h.controls.target.lerpVectors(cam.from[1], cam.to[1], e);
+          h.camera.lookAt(h.controls.target);
+          if (k >= 1) {
+            cameraTween.current = null;
+            reportCameraRef.current(SYSTEM);
+          }
+        }
       }
       if (playing && !seqMoving && p) {
+        // R5-B: a play paused or ended: a toggle's camera move stops where it got to
+        if (cameraTween.current?.end !== undefined) {
+          cameraTween.current = null;
+          reportCameraRef.current(SYSTEM);
+        }
         // a play ended: the view state's explode follows, so the toggle and the URL say where it stopped
         ex.value = ex.target = p.t;
         store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, p.t)), ...(p.scope ? { scope: p.scope } : {}), mode: p.explodeMode } as never], { actor: SEQUENCE, label: "the sequence play ended", source: "sequence" });
@@ -2148,6 +2229,7 @@ export function CadView({
       isolated: Boolean(isolation),
       exploded,
       mode: explodeMode,
+      toggles,
       section: sections.length > 0,
       ...(x.grid ? { grid: { on: x.grid.on } } : {}),
       ...(x.scaleRef ? { scaleRef: { on: x.scaleRef.on, choice: x.scaleRef.choice } } : {}),
@@ -2200,15 +2282,11 @@ export function CadView({
         return fitAsSeen();
       case "reset":
         return resetView();
-      case "explode": {
-        const on = !(exploded && explodeMode === "radial");
-        setTimelineAsked(on);
-        return explodeWith("radial", on);
-      }
+      // R5-B: the same two independent toggles as the toolbar's
+      case "explode":
+        return pressMotion("explode");
       case "assemble":
-        // as the toolbar's Assemble: assembled, it takes the parts apart in order; apart, it puts them together
-        setTimelineAsked(true);
-        return explodeWith("sequence", !exploded);
+        return pressMotion("assemble");
       case "sectionOff":
         return write([{ op: "section", sections: [] }], "section view off");
       case "grid":
@@ -2301,8 +2379,22 @@ export function CadView({
   };
 
   /** The handlers below run in an effect made once per model: they reach this render's functions through this. */
-  const live = useRef({ partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf });
-  live.current = { partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf };
+  /**
+   * R5-B (Kevin: "Clicking the void should deselect callouts"): a click on empty space clears the selected callouts
+   * (the pinned finding cards, the Findings control's current finding) as it clears the part selection (./nav/click.ts).
+   */
+  const deselectCallouts = () => {
+    if (!hasCalloutSelection({ open: openFindings, ...(currentFinding !== undefined ? { current: currentFinding } : {}) })) return;
+    setOpenFindings(new Set());
+    setCurrentFinding(undefined);
+  };
+  /** R5 gate: Escape does what a click on empty space does (the keyboard's way to clear the selection and the callouts). */
+  const clearPicks = () => {
+    if (Object.keys(store.get().selection ?? {}).length) setSel({});
+    deselectCallouts();
+  };
+  const live = useRef({ partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf, deselectCallouts, clearPicks });
+  live.current = { partUnder, openPart, openMenu, openVoid, hoverAt, hoverOff, selectionOf, deselectCallouts, clearPicks };
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
@@ -2326,7 +2418,10 @@ export function CadView({
     const onUp = (e: PointerEvent) => {
       const d = down;
       down = null;
-      if (!d || Math.max(d.far, Math.hypot(e.clientX - d.x, e.clientY - d.y)) > 4) return;
+      if (!d) return;
+      // R5-B: the click rule (./nav/click.ts): a drag beyond the tolerance changes nothing, so orbiting never deselects
+      const far = Math.max(d.far, Math.hypot(e.clientX - d.x, e.clientY - d.y));
+      if (releaseAction({ far, button: d.button, measuring: measureTool.current.active, hit: true }) === "drag") return;
       if (measureTool.current.active) {
         if (d.button === 0) measureTool.current.click(e.clientX, e.clientY);
         return;
@@ -2334,10 +2429,13 @@ export function CadView({
       // a person's pick never frames: a focus still waiting to frame (a host's, on what had nothing drawn) is dropped
       look.current = false;
       const u = live.current.partUnder(e.clientX, e.clientY);
+      const act = releaseAction({ far, button: d.button, measuring: false, hit: Boolean(u) });
       // R4-A: a right-click in empty space opens the view's menu and keeps the selection (DEFAULT; it cleared it before)
-      if (!u && d.button === 2) return live.current.openVoid(e.clientX, e.clientY);
-      if (!u) setSel({});
-      else if (u.harness !== undefined) setSel({ harness: u.harness });
+      if (act === "voidMenu") return live.current.openVoid(e.clientX, e.clientY);
+      if (act === "deselect" || !u) {
+        setSel({});
+        live.current.deselectCallouts();
+      } else if (u.harness !== undefined) setSel({ harness: u.harness });
       else {
         // the face under the pick: "Look along normal" faces it (R1-A, E3)
         const normal = triangleNormal(u.hit.object, u.hit.triangle, h.camera.position.clone().sub(u.hit.point), u.hit.instance);
@@ -2549,11 +2647,46 @@ export function CadView({
     if (reach !== undefined) setExplodeNote(reach < EXPLODE_STILL_MM ? "nothing to explode in this model" : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploded, explodeMode, explodeScope]);
-  const explodeWith = (mode: "radial" | "sequence", on: boolean) => {
-    runSequence({ action: "mode", mode } as SequenceCommand);
-    toggleExploded(on, undefined, mode);
+  /**
+   * R5-B: a press on the toolbar's (or the void menu's) Explode or Assemble: that toggle alone flips, through R5-A's
+   * motion controller (./nav/toggles.ts `pressToggle`). CadView never calls `play`: the player decides (a toggle turned
+   * on from rest plays once; a switch while moving or paused mid-way keeps the pose and waits for Play, Kevin: "If you
+   * switch mid animation, the assembly does not autostart; you have to click play to continue"). The controller
+   * writes the flags to the view state, so an agent reads them. When the press starts a play, the camera follows the
+   * parts' envelope to where the play ends (R1-A M11), as the old toggle did.
+   */
+  const pressMotion = (which: MotionToggle) => {
+    pressToggle(motion, toggles, which);
+    const st = motion.state();
+    if (st.playing) cameraForPlay(st.direction);
+    else cameraTween.current = null;
+    // the M11 note, judged from the player's reach (wave R3 gate)
+    const reach = player.current?.reach();
+    setExplodeNote(timelineOpenFor({ explode: st.explode, assemble: st.assemble }) && reach !== undefined && reach < EXPLODE_STILL_MM ? "nothing to explode in this model" : null);
   };
-  const toggleExploded = (on: boolean, scope?: string, mode?: "radial" | "sequence") => {
+  /**
+   * The camera for a play toward `side` (R5-B, R5-A's handoff): the parts laid out at the play's end (`endPose`, the
+   * player's state untouched), measured, put back (`poseNow`); the camera then eases with the play (the frame loop).
+   */
+  const cameraForPlay = (side: "together" | "apart") => {
+    const h = handle.current;
+    const p = player.current;
+    if (!h || !p || !model) return;
+    h.root.updateMatrixWorld(true);
+    const fromBox = drawnBox();
+    applyCadPose(p.endPose(side), model, bodies.current, hardware.current);
+    h.root.updateMatrixWorld(true);
+    const toBox = drawnBox();
+    poseNow();
+    h.root.updateMatrixWorld(true);
+    const moved = p.reach();
+    let next = explodeCamera({ from: fromBox, to: toBox, moved, position: h.camera.position, target: h.controls.target });
+    // R4-A: the pivot ends at the centre of what is drawn (the envelope's scale kept)
+    const pivot = pivotOf(toBox);
+    if (next && pivot) next = { target: pivot, position: pivot.clone().add(next.position.clone().sub(next.target)) };
+    cameraTween.current = next ? { from: [h.camera.position.clone(), h.controls.target.clone()], to: [next.position, next.target], start: p.t, end: side === "apart" ? 1 : 0 } : null;
+  };
+  const toggleExploded = (on: boolean, scope?: string, mode?: "radial" | "sequence", flags?: { on?: boolean; assemble?: boolean }) => {
     const h = handle.current;
     const ex = explode.current;
     if (h && model && ex.target !== (on ? 1 : 0)) {
@@ -2592,7 +2725,7 @@ export function CadView({
       setExplodeNote(on && (reach !== undefined ? reach < EXPLODE_STILL_MM : steps === 0 || moved < EXPLODE_STILL_MM) ? "nothing to explode in this model" : null);
     }
     // R2-A: the part menu's "Explode this sub-assembly" names it (`explode.scope`; R2-B draws it)
-    write([{ op: "explode", t: on ? 1 : 0, ...(scope ? { scope } : {}), ...(mode ? { mode } : {}) } as never], on ? (scope ? `explode ${scope}`.slice(0, 120) : "explode the assembly") : "assemble the parts");
+    write([{ op: "explode", t: on ? 1 : 0, ...(scope ? { scope } : {}), ...(mode ? { mode } : {}), ...flags } as never], on ? (scope ? `explode ${scope}`.slice(0, 120) : "explode the assembly") : "assemble the parts");
   };
   /** What a selection covers: its body, or the parts of an assembly that has none of its own (QA B4). */
   const selectionRecs = (key: string | undefined): BodyRec[] => {
@@ -3029,7 +3162,12 @@ export function CadView({
     };
     // a host's sequence commands (uhd-viewer:sequence) reach this view's player
     hub.sequence = (command) => {
+      const was = player.current ? `${player.current.explodeOn}|${player.current.assembleOn}` : "";
       const r = runSequence(command as unknown as SequenceCommand);
+      // R5 gate: a host's `toggle` (or a step command that turns Assemble on) moves the toggles: the view state says so
+      const p = player.current;
+      if (r.ok && p && `${p.explodeOn}|${p.assembleOn}` !== was)
+        store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, p.t)), ...(p.scope ? { scope: p.scope } : {}), mode: p.explodeMode, on: p.explodeOn, assemble: p.assembleOn } as never], { actor: SEQUENCE, label: "the toggles (a host's sequence command)", source: "sequence" });
       return { type: "uhd-viewer:sequenceState", ok: r.ok, ...(r.error ? { error: r.error } : {}), ...(r.state ? { state: r.state } : {}) };
     };
     return () => {
@@ -3931,7 +4069,10 @@ export function CadView({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (e.key === "Escape" && !e.defaultPrevented) turns.takeOver?.();
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        turns.takeOver?.();
+        live.current.clearPicks();
+      }
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
         turns.undo?.(HUMAN, { source: "view" });
         e.preventDefault();
@@ -3965,8 +4106,8 @@ export function CadView({
             sceneRef={handle}
             bounds={assembledBounds}
             explodeMode={explodeMode}
-            onExplode={(on) => explodeWith("radial", on)}
-            onAssemble={(together) => explodeWith("sequence", !together)}
+            toggles={toggles}
+            onToggle={(which) => pressMotion(which)}
             labels={showLabels}
             onLabels={(on) => setVis("labels", on)}
             labelKinds={labelKinds}
@@ -4051,7 +4192,6 @@ export function CadView({
             }}
             availability={toolbarAvail}
             canFocus={sel.body !== undefined}
-            onTimeline={setTimelineAsked}
             extra={<MeasureControl active={measuring} onToggle={(on) => measureTool.current.setActive(on)} />}
           />
         )}
@@ -4167,7 +4307,7 @@ export function CadView({
           />
         )}
       </div>
-      {model && !present && !noChrome && <TimelinePanel store={store} source={{ player: () => player.current, run: runSequence }} requested={timelineAsked} onRequested={setTimelineAsked} />}
+      {model && !present && !noChrome && <TimelinePanel store={store} source={{ player: () => player.current, run: runSequence }} motion={motion} requested={timelineAsked} onRequested={setTimelineAsked} />}
       {model && !present && !noChrome && inspector && hub.opening.panel !== "none" && <CadInspector model={model} sel={sel} onSel={setSel} direction={direction} findings={findings} resolve={resolve} {...(calloutTarget ? { callout: calloutTarget } : {})} />}
     </div>
   );

@@ -43,7 +43,7 @@ export const TIMELINE_CSS = `
 .cad-tl-title { min-width: 0; flex: 1 1 auto; }
 .cad-tl-name { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--uhd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cad-tl-sub { margin-top: 2px; font-size: 10.5px; letter-spacing: 0.02em; color: var(--uhd-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cad-tl-explode { display: flex; align-items: center; gap: 8px; flex: 0 1 230px; min-width: 120px; text-transform: uppercase; color: var(--uhd-text-muted); }
+.cad-tl-explode { display: flex; align-items: center; gap: 8px; flex: 0 1 190px; min-width: 110px; text-transform: uppercase; color: var(--uhd-text-muted); }
 .cad-tl-explode input { flex: 1 1 auto; min-width: 50px; accent-color: var(--uhd-text); }
 .cad-tl-explode output { min-width: 32px; text-align: right; color: var(--uhd-text); font-variant-numeric: tabular-nums; }
 .cad-tl-chip {
@@ -52,6 +52,29 @@ export const TIMELINE_CSS = `
   text-transform: uppercase; color: var(--uhd-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cad-tl-fold { width: 26px; height: 26px; border-color: transparent; }
+/* R5-A: direction (a two-button segment), speed and close: compact, the toolbar's tokens */
+.cad-tl-dirs { display: inline-flex; flex: 0 0 auto; }
+.cad-tl-dirs .cad-tl-dir { width: 26px; height: 26px; }
+.cad-tl-dirs .cad-tl-dir:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cad-tl-dirs .cad-tl-dir + .cad-tl-dir { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cad-tl-dirs .cad-tl-dir[aria-pressed="true"] { position: relative; z-index: 1; }
+.cad-tl-speed {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; height: 26px; padding: 0 2px 0 7px; box-sizing: border-box;
+  border: 1px solid var(--uhd-border); border-radius: calc(var(--uhd-radius, 8px) - 2px); color: var(--uhd-text-muted);
+}
+.cad-tl-speed:hover { background: var(--uhd-hover); color: var(--uhd-text); }
+.cad-tl-speed:focus-within { outline: 2px solid var(--uhd-focus-ring); outline-offset: 1px; }
+.cad-tl-speed select {
+  appearance: none; -webkit-appearance: none; border: 0; background: transparent; color: var(--uhd-text); cursor: pointer;
+  font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; padding: 0 16px 0 4px; outline: none;
+  /* R5 gate: the whole box is the select (a click anywhere opens it), with a chevron so it reads as a menu */
+  height: 100%; margin-left: -20px; padding-left: 24px;
+}
+.cad-tl-speed { position: relative; cursor: pointer; }
+.cad-tl-speed .cad-tl-speed-chev { position: absolute; right: 4px; pointer-events: none; }
+.cad-tl-speed select option { background: var(--uhd-surface); color: var(--uhd-text); }
+.cad-tl-close { width: 26px; height: 26px; border-color: transparent; margin-left: -6px; }
+@media (max-width: 760px) { .cad-tl-explode, .cad-tl-chip { display: none; } }
 
 .cad-tl-tracks { position: relative; padding: 2px var(--tl-pad) 10px 0; }
 .cad-tl-row { display: grid; grid-template-columns: var(--tl-label) 1fr; align-items: center; min-height: 26px; }
@@ -101,6 +124,7 @@ export const TIMELINE_CSS = `
 
 .cad-timeline[data-collapsed] .cad-tl-head { padding: 5px 10px; }
 .cad-timeline[data-collapsed] .cad-tl-play { width: 26px; height: 26px; }
+.cad-timeline[data-collapsed] .cad-tl-dirs .cad-tl-dir, .cad-timeline[data-collapsed] .cad-tl-speed { height: 24px; }
 `;
 
 /** Puts the sheet in the document once (no-op without a document). */

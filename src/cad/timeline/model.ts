@@ -9,7 +9,7 @@
  */
 import type { JointLimitFlag } from "../sequence/types";
 import type { ResolvedJoint, ResolvedSequence } from "../sequence/resolve";
-import type { ExplodeMode, PlayerSnapshot } from "../sequence/player";
+import type { ExplodeMode, MotionDirection, PlayerSnapshot } from "../sequence/player";
 
 /** Explode amount (0 together, 1 apart) to the panel's axis (0 apart, 1 together), and back. */
 export const axisOf = (t: number): number => 1 - Math.min(1, Math.max(0, t));
@@ -262,18 +262,30 @@ export interface HeaderState {
   speed: number;
   playing: boolean;
   radial?: PlayerSnapshot["radial"];
+  /** R5-A: where plays go (the subline names it); absent: not named. */
+  direction?: MotionDirection;
 }
+
+/** R5-A: the direction control's words in each mode (Explode: collapse or explode; Assemble: assemble or disassemble). */
+export function directionWords(mode: ExplodeMode): Record<MotionDirection, string> {
+  return mode === "radial" ? { together: "Collapse", apart: "Explode" } : { together: "Assemble", apart: "Disassemble" };
+}
+
+/** R5-A: a speed as the panel shows it ("0.25x", "1x", "4x"). */
+export const speedText = (x: number): string => `${Math.round(x * 100) / 100}x`;
 
 /** The title line and its subline (image 1: "STEP 6 / 9 · FASTEN TOP PLATE", "fasten:top_plate · 4x M3 · t = 5.62 · 1.0x"). */
 export function headerText(m: TimelineModel | undefined, s: HeaderState): { title: string; sub: string } {
   const x = axisOf(s.t);
-  const secs = `t = ${(x * (m?.durationS ?? 0)).toFixed(2)} · ${s.speed.toFixed(1)}x`;
+  const way = s.direction ? ` · ${directionWords(s.mode)[s.direction].toLowerCase()}` : "";
+  // R5 gate: the speed as the select shows it (0.25x read "0.3x")
+  const secs = `t = ${(x * (m?.durationS ?? 0)).toFixed(2)} · ${speedText(s.speed)}${way}`;
   if (s.mode === "radial") {
     // wave R3 gate: a board drawn as an assembly comes apart along its normal (its components; the board stays)
     const board = s.radial?.board;
     const noun = board ? "component" : "part";
     const parts = s.radial ? `${s.radial.parts} ${noun}${s.radial.parts === 1 ? "" : "s"} · ${num(s.radial.distanceMm * s.t)} mm out` : "every part";
-    return { title: `Explode · all parts at once`, sub: `${board ? "along the board normal" : "radial"} · ${parts} · amount ${s.t.toFixed(2)}` };
+    return { title: `Explode · all parts at once`, sub: `${board ? "along the board normal" : "radial"} · ${parts} · amount ${s.t.toFixed(2)}${s.direction ? ` · ${speedText(s.speed)}${way}` : ""}` };
   }
   if (!m || !m.steps.length) return { title: "No assembly steps", sub: "this model has no sequence to play" };
   const i = stepIndexAt(m.steps, x, s.step);
@@ -302,13 +314,19 @@ export function chipText(snap: Pick<PlayerSnapshot, "clip" | "explodeMode" | "ra
 // ---- when the panel shows -----------------------------------------------------------------------------------------
 
 /**
- * DEFAULT (R3-B): the panel shows while Explode or Assemble is on: the toolbar asked for it (`requested`), the parts
- * are apart (the view state's amount or the player's eased one), or a play runs; and for `LINGER_MS` after they come
- * back together, so the end of an assembly is seen before the panel goes. Both off and at rest: hidden.
+ * R3-B: whether there is anything for the panel to show (asked for, apart, or playing). R5-A: no longer what hides it
+ * (Kevin: "The bottom popup stays instead of going away after x time"); see `timelineShown`.
  */
-export const LINGER_MS = 1200;
 export function timelineWanted(s: { requested?: boolean; storeT: number; playerT?: number; playing?: boolean }): boolean {
   return Boolean(s.requested) || s.storeT > 0 || (s.playerT ?? 0) > 1e-4 || Boolean(s.playing);
+}
+
+/**
+ * R5-A: the panel shows while Explode or Assemble is on, or the toolbar asks (`requested`); never on a timer. It goes
+ * when both toggles are off (and the toolbar no longer asks) or by its own close button (the panel's state).
+ */
+export function timelineShown(s: { requested?: boolean; explodeOn?: boolean; assembleOn?: boolean }): boolean {
+  return Boolean(s.requested || s.explodeOn || s.assembleOn);
 }
 
 // ---- the keyboard ---------------------------------------------------------------------------------------------------
@@ -319,6 +337,8 @@ export function keyAction(key: string, target: { tagName?: string; type?: string
   const tag = target?.tagName?.toLowerCase();
   if (tag === "input" && target?.type === "range" && (key === "ArrowLeft" || key === "ArrowRight")) return null;
   if (tag === "input" && target?.type !== "range") return null;
+  // R5 gate: a select (the speed) keeps its own keys: Space opens it, the arrows change the value
+  if (tag === "select") return null;
   // a focused button takes Space itself (play, loop, collapse): the panel does not take it twice
   if (tag === "button" && (key === " " || key === "Spacebar" || key === "Enter")) return null;
   if (key === " " || key === "Spacebar") return "toggle";

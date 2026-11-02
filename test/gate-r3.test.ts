@@ -48,7 +48,7 @@ describe("componentIn with the view-model's instance objects", () => {
 describe("reach: how far the parts come apart in the mode in force", () => {
   const parts = [part("power/r21", "top", 0.5), part("usb/usbc", "top", 3.2, 5)];
   const plan = planBoard(parts, [{ prefix: "power", title: "Power" }, { prefix: "usb", title: "USB" }], [0, 0, 1], 100);
-  it("is the longest move in radial and in the steps, with a mode fade running", () => {
+  it("is the longest move in radial and in the steps, with a mode switch kept mid-way", () => {
     const p = new SequencePlayer(withBoard(empty, plan, ""));
     let clock = 0;
     p.now = () => clock;
@@ -56,12 +56,12 @@ describe("reach: how far the parts come apart in the mode in force", () => {
     const radial = p.reach();
     expect(radial).toBeGreaterThan(6);
     p.set({ t: 0.6 });
-    // a mode change while apart fades from where the parts are: the pose stays put at first, the reach does not
+    const was = p.pose();
+    // R5-A: a mode change while apart keeps the pose (paused); the reach is the same (one path per part)
     p.setMode("sequence");
-    const before = p.pose();
+    expect(p.pose().get("usb/usbc")![14]).toBeCloseTo(was.get("usb/usbc")![14], 6);
+    expect(p.reach()).toBeCloseTo(radial, 6);
     p.set({ t: 1 });
-    const after = p.pose();
-    expect(after.get("usb/usbc")![14]).toBeCloseTo(before.get("usb/usbc")![14], 6);
     expect(p.reach()).toBeCloseTo(radial, 6);
     clock = 10_000;
     expect(p.reach()).toBeCloseTo(radial, 6);

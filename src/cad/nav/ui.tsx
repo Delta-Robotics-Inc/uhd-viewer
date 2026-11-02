@@ -115,6 +115,12 @@ export function PartMenu({ x, y, title, items, onRun, onClose, kind = "part" }: 
             </span>
             <span className="context-menu-label">{it.label}</span>
             {it.hint && <kbd className="context-menu-key">{it.hint}</kbd>}
+            {/* R5 gate: an on item shows a check mark, not only the accent tint (colour alone is not enough) */}
+            {it.checked === true && (
+              <span className="context-menu-check" aria-hidden>
+                <Icon name="check" size={13} strokeWidth={2} />
+              </span>
+            )}
           </button>
         </span>
       ))}

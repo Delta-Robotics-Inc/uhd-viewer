@@ -19,6 +19,11 @@
  * - Explode and Assemble are two controls: Explode (all parts at once, outward along their mounting faces' normals;
  *   a burst glyph) on or off, and Assemble (step by step: the assembly sequence player Kevin liked, unchanged) as the
  *   "assembled" toggle, on when the model is together.
+ *
+ * R5-B (2026-11-02, Kevin: "The explode and assembly buttons are individual on and off toggles, not one or the
+ * other."): Explode and Assemble are two independent on/off toggles (tooltips "Explode" and "Assemble", pressed while
+ * on; ./nav/toggles.ts). A press sets only its own flag (CadView hands it to R5-A's motion controller, which never
+ * starts play on a switch); the timeline shows while either is on.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import * as THREE from "three";
@@ -37,6 +42,7 @@ import { AssembleGlyph, ExplodeGlyph } from "./viewIcons";
 import type { ExplodeMode } from "./sequence/player";
 import { SCALE_KINDS, SCALE_KIND_INFO, scaleButtonLabel, type ScaleKind } from "./scaleref/kinds";
 import type { Units } from "./grid/levels";
+import { toggleTip, togglesOf, type MotionToggle, type MotionToggles } from "./nav/toggles";
 
 export interface CadToolbarProps {
   exploded: boolean;
@@ -56,6 +62,13 @@ export interface CadToolbarProps {
    * Explode is turned off. CadView keeps it and passes it to `TimelinePanel` (`requested`). Absent: nothing asks.
    */
   onTimeline?: (on: boolean) => void;
+  /**
+   * R5-B: the two toggles as the view shows them (CadView reads the view state's `explode` slice). Absent: read from
+   * `exploded` and `explodeMode` (a state written before R5).
+   */
+  toggles?: MotionToggles;
+  /** R5-B: a press on Explode or Assemble, with that toggle's new state (the other is untouched). */
+  onToggle?: (which: MotionToggle, on: boolean) => void;
   /**
    * R2-B: the 3D view's scene (CadView's `handle` ref): the section popover's face pick, plane outline and drag
    * handle draw in it. Absent: the popover offers the origin planes and the offset only.
@@ -267,9 +280,9 @@ function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: (
 
 const DISABLED = "cursor-default opacity-40 hover:bg-transparent";
 
-/** Tooltips of the two explode controls (R2-B, the brief's words). */
-export const EXPLODE_LABEL = "Explode (all parts at once)";
-export const ASSEMBLE_LABEL = "Assemble (step by step)";
+/** Tooltips of the two explode controls (R5-B: Kevin's words, "Explode" and "Assemble"; ./nav/toggles.ts). */
+export const EXPLODE_LABEL = toggleTip("explode");
+export const ASSEMBLE_LABEL = toggleTip("assemble");
 
 /** Switch the mounted 3D view's player to a mode through the page's view hub (until CadView passes `onExplode`). */
 function hubMode(mode: ExplodeMode): void {
@@ -373,44 +386,48 @@ export function CadToolbar(p: CadToolbarProps) {
   // R2-B: the explode mode this bar last chose, when the view state does not say (DEFAULT radial, the Explode control's)
   const [ownMode, setOwnMode] = useState<ExplodeMode>("radial");
   const mode = p.explodeMode ?? ownMode;
-  const explodeOn = p.exploded && mode === "radial";
-  const assembled = !p.exploded;
-  const explode = (on: boolean) => {
-    p.onTimeline?.(on);
-    if (p.onExplode) return p.onExplode(on);
-    setOwnMode("radial");
-    hubMode("radial");
-    p.onExploded(on);
-  };
-  const assemble = (together: boolean) => {
-    // R3-B: the assembly view is selected either way (taking it apart or putting it together in order)
-    p.onTimeline?.(true);
-    if (p.onAssemble) return p.onAssemble(together);
+  // R5-B: two independent toggles (./nav/toggles.ts); a state from before R5 reads through `togglesOf`
+  const toggles = p.toggles ?? togglesOf({ t: p.exploded ? 1 : 0, mode });
+  const press = (which: MotionToggle) => {
+    const on = !toggles[which];
+    if (p.onToggle) return p.onToggle(which, on);
+    // no CadView handler (a host's bar of its own): the R2-B paths, one toggle at a time
+    const other = which === "explode" ? toggles.assemble : toggles.explode;
+    p.onTimeline?.(on || other);
+    if (which === "explode") {
+      if (p.onExplode) return p.onExplode(on);
+      setOwnMode("radial");
+      hubMode("radial");
+      return p.onExploded(on);
+    }
+    if (p.onAssemble) return p.onAssemble(!on);
     setOwnMode("sequence");
     hubMode("sequence");
-    p.onExploded(!together);
+    p.onExploded(on);
   };
   const boundsNow = () => p.bounds?.() ?? (p.sceneRef?.current ? new THREE.Box3().setFromObject(p.sceneRef.current.root) : new THREE.Box3());
   return (
     // `data-chrome` marks what document mode (`?chrome=none`, W2-D's captures) leaves out; `display: contents` keeps the layout
     <div data-chrome="toolbar" style={{ display: "contents" }} ref={wrap}>
       <Toolbar label="3D tools" className="cad-toolbar">
-        {/* R2-B (H2): Explode, every part at once; Assemble, the steps (the "assembled" toggle) */}
+        {/* R5-B: Explode and Assemble, two independent on/off toggles (R2-B's glyphs) */}
         <IconButton
           icon={<ExplodeGlyph size={16} />}
-          label={explodeOn ? `${EXPLODE_LABEL}: on` : EXPLODE_LABEL}
+          label={EXPLODE_LABEL}
           tooltipSide="top"
-          pressed={explodeOn}
+          pressed={toggles.explode}
           data-explode="radial"
-          onClick={() => explode(!explodeOn)}
+          data-toggle="explode"
+          onClick={() => press("explode")}
         />
         <IconButton
           icon={<AssembleGlyph size={16} />}
-          label={assembled ? `${ASSEMBLE_LABEL}: assembled (click to take it apart in order)` : `${ASSEMBLE_LABEL}: apart (click to put it together in order)`}
+          label={ASSEMBLE_LABEL}
           tooltipSide="top"
-          pressed={assembled}
+          pressed={toggles.assemble}
           data-explode="sequence"
-          onClick={() => assemble(!assembled)}
+          data-toggle="assemble"
+          onClick={() => press("assemble")}
         />
         <ToolbarSeparator />
         <div className="cad-menu-wrap" ref={labelWrap}>

@@ -9,14 +9,19 @@
  * keyframes and the moving segment, CONTACTS from the interference sweep; the playhead crosses them all.
  *
  * Mounted by CadView as a sibling of `.cad-canvas` (handoffs.md, "R3-A (CadView)"); it renders nothing while hidden.
+ *
+ * R5-A (2026-11-02, Kevin: "The bottom popup stays instead of going away after x time"): no auto-hide. It shows while
+ * Explode or Assemble is on (or the toolbar asks) and closes with its own close button or when both are off. Play,
+ * Pause, the speed and the direction go through the motion controller (../sequence/motion.ts): Play goes on from where
+ * the parts are, a direction change while moving pauses, and the speed scales every play (1x = the R4 timing).
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "../../canvas/Icon";
-import { HUMAN, SYSTEM, useViewSlice, type ViewStore } from "../state";
+import { HUMAN, useViewSlice, type ViewStore } from "../state";
 import type { ResolvedJoint, ResolvedSequence } from "../sequence/resolve";
-import type { ExplodeMode, PlayerSnapshot, SequenceCommand, SequencePlayer } from "../sequence/player";
+import { SPEEDS, type ExplodeMode, type MotionDirection, type PlayerSnapshot, type SequenceCommand, type SequencePlayer } from "../sequence/player";
+import { MotionController } from "../sequence/motion";
 import {
-  LINGER_MS,
   activeSegment,
   axisOf,
   chipState,
@@ -28,11 +33,13 @@ import {
   keyAction,
   loadCollapsed,
   neighbourStep,
+  directionWords,
   saveCollapsed,
+  speedText,
   stepIndexAt,
   tOfAxis,
   timelineModel,
-  timelineWanted,
+  timelineShown,
   type InterferenceReportLike,
   type TimelineContact,
   type TimelineStep,
@@ -54,6 +61,8 @@ export interface TimelinePanelProps {
   onRequested?: (on: boolean) => void;
   /** Contacts from the interference sweep: a `protoboard interference --json` report, or the contacts themselves. Absent: "no sweep run". */
   contacts?: readonly TimelineContact[] | InterferenceReportLike | null;
+  /** R5-A: CadView's motion controller (the toolbar's too). Absent: the panel makes its own over `source`. */
+  motion?: MotionController;
 }
 
 /** What the panel shows of the player, read each frame while something moves. */
@@ -63,6 +72,11 @@ interface Live {
   step: string | null;
   mode: ExplodeMode;
   speed: number;
+  /** R5-A: the toggles, where plays go, a pose kept across a switch. */
+  explodeOn: boolean;
+  assembleOn: boolean;
+  direction: MotionDirection;
+  anchored: boolean;
   snap?: PlayerSnapshot;
   resolved?: ResolvedSequence;
   extra: ResolvedJoint[];
@@ -78,12 +92,12 @@ const idOf = (o: object | undefined) => {
 };
 
 function readLive(p: SequencePlayer | null, storeT: number): Live {
-  if (!p) return { t: storeT, playing: false, step: null, mode: "radial", speed: 1, extra: [] };
+  if (!p) return { t: storeT, playing: false, step: null, mode: "radial", speed: 1, explodeOn: false, assembleOn: false, direction: "apart", anchored: false, extra: [] };
   const snap = p.snapshot();
   const resolved = p.resolved;
-  return { t: p.t, playing: Boolean(p.playing), step: p.currentStep(), mode: p.explodeMode, speed: p.speed, snap, resolved, extra: p.joints.filter((j) => !resolved.joints.includes(j)) };
+  return { t: p.t, playing: Boolean(p.playing), step: p.currentStep(), mode: p.explodeMode, speed: p.speed, explodeOn: p.explodeOn, assembleOn: p.assembleOn, direction: p.direction, anchored: p.anchored, snap, resolved, extra: p.joints.filter((j) => !resolved.joints.includes(j)) };
 }
-const liveKey = (l: Live) => [l.t.toFixed(4), l.playing, l.step, l.mode, l.speed, l.snap?.loop, l.snap?.clip?.samples ?? "", idOf(l.resolved), l.extra.length, l.snap ? Object.values(l.snap.joints).map((j) => j.value.toFixed(2)).join(",") : ""].join("|");
+const liveKey = (l: Live) => [l.t.toFixed(4), l.playing, l.step, l.mode, l.speed, l.explodeOn, l.assembleOn, l.direction, l.anchored, l.snap?.loop, l.snap?.clip?.samples ?? "", idOf(l.resolved), l.extra.length, l.snap ? Object.values(l.snap.joints).map((j) => j.value.toFixed(2)).join(",") : ""].join("|");
 
 /** DEFAULT: a press that moves this far (px) is a scrub, not a click on a step chip. */
 const DRAG_PX = 3;
@@ -95,38 +109,26 @@ export function TimelinePanel(props: TimelinePanelProps) {
   src.current = props.source;
   const storeT = useViewSlice(store, (s) => s.explode.t);
   const [live, setLive] = useState<Live>(() => readLive(props.source.player(), storeT));
-  const [shown, setShown] = useState(() => Boolean(props.requested) || timelineWanted({ storeT }));
   const [collapsed, setCollapsed] = useState(() => loadCollapsed());
-  const [radialLoop, setRadialLoop] = useState(false);
-  const radialLoopRef = useRef(radialLoop);
-  radialLoopRef.current = radialLoop;
+  /** R5-A: the panel's own close: hidden until the toggles change (a toggle turned on shows it again). */
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const storeTRef = useRef(storeT);
   storeTRef.current = storeT;
+  const own = useMemo(() => new MotionController({ player: () => src.current.player(), run: (c) => src.current.run(c) }), []);
+  const motion = props.motion ?? own;
 
-  // ---- when it shows: asked, apart, moving; and a moment after coming to rest together --------------------------
-  const active = timelineWanted({ storeT, playerT: live.t, playing: live.playing });
+  // ---- when it shows (R5-A): while Explode or Assemble is on, or the toolbar asks; no timer hides it -------------
+  // R5 gate: the toggles only (with the toolbar's ask in the key, Close cleared the ask, the key changed and the panel
+  // came straight back while a toggle was on); any change of the toggles forgets the close, so a toggle turned off
+  // and on again (or the other one turned on) shows the panel again
+  const flagsKey = `${live.explodeOn ? 1 : 0}${live.assembleOn ? 1 : 0}`;
   useEffect(() => {
-    if (props.requested) setShown(true);
-  }, [props.requested]);
-  useEffect(() => {
-    if (active) {
-      setShown(true);
-      return;
-    }
-    if (!shown) return;
-    const id = setTimeout(() => {
-      setShown(false);
-      setRadialLoop(false);
-      if (props.requested) props.onRequested?.(false);
-    }, LINGER_MS);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, shown, props.requested]);
+    if (dismissed !== null && dismissed !== flagsKey) setDismissed(null);
+  }, [flagsKey, dismissed]);
+  const shown = timelineShown({ requested: props.requested, explodeOn: live.explodeOn, assembleOn: live.assembleOn }) && dismissed !== flagsKey;
 
-  // ---- reading the player: every frame while something changes, else every 200 ms (only while shown or wanted) ----
-  const polling = shown || active;
+  // ---- reading the player: every frame while something changes, else every 200 ms (500 ms while both are off) -----
   useEffect(() => {
-    if (!polling) return;
     let raf = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
@@ -143,13 +145,10 @@ export function TimelinePanel(props: TimelinePanelProps) {
         changedAt = now;
         setLive(l);
       }
-      // the radial loop (Explode mode's ping-pong, DEFAULT: the player's own loop plays the steps): at an end, go back
-      if (p && radialLoopRef.current && l.mode === "radial" && !l.playing && Math.abs(l.t - storeTRef.current) < 1e-4) {
-        store.dispatch([{ op: "explode", t: l.t > 0.5 ? 0 : 1 }], { actor: SYSTEM, label: "loop the explode (timeline)", source: "timeline" });
-      }
-      // DEFAULT (R3-B): every frame while something changed in the last 400 ms, else every 200 ms
+      // DEFAULT (R3-B): every frame while something changed in the last 400 ms, else every 200 ms; R5-A: the panel
+      // reads on while hidden too (an agent's toggle opens it), every 500 ms while both toggles are off
       if (now - changedAt < 400) raf = requestAnimationFrame(step);
-      else timer = setTimeout(step, 200);
+      else timer = setTimeout(step, l.explodeOn || l.assembleOn ? 200 : 500);
     };
     step();
     return () => {
@@ -157,7 +156,7 @@ export function TimelinePanel(props: TimelinePanelProps) {
       cancelAnimationFrame(raf);
       if (timer) clearTimeout(timer);
     };
-  }, [polling, store]);
+  }, [store]);
 
   const model = useMemo(() => (live.resolved ? timelineModel(live.resolved, live.extra) : undefined), [live.resolved, live.extra.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const contacts = useMemo(() => contactsOf(props.contacts), [props.contacts]);
@@ -169,7 +168,7 @@ export function TimelinePanel(props: TimelinePanelProps) {
     if (r && "error" in r) console.warn(`[timeline] ${r.error}`);
   };
   /** Something moves now: the player plays, or the view eases toward the view state's amount. */
-  const moving = live.playing || Math.abs(live.t - storeT) > 1e-4;
+  const moving = live.playing || (!live.anchored && Math.abs(live.t - storeT) > 1e-4);
   const steps = model?.steps ?? [];
   const x = axisOf(live.t);
   const together = x >= 1 - 1e-6 && !moving;
@@ -178,42 +177,37 @@ export function TimelinePanel(props: TimelinePanelProps) {
   /** The view state's explode amount (and step, playing the steps) where the player is now. */
   const here = (p: SequencePlayer) => ({ op: "explode", t: Math.min(1, Math.max(0, p.t)), ...(p.explodeMode === "sequence" ? { step: p.currentStep() } : {}) });
   const pause = () => {
-    src.current.run({ action: "stop" });
-    setRadialLoop(false);
+    motion.pause();
     const p = player();
-    // an ease toward the view state's amount (a toolbar toggle, the slider) stops where the parts are
-    if (p && Math.abs(p.t - storeT) > 1e-4) human([here(p)], "pause the timeline");
+    // an ease toward the view state's amount (the slider, a host) stops where the parts are
+    if (p && !p.anchored && Math.abs(p.t - storeT) > 1e-4) human([here(p)], "pause the timeline");
   };
+  /** R5-A: Play goes on from where the parts are toward the direction's end, in the mode in force (both on: the steps). */
   const play = () => {
     if (!player()) src.current.run({ action: "stop" }); // resolves the sequence (CadView's runner does, lazily)
-    const p = player();
-    if (!p) return;
-    if (p.explodeMode === "radial") {
-      // Explode mode: all parts at once, toward the other end (the toolbar's own ease)
-      human([{ op: "explode", t: p.t > 0 ? 0 : 1 }], p.t > 0 ? "assemble the parts (timeline play)" : "explode the parts (timeline play)");
-      return;
-    }
-    const first = model?.steps[0];
-    if (p.t <= 1e-4 && first) src.current.run({ action: "play", mode: "assemble", from: first.id });
-    else src.current.run({ action: "play", mode: "assemble" });
+    if (!player()) return;
+    motion.play();
   };
   const togglePlay = () => (moving ? pause() : play());
   const toggleLoop = () => {
     const p = player();
     if (!p) return;
-    if (p.explodeMode === "radial") {
-      const on = !radialLoop;
-      setRadialLoop(on);
-      if (on && !moving) play();
-      return;
-    }
     const on = !live.snap?.loop;
-    src.current.run(on ? { action: "loop", on: true, mode: p.t > 0.5 ? "assemble" : "explode" } : { action: "loop", on: false });
+    // R5-A: the player's own ping-pong in either mode (`keep`: the mode in force), first toward the direction's end
+    src.current.run(on ? { action: "loop", on: true, mode: p.direction === "together" ? "assemble" : "explode", keep: true } : { action: "loop", on: false });
+  };
+  const close = () => {
+    setDismissed(flagsKey);
+    props.onRequested?.(false);
+    // R5 gate: focus would fall to the page with the panel gone: the toolbar's pressed toggle takes it (else the canvas)
+    const to = document.querySelector<HTMLElement>('[data-toggle][aria-pressed="true"]') ?? document.querySelector<HTMLElement>(".cad-canvas");
+    to?.focus({ preventScroll: true });
   };
   const goStep = (s: TimelineStep | undefined) => {
     if (!s) return;
     // the view state's step drives the player (CadView's effect runs the goto): the person's click is logged as theirs
-    human([{ op: "explode", t: tOfAxis(s.x0), step: s.id, mode: "sequence" }], `go to step ${s.n}: ${s.title}`);
+    // R5 gate: a step is the steps' mode, so Assemble is on (the player turns it on; the view state says so too)
+    human([{ op: "explode", t: tOfAxis(s.x0), step: s.id, mode: "sequence", assemble: true }], `go to step ${s.n}: ${s.title}`);
   };
   /** Jump the player to axis position `ax` (instant); `scrub`: also the person's gesture in the view state (one log entry per drag). */
   const seek = (ax: number, scrub = false) => {
@@ -282,9 +276,10 @@ export function TimelinePanel(props: TimelinePanelProps) {
 
   if (!shown) return null;
 
-  const head = headerText(model, { mode: live.mode, t: live.t, step: live.step, speed: live.speed, playing: moving, radial: live.snap?.radial });
-  const loopOn = live.mode === "radial" ? radialLoop : Boolean(live.snap?.loop);
-  const playLabel = moving ? "Pause (Space)" : live.mode === "radial" ? (live.t > 0 ? "Play: bring the parts together (Space)" : "Play: explode all parts (Space)") : "Play the assembly (Space)";
+  const head = headerText(model, { mode: live.mode, t: live.t, step: live.step, speed: live.speed, playing: moving, radial: live.snap?.radial, direction: live.direction });
+  const loopOn = Boolean(live.snap?.loop);
+  const words = directionWords(live.mode);
+  const playLabel = moving ? "Pause (Space)" : `Play: ${words[live.direction].toLowerCase()}${live.anchored ? " from where the parts are" : ""} (Space)`;
   const pct = (v: number) => `${(Math.min(1, Math.max(0, v)) * 100).toFixed(3)}%`;
   const noteAt = contacts?.length ? contacts.reduce((best, c) => (Math.abs(axisOf(c.t) - x) < Math.abs(axisOf(best.t) - x) ? c : best), contacts[0]) : undefined;
 
@@ -300,7 +295,7 @@ export function TimelinePanel(props: TimelinePanelProps) {
       onKeyDown={onKey}
     >
       <div className="cad-tl-head">
-        <button type="button" className="cad-tl-btn cad-tl-play" aria-label={playLabel} data-tooltip={playLabel} data-tooltip-side="top" aria-pressed={moving} onClick={togglePlay}>
+        <button type="button" className="cad-tl-btn cad-tl-play" aria-label={playLabel} data-tooltip={playLabel} data-tooltip-side="top" onClick={togglePlay}>
           <Icon name={moving ? "pause" : "play"} size={collapsed ? 13 : 15} />
         </button>
         {!collapsed && (
@@ -341,8 +336,39 @@ export function TimelinePanel(props: TimelinePanelProps) {
             {chipText(live.snap, loopOn)}
           </span>
         )}
+        <div className="cad-tl-dirs" role="group" aria-label="Direction" data-timeline="direction">
+          {(["together", "apart"] as const).map((d) => (
+            <button
+              key={d}
+              type="button"
+              className="cad-tl-btn cad-tl-dir"
+              data-dir={d}
+              aria-label={`${d === "together" ? "Together" : "Apart"}: ${words[d].toLowerCase()}`}
+              aria-pressed={live.direction === d}
+              data-tooltip={`${words[d]} · ${live.mode === "radial" ? "all parts at once" : d === "together" ? "in step order" : "in the reverse step order"}`}
+              data-tooltip-side="top"
+              onClick={() => motion.setDirection(d)}
+            >
+              <Icon name={d === "together" ? "shrink" : "expand"} size={13} />
+            </button>
+          ))}
+        </div>
+        <label className="cad-tl-speed" data-tooltip="Speed" data-tooltip-side="top">
+          <Icon name="gauge" size={13} aria-hidden="true" />
+          <select aria-label="Speed" value={String(live.speed)} onChange={(e) => motion.setSpeed(Number(e.target.value))}>
+            {(SPEEDS.some((x) => Math.abs(x - live.speed) < 1e-9) ? [...SPEEDS] : [...SPEEDS, live.speed].sort((a, b) => a - b)).map((x) => (
+              <option key={x} value={String(x)}>
+                {speedText(x)}
+              </option>
+            ))}
+          </select>
+          <Icon name="chevron-down" size={11} aria-hidden="true" className="cad-tl-speed-chev" />
+        </label>
         <button type="button" className="cad-tl-btn cad-tl-fold" aria-label={collapsed ? "Show the timeline's tracks" : "Collapse the timeline to one line"} data-tooltip={collapsed ? "Show the tracks" : "Collapse"} data-tooltip-side="top" aria-expanded={!collapsed} onClick={() => fold(!collapsed)}>
           <Icon name={collapsed ? "chevron-up" : "chevron-down"} size={14} />
+        </button>
+        <button type="button" className="cad-tl-btn cad-tl-close" aria-label="Close the timeline" data-tooltip="Close (the toggles stay as they are)" data-tooltip-side="top" onClick={close}>
+          <Icon name="x" size={14} />
         </button>
       </div>
       {!collapsed && (

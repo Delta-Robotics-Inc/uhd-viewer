@@ -54,7 +54,8 @@ export type ViewOp =
   | { op: "hide"; paths: string[]; hidden?: boolean }
   /** R2-A: `scope`, an instance path, explodes only that sub-assembly (the 3D context menu); R2-B draws it. */
   /** R2-B (H2): `mode`, radial (Explode) or sequence (Assemble); absent keeps the state's mode (merged). */
-  | { op: "explode"; t: number; step?: string | null; scope?: string; mode?: "radial" | "sequence" }
+  /** R5-B: `on` (Explode) and `assemble` (Assemble), the two independent toggles; absent keeps the state's (merged). */
+  | { op: "explode"; t: number; step?: string | null; scope?: string; mode?: "radial" | "sequence"; on?: boolean; assemble?: boolean }
   | { op: "section"; sections: SectionPlane[] }
   | { op: "saveView"; name: string; view?: NamedView }
   | { op: "deleteView"; name: string }
@@ -136,7 +137,10 @@ export function expandOp(state: ViewState, raw: unknown, ctx: OpContext = {}): S
     case "explode": {
       // R2-B: the mode is merged (a host's `explode {t}` and the player's step write-back keep it)
       const mode = op.mode ?? state.explode.mode;
-      return [{ op: "set", path: ["explode"], value: { t: op.t, step: op.step ?? null, ...(op.scope !== undefined ? { scope: op.scope } : {}), ...(mode ? { mode } : {}) } }];
+      // R5-B: the toggles are merged as the mode is (the player's step write-back and a host's `explode {t}` keep them)
+      const on = op.on ?? state.explode.on;
+      const assemble = op.assemble ?? state.explode.assemble;
+      return [{ op: "set", path: ["explode"], value: { t: op.t, step: op.step ?? null, ...(op.scope !== undefined ? { scope: op.scope } : {}), ...(mode ? { mode } : {}), ...(on !== undefined ? { on } : {}), ...(assemble !== undefined ? { assemble } : {}) } }];
     }
     case "section":
       return [{ op: "set", path: ["sections"], value: clone(op.sections) }];

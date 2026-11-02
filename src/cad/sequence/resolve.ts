@@ -158,7 +158,7 @@ export function resolveFrame(asm: Assembly, ref: FrameRef, up: Vec3): { origin: 
 }
 
 /** Explode-time windows: the last assembled step first; still steps take no time. */
-function windowsOf(steps: readonly ResolvedStep[]): [number, number][] {
+export function windowsOf(steps: readonly ResolvedStep[]): [number, number][] {
   const weight = steps.map((s) => (s.still ? 0 : Math.max(0.05, s.durationS)));
   const total = weight.reduce((a, b) => a + b, 0) || 1;
   const out: [number, number][] = steps.map(() => [0, 0]);
@@ -330,7 +330,9 @@ export function clampJoint(j: Pick<ResolvedJoint, "min" | "max">, value: number)
   return v;
 }
 
-const ease = (u: number, kind: "cubic" | "linear") => (kind === "linear" ? u : u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2);
+/** A step's ease of its local progress u (0..1): cubic in and out (the radial explode's too), or linear. */
+export const easeStep = (u: number, kind: "cubic" | "linear"): number => ease(u, kind);
+const ease = (u: number, kind: "cubic" | "linear"): number => (kind === "linear" ? u : u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2);
 
 /** How far out a step is (0 in, 1 out) at explode amount t. */
 export function stepOut(resolved: ResolvedSequence, index: number, t: number): number {

@@ -286,20 +286,21 @@ describe("the toolbar (R2-B): Explode and Assemble, the section chooser", () => 
   const html = (over: Partial<CadToolbarProps> = {}) => renderToStaticMarkup(createElement(CadToolbar, props(over)));
   const tag = (m: string, label: string) => m.match(new RegExp(`<button[^>]*data-tooltip="${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^"]*"[^>]*>`))?.[0];
 
-  it("two controls with their own glyphs and tooltips; Assemble is the assembled toggle", () => {
+  it("two controls with their own glyphs and tooltips (R5-B: two independent toggles, \"Explode\" and \"Assemble\")", () => {
     const m = html();
     expect(tag(m, EXPLODE_LABEL)).toContain('aria-pressed="false"');
-    expect(tag(m, ASSEMBLE_LABEL)).toContain('aria-pressed="true"');
+    expect(tag(m, ASSEMBLE_LABEL)).toContain('aria-pressed="false"');
     expect(m).toContain('data-glyph="explode"');
     expect(m).toContain('data-glyph="assemble"');
-    expect(EXPLODE_LABEL).toBe("Explode (all parts at once)");
-    expect(ASSEMBLE_LABEL).toBe("Assemble (step by step)");
+    expect(EXPLODE_LABEL).toBe("Explode");
+    expect(ASSEMBLE_LABEL).toBe("Assemble");
+    // a state from before R5 reads through t and the mode
     const radial = html({ exploded: true, explodeMode: "radial" });
-    expect(tag(radial, `${EXPLODE_LABEL}: on`)).toContain('aria-pressed="true"');
+    expect(tag(radial, EXPLODE_LABEL)).toContain('aria-pressed="true"');
     expect(tag(radial, ASSEMBLE_LABEL)).toContain('aria-pressed="false"');
     const steps = html({ exploded: true, explodeMode: "sequence" });
     expect(tag(steps, EXPLODE_LABEL)).toContain('aria-pressed="false"');
-    expect(tag(steps, ASSEMBLE_LABEL)).toContain('aria-pressed="false"');
+    expect(tag(steps, ASSEMBLE_LABEL)).toContain('aria-pressed="true"');
   });
 
   it("the section popover offers XY, YZ, ZX and a face pick (disabled with its reason without a scene), the offset in mm", () => {

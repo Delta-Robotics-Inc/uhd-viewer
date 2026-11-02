@@ -54,7 +54,7 @@ describe("the toolbar's hook (opens the timeline when Explode or Assemble is tur
     (btn!.props as { onClick: () => void }).onClick();
   };
 
-  it("Explode on asks for it, Explode off lets it go; Assemble asks either way; R2-B's handlers still run", () => {
+  it("without CadView's onToggle (R5-B): Explode on asks for it, off lets it go; Assemble likewise; R2-B's handlers still run", () => {
     const asked: boolean[] = [];
     const exploded: boolean[] = [];
     const assembled: boolean[] = [];
@@ -63,7 +63,7 @@ describe("the toolbar's hook (opens the timeline when Explode or Assemble is tur
     click(props({ ...base, exploded: true, explodeMode: "radial" }), "radial");
     click(props({ ...base, exploded: false }), "sequence");
     click(props({ ...base, exploded: true, explodeMode: "sequence" }), "sequence");
-    expect(asked).toEqual([true, false, true, true]);
+    expect(asked).toEqual([true, false, true, false]);
     expect(exploded).toEqual([true, false]);
     expect(assembled).toEqual([false, true]);
   });
@@ -115,37 +115,59 @@ function setup(t: number, mode: "radial" | "sequence" = "sequence") {
 const humanOps = (store: ReturnType<typeof createViewStore>) => store.log().filter((e) => e.actor.id === HUMAN.id);
 
 describe("the panel's controls drive the player and the view state", () => {
-  it("play from apart plays the assembly; pause stops it", () => {
+  it("R5-A: play goes on from where the parts are toward the direction's end; pause holds them", () => {
     const s = setup(0.6);
+    s.player.setDirection("together");
     const play = find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-play")!;
     (play.props.onClick as () => void)();
-    expect(s.cmds.at(-1)).toEqual({ action: "play", mode: "assemble" });
+    expect(s.cmds.at(-1)).toEqual({ action: "resume" });
     expect(s.player.playing).toBe("assemble");
+    expect(s.player.t).toBeCloseTo(0.6, 9);
     const pause = find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-play")!;
-    expect(pause.props["aria-pressed"]).toBe(true);
+    // wave R5 gate: the play button's name says what it does (Pause); no pressed state as well
+    expect(pause.props["aria-label"]).toBe("Pause (Space)");
     (pause.props.onClick as () => void)();
-    expect(s.cmds.at(-1)).toEqual({ action: "stop" });
+    expect(s.cmds.at(-1)).toEqual({ action: "pause" });
     expect(s.player.playing).toBeUndefined();
   });
 
-  it("play when together replays the assembly from the first step (apart)", () => {
+  it("R5 gate: play together at the together end turns round (takes it apart from where it is, no jump)", () => {
     const s = setup(0);
+    s.player.setDirection("together");
     (find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-play")!.props.onClick as () => void)();
-    expect(s.cmds.at(-1)).toMatchObject({ action: "play", mode: "assemble", from: s.model.steps[0].id });
-    expect(s.player.t).toBeCloseTo(1, 9);
+    expect(s.cmds.at(-1)).toEqual({ action: "resume" });
+    expect(s.player.t).toBeCloseTo(0, 9);
+    expect(s.player.direction).toBe("apart");
+    expect(s.player.playing).toBe("explode");
   });
 
-  it("in Explode mode, play eases the view state's amount to the other end, as the person", () => {
+  it("R5-A: in Explode mode, play runs the player all at once at its speed (not the view state's ease)", () => {
     const s = setup(0.6, "radial");
+    s.player.setDirection("together");
     (find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-play")!.props.onClick as () => void)();
-    expect(s.store.get().explode.t).toBe(0);
-    expect(humanOps(s.store).at(-1)?.label).toBe("assemble the parts (timeline play)");
+    expect(s.cmds.at(-1)).toEqual({ action: "resume" });
+    expect(s.player.explodeMode).toBe("radial");
+    expect(s.player.playing).toBe("assemble");
   });
 
-  it("loop asks the player to loop (and off again)", () => {
+  it("R5-A: the direction buttons and the speed select drive the player; close hides the panel", () => {
     const s = setup(0.6);
+    const dir = find(s.tree(), (p) => p["data-dir"] === "together")!;
+    (dir.props.onClick as () => void)();
+    expect(s.cmds.at(-1)).toEqual({ action: "direction", to: "together" });
+    expect(s.player.direction).toBe("together");
+    const speed = find(s.tree(), (p) => p["aria-label"] === "Speed" && p.value !== undefined)!;
+    (speed.props.onChange as (e: unknown) => void)({ target: { value: "2" } });
+    expect(s.cmds.at(-1)).toEqual({ action: "speed", x: 2 });
+    expect(s.player.speed).toBe(2);
+    expect(find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-close")).toBeDefined();
+  });
+
+  it("loop asks the player to loop in the mode in force (and off again)", () => {
+    const s = setup(0.6);
+    s.player.setDirection("together");
     (find(s.tree(), (p) => p.className === "cad-tl-btn cad-tl-loop")!.props.onClick as () => void)();
-    expect(s.cmds.at(-1)).toEqual({ action: "loop", on: true, mode: "assemble" });
+    expect(s.cmds.at(-1)).toEqual({ action: "loop", on: true, mode: "assemble", keep: true });
     expect(s.player.snapshot().loop).toBe(true);
   });
 
@@ -192,6 +214,7 @@ describe("the panel's controls drive the player and the view state", () => {
     const s = setup(0.6);
     const section = find(s.tree(), (p) => p.className === "cad-timeline")!;
     const key = (k: string) => (section.props.onKeyDown as (e: unknown) => void)({ key: k, target: { tagName: "SECTION" }, preventDefault() {}, stopPropagation() {} });
+    s.player.setDirection("together");
     key(" ");
     expect(s.player.playing).toBe("assemble");
     s.player.stop();
