@@ -9,23 +9,52 @@
  * above the bar; the bar scrolls sideways on a narrow view (`overflow-x: auto` in app.css), which also clipped every
  * menu above it to nothing (the chevrons "did nothing"), so while a menu is open the bar lets its content overflow
  * (`useMenusVisible`).
+ *
+ * R2-B (2026-11-02, Kevin's walkthrough G5 and H2):
+ * - "Section view" asks which plane: the three origin planes of the model's frame (XY, YZ, ZX) or "Pick a face"
+ *   (the face under the pointer is highlighted, a press takes its plane; ./sections/gizmo.ts), an offset in mm (a
+ *   number, a slider, and an arrow in the view to drag), "Keep the other side"; the plane shows as an outlined
+ *   rectangle while the popover is open. The popover stays open while the person turns the view (a press on the
+ *   canvas does not close it); Escape ends a face pick first, then closes it.
+ * - Explode and Assemble are two controls: Explode (all parts at once, outward along their mounting faces' normals;
+ *   a burst glyph) on or off, and Assemble (step by step: the assembly sequence player Kevin liked, unchanged) as the
+ *   "assembled" toggle, on when the model is together.
  */
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import * as THREE from "three";
 import { Icon } from "../canvas/Icon";
 import {
   IconButton,
-  ToggleGroup,
   Toolbar,
   ToolbarSeparator,
 } from "../ui/Toolbar";
 import { DIRECTIONS, interfaceRows, type CadModel, type Direction } from "./model";
 import type { LabelKind } from "./labels";
-import type { SectionPlane } from "./state";
-import { MAX_SECTIONS, flipped, nextPlane, type ScopedSectionPlane } from "./sections/planes";
+import { viewHub, type SectionPlane } from "./state";
+import { MAX_SECTIONS, ORIGIN_PLANES, autoFlipOf, flipped, isPlaced, nextPlane, offsetOf, offsetRange, originPlane, withOffset, type ScopedSectionPlane } from "./sections/planes";
+import { SectionTool, type FaceHit, type ToolScene } from "./sections/gizmo";
+import { AssembleGlyph, ExplodeGlyph } from "./viewIcons";
+import type { ExplodeMode } from "./sequence/player";
 
 export interface CadToolbarProps {
   exploded: boolean;
   onExploded: (on: boolean) => void;
+  /**
+   * R2-B: how the parts come apart now, `radial` (Explode) or `sequence` (Assemble's steps): the view state's
+   * `explode.mode` once the schema has it. Absent: the mode this bar last chose (DEFAULT radial).
+   */
+  explodeMode?: ExplodeMode;
+  /** R2-B: Explode (all at once) on or off. Absent: the bar sets the player's mode (the page's view hub) and calls `onExploded`. */
+  onExplode?: (on: boolean) => void;
+  /** R2-B: Assemble (step by step): true brings the parts together through the steps, false takes them apart through them. */
+  onAssemble?: (assembled: boolean) => void;
+  /**
+   * R2-B: the 3D view's scene (CadView's `handle` ref): the section popover's face pick, plane outline and drag
+   * handle draw in it. Absent: the popover offers the origin planes and the offset only.
+   */
+  sceneRef?: { current: ToolScene | null };
+  /** R2-B: the assembled bounds (mm) planes are placed in (CadView's `assembledBounds`). Absent: the scene root's bounds. */
+  bounds?: () => THREE.Box3;
   labels: boolean;
   onLabels: (on: boolean) => void;
   labelKinds: Set<LabelKind>;
@@ -86,12 +115,35 @@ export interface CadToolbarProps {
   onFit: () => void;
   onFocus: () => void;
   canFocus: boolean;
+  /**
+   * Export (R2-E's G3, built at the R2 integration): a picture of the view (PNG) or a model of the selected part
+   * (STEP, STL, GLB), sent to the host, which writes the file (VS Code: the export folder, no dialog). Absent: the
+   * viewer has no host that saves files; the button is disabled and says so.
+   */
+  onExport?: (format: ExportFormat, target?: string) => void;
+  /** The part a model export is of (the selection, by path from the root); null: none selected (the model rows say so). */
+  exportTarget?: { path: string; label: string } | null;
 }
+
+/** What the Export menu offers (R2-E's formats). */
+export type ExportFormat = "png" | "step" | "stl" | "glb";
+/** The Export button's tooltip, hosted and not (R2 integration DEFAULT wording). */
+export const EXPORT_LABEL = "Export a picture or a model";
+export const EXPORT_UNHOSTED = "Export: needs a host that saves files (open this view in Protoboard)";
+/** The menu's model rows (R2-E's handoff names). */
+export const EXPORT_MODELS: [ExportFormat, string][] = [
+  ["step", "STEP"],
+  ["stl", "STL"],
+  ["glb", "GLB"],
+];
 
 const LABEL_KINDS: [LabelKind, string][] = [
   ["module", "Modules"],
   ["harness", "Harnesses & hardware"],
   ["interface", "Interfaces (mates)"],
+  // R2-A's handoff (2026-11-02): one label per placed board component of each kind (CadView sends them)
+  ["refdes", "Reference designators"],
+  ["mpn", "Part numbers"],
 ];
 
 /** What the model offers the toolbar's frame and interface-geometry controls. */
@@ -157,8 +209,13 @@ function useMenusVisible(wrap: RefObject<HTMLDivElement | null>) {
   });
 }
 
-/** Close a menu on Escape or on a press outside `wrap`. */
-function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: () => void) {
+/**
+ * Close a menu on Escape or on a press outside `wrap`. `keepOn(target)`: a press there does not close it (the
+ * section popover stays open while the person turns the view, R2-B DEFAULT).
+ */
+function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: () => void, keepOn?: (target: EventTarget | null) => boolean) {
+  const keepRef = useRef(keepOn);
+  keepRef.current = keepOn;
   const closeRef = useRef(close);
   closeRef.current = close;
   useEffect(() => {
@@ -170,6 +227,7 @@ function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: (
       closeRef.current();
     };
     const onDown = (e: PointerEvent) => {
+      if (keepRef.current?.(e.target)) return;
       if (wrap.current && e.target instanceof Node && !wrap.current.contains(e.target)) closeRef.current();
     };
     window.addEventListener("keydown", onKey, true);
@@ -183,29 +241,77 @@ function useDismiss(open: boolean, wrap: RefObject<HTMLElement | null>, close: (
 
 const DISABLED = "cursor-default opacity-40 hover:bg-transparent";
 
+/** Tooltips of the two explode controls (R2-B, the brief's words). */
+export const EXPLODE_LABEL = "Explode (all parts at once)";
+export const ASSEMBLE_LABEL = "Assemble (step by step)";
+
+/** Switch the mounted 3D view's player to a mode through the page's view hub (until CadView passes `onExplode`). */
+function hubMode(mode: ExplodeMode): void {
+  try {
+    viewHub().sequence?.({ action: "mode", mode } as never);
+  } catch {
+    /* no view mounted: the next explode resolves the player in its DEFAULT mode */
+  }
+}
+
 export function CadToolbar(p: CadToolbarProps) {
   const { section } = p;
   const wrap = useRef<HTMLDivElement>(null);
   const labelWrap = useRef<HTMLDivElement>(null);
   const sectionWrap = useRef<HTMLDivElement>(null);
+  const exportWrap = useRef<HTMLDivElement>(null);
+  const [exportMenu, setExportMenu] = useState(false);
+  /** Escape while picking a face ends the pick, not the popover (SectionPlanes sets it while a pick runs). */
+  const pickEsc = useRef<(() => void) | null>(null);
   useMenusVisible(wrap);
   useDismiss(p.labelMenu, labelWrap, () => p.onLabelMenu(false));
-  useDismiss(p.sectionMenu, sectionWrap, () => p.onSectionMenu(false));
+  useDismiss(exportMenu, exportWrap, () => setExportMenu(false));
+  useDismiss(
+    p.sectionMenu,
+    sectionWrap,
+    () => (pickEsc.current ? pickEsc.current() : p.onSectionMenu(false)),
+    (t) => t instanceof HTMLCanvasElement || (t instanceof HTMLElement && t.classList.contains("cad-section-offset")),
+  );
   const noFrames = p.availability?.frames === 0;
   const cutOn = p.onSections ? Boolean(p.sections?.length) : Boolean(section);
+  // R2-B: the explode mode this bar last chose, when the view state does not say (DEFAULT radial, the Explode control's)
+  const [ownMode, setOwnMode] = useState<ExplodeMode>("radial");
+  const mode = p.explodeMode ?? ownMode;
+  const explodeOn = p.exploded && mode === "radial";
+  const assembled = !p.exploded;
+  const explode = (on: boolean) => {
+    if (p.onExplode) return p.onExplode(on);
+    setOwnMode("radial");
+    hubMode("radial");
+    p.onExploded(on);
+  };
+  const assemble = (together: boolean) => {
+    if (p.onAssemble) return p.onAssemble(together);
+    setOwnMode("sequence");
+    hubMode("sequence");
+    p.onExploded(!together);
+  };
+  const boundsNow = () => p.bounds?.() ?? (p.sceneRef?.current ? new THREE.Box3().setFromObject(p.sceneRef.current.root) : new THREE.Box3());
   return (
     // `data-chrome` marks what document mode (`?chrome=none`, W2-D's captures) leaves out; `display: contents` keeps the layout
     <div data-chrome="toolbar" style={{ display: "contents" }} ref={wrap}>
       <Toolbar label="3D tools" className="cad-toolbar">
-        <ToggleGroup
-          label="Assembly"
+        {/* R2-B (H2): Explode, every part at once; Assemble, the steps (the "assembled" toggle) */}
+        <IconButton
+          icon={<ExplodeGlyph size={16} />}
+          label={explodeOn ? `${EXPLODE_LABEL}: on` : EXPLODE_LABEL}
           tooltipSide="top"
-          options={[
-            { id: "assembled", icon: "box", label: "Assembled" },
-            { id: "exploded", icon: "layers", label: "Exploded" },
-          ]}
-          value={p.exploded ? "exploded" : "assembled"}
-          onChange={(v) => p.onExploded(v === "exploded")}
+          pressed={explodeOn}
+          data-explode="radial"
+          onClick={() => explode(!explodeOn)}
+        />
+        <IconButton
+          icon={<AssembleGlyph size={16} />}
+          label={assembled ? `${ASSEMBLE_LABEL}: assembled (click to take it apart in order)` : `${ASSEMBLE_LABEL}: apart (click to put it together in order)`}
+          tooltipSide="top"
+          pressed={assembled}
+          data-explode="sequence"
+          onClick={() => assemble(!assembled)}
         />
         <ToolbarSeparator />
         <div className="cad-menu-wrap" ref={labelWrap}>
@@ -310,15 +416,27 @@ export function CadToolbar(p: CadToolbarProps) {
             label={cutOn ? "Section view: on (click to remove the cut)" : "Section view"}
             tooltipSide="top"
             pressed={cutOn}
-            onClick={() =>
-              p.onSections ? p.onSections(p.sections?.length ? [] : [{ axis: 1, at: 0.5 }]) : p.onSection(section ? null : { axis: 1, at: 0.5 })
-            }
+            onClick={() => {
+              if (!p.onSections) return p.onSection(section ? null : { axis: 1, at: 0.5 });
+              if (p.sections?.length) {
+                p.onSections([]);
+                if (p.sectionMenu) p.onSectionMenu(false);
+                return;
+              }
+              // R2-B: on, with the ZX origin plane (DEFAULT, the vertical cut it always made), and the chooser opens
+              const box = boundsNow();
+              p.onSections([box.isEmpty() ? { axis: 1, at: 0.5 } : originPlane(1, box)]);
+              if (!p.sectionMenu) {
+                p.onLabelMenu(false);
+                p.onSectionMenu(true);
+              }
+            }}
           />
           <IconButton
             icon="chevron-up"
             size="sm"
             className="w-5"
-            label="Section plane: axis, position, side, scope"
+            label="Section view: plane, offset, side, scope"
             tooltipSide="top"
             aria-expanded={p.sectionMenu}
             aria-haspopup="dialog"
@@ -327,7 +445,7 @@ export function CadToolbar(p: CadToolbarProps) {
               p.onSectionMenu(!p.sectionMenu);
             }}
           />
-          {p.sectionMenu && p.onSections && <SectionPlanes {...p} />}
+          {p.sectionMenu && p.onSections && <SectionPlanes {...p} bounds={boundsNow} pickEsc={pickEsc} />}
           {p.sectionMenu && !p.onSections && (
             <div className="cad-menu cad-section" role="dialog" aria-label="Section plane">
               <div className="cad-menu-label">Section plane</div>
@@ -415,6 +533,66 @@ export function CadToolbar(p: CadToolbarProps) {
             onClick={p.takeOver.onTakeOver}
           />
         )}
+        {/* R2-E (G3): Export, a picture of the view or a model of the selected part, written by the host */}
+        <div className="cad-menu-wrap" ref={exportWrap}>
+          <IconButton
+            icon="download"
+            label={p.onExport ? EXPORT_LABEL : EXPORT_UNHOSTED}
+            tooltipSide="top"
+            data-export="menu"
+            aria-haspopup="menu"
+            aria-expanded={exportMenu}
+            aria-disabled={!p.onExport || undefined}
+            className={p.onExport ? undefined : DISABLED}
+            onClick={() => {
+              if (!p.onExport) return;
+              if (!exportMenu) {
+                p.onLabelMenu(false);
+                p.onSectionMenu(false);
+              }
+              setExportMenu(!exportMenu);
+            }}
+          />
+          {exportMenu && p.onExport && (
+            <div className="cad-menu" role="menu" aria-label="Export">
+              <div className="cad-menu-label">Export</div>
+              <button
+                className="cad-menu-item"
+                role="menuitem"
+                data-export="png"
+                onClick={() => {
+                  setExportMenu(false);
+                  p.onExport?.("png");
+                }}
+              >
+                <Icon name="image" size={13} />
+                Picture of the view (PNG)
+              </button>
+              {EXPORT_MODELS.map(([format, name]) => {
+                const t = p.exportTarget;
+                return (
+                  <button
+                    key={format}
+                    className={t ? "cad-menu-item" : `cad-menu-item ${DISABLED}`}
+                    role="menuitem"
+                    data-export={format}
+                    aria-disabled={!t || undefined}
+                    data-tooltip={t ? undefined : "Select a part first"}
+                    data-tooltip-side="right"
+                    onClick={() => {
+                      if (!t) return;
+                      setExportMenu(false);
+                      p.onExport?.(format, t.path);
+                    }}
+                  >
+                    <Icon name="box" size={13} />
+                    {t ? `Model of ${t.label}: ${name}` : `Model of the selected part: ${name} (select a part)`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <ToolbarSeparator />
         <div role="radiogroup" aria-label="Interface geometry" className="flex items-center gap-0.5">
           {DIRECTIONS.map((d) => {
@@ -458,48 +636,113 @@ export function CadToolbar(p: CadToolbarProps) {
 
 const AXES = ["X", "Y", "Z"] as const;
 
-/** The section menu with several planes (PB-1186): one row per plane, add, and the scope. */
-function SectionPlanes(p: CadToolbarProps) {
+/** The plane chooser's name for a plane (R2-B): an origin plane, a face, or the axis form. */
+export function planeName(s: ScopedSectionPlane): string {
+  if (s.source === "face") return `Face of ${(s.face?.path ?? "").split("/").pop() || "the part"}${s.face?.planar === false ? " (curved: tangent plane)" : ""}`;
+  return ORIGIN_PLANES.find((o) => o.axis === s.axis)?.label ?? `${AXES[s.axis]} plane`;
+}
+
+/** The section popover (PB-1186, R2-B): one row per plane (the plane chooser, the offset, the side), add, the scope. */
+function SectionPlanes(p: CadToolbarProps & { bounds: () => THREE.Box3; pickEsc: RefObject<(() => void) | null> }) {
   const list = p.sections ?? [];
   const set = (next: ScopedSectionPlane[]) => p.onSections?.(next);
-  const at = (i: number, change: Partial<ScopedSectionPlane>) => set(list.map((s, j) => (j === i ? { ...s, ...change } : s)));
   const scope = list[0]?.scope;
-  const add = nextPlane(list);
+  // the bounds are read once per render of the popover (cheap: CadView's records, or the root's box)
+  const box = useMemo(() => p.bounds(), [p, list]); // eslint-disable-line react-hooks/exhaustive-deps
+  const add = nextPlane(list, box);
+  // the plane the outline, the handle and a face pick act on
+  const [active, setActive] = useState(0);
+  const act = Math.min(active, Math.max(0, list.length - 1));
+  const [picking, setPicking] = useState(false);
+  const [hover, setHover] = useState<FaceHit | null>(null);
+  const tool = useSectionTool(p, list, act, setPicking, setHover);
+  // Escape while picking ends the pick
+  useEffect(() => {
+    p.pickEsc.current = picking ? () => tool.current?.stopPick() : null;
+    return () => {
+      p.pickEsc.current = null;
+    };
+  }, [picking, p.pickEsc, tool]);
+  const pick = (i: number) => {
+    setActive(i);
+    const t = tool.current;
+    if (!t) return;
+    if (t.isPicking) t.stopPick();
+    else t.startPick();
+  };
+  const canPick = Boolean(p.sceneRef);
   return (
-    <div className="cad-menu cad-section cad-sections" role="dialog" aria-label="Section planes">
-      <div className="cad-menu-label">Section planes</div>
-      {list.length === 0 && <div className="cad-section-empty">No plane: add one to cut the model.</div>}
-      {list.map((s, i) => (
-        <div key={i} className="cad-section-row" data-plane={i}>
-          <div className="segmented">
-            {AXES.map((a, k) => (
-              <button key={a} className={s.axis === k ? "on" : ""} onClick={() => at(i, { axis: k as 0 | 1 | 2 })} aria-label={`Cut across ${a}`} data-tooltip={`Cut across ${a}`}>
-                {a}
+    <div className="cad-menu cad-section cad-sections" role="dialog" aria-label="Section view" style={{ minWidth: 300 }}>
+      <div className="cad-menu-label">Section view</div>
+      {list.length === 0 && <div className="cad-section-empty">No plane: choose an origin plane or pick a face to cut the model.</div>}
+      {list.map((s, i) => {
+        const off = offsetOf(s, box);
+        const [lo, hi] = offsetRange(s, box);
+        const placed = isPlaced(s);
+        return (
+          <div key={i} className="cad-section-row" data-plane={i} data-active={i === act || undefined} onPointerDown={() => setActive(i)}>
+            <div className="segmented" role="group" aria-label={`Plane ${i + 1}`}>
+              {ORIGIN_PLANES.map((o) => (
+                <button
+                  key={o.id}
+                  className={s.source !== "face" && s.axis === o.axis ? "on" : ""}
+                  onClick={() => set(list.map((x, j) => (j === i ? originPlane(o.axis, box, x.scope ? { scope: x.scope } : undefined) : x)))}
+                  aria-label={`${o.label} (${o.hint})`}
+                  data-tooltip={`${o.label} (${o.hint})`}
+                >
+                  {o.id}
+                </button>
+              ))}
+              <button
+                className={s.source === "face" || (picking && i === act) ? "on" : ""}
+                disabled={!canPick}
+                aria-pressed={picking && i === act}
+                onClick={() => pick(i)}
+                aria-label="Pick a face"
+                data-tooltip={canPick ? (picking && i === act ? "Picking: click a highlighted face (Esc cancels)" : "Pick a face: its plane becomes the cut") : "Pick a face: not available in this view"}
+              >
+                <Icon name="mouse-pointer-click" size={13} />
               </button>
-            ))}
-            <button
-              className={s.flip !== undefined ? "on" : ""}
-              onClick={() => set(list.map((x, j) => (j === i ? flipped(x, p.autoFlip(x.axis)) : x)))}
-              aria-label="Keep the other side"
-              data-tooltip="Keep the other side"
+              <button
+                className={s.flip !== undefined ? "on" : ""}
+                onClick={() => set(list.map((x, j) => (j === i ? flipped(x, autoFlipOf(x, p.autoFlip)) : x)))}
+                aria-label="Keep the other side"
+                data-tooltip="Keep the other side"
+              >
+                <Icon name="arrow-up-down" size={13} />
+              </button>
+              <button onClick={() => set(list.filter((_, j) => j !== i))} aria-label="Remove this plane" data-tooltip="Remove this plane">
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+            <div
+              className="cad-section-what"
+              style={{ fontSize: 11, color: "var(--uhd-text-muted)" }}
+              data-source={s.source ?? "axis"}
+              title={picking && i === act && hover ? `face ${hover.face} (${hover.source}), ${hover.areaMm2} mm², flat within ${hover.spreadMm} mm` : undefined}
             >
-              <Icon name="arrow-up-down" size={13} />
-            </button>
-            <button onClick={() => set(list.filter((_, j) => j !== i))} aria-label="Remove this plane" data-tooltip="Remove this plane">
-              <Icon name="x" size={13} />
-            </button>
+              {picking && i === act ? (hover ? `${hover.planar ? "Flat face" : "Curved face"} of ${hover.path.split("/").pop() || "the part"} · click to cut there` : "Hover a face, click to cut there · Esc cancels") : planeName(s)}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ color: "var(--uhd-text-muted)" }}>Offset</span>
+              <OffsetField value={off} onCommit={(v) => set(list.map((x, j) => (j === i ? withOffset(x, v, box) : x)))} label={`Plane ${i + 1} offset (mm)`} />
+              <span style={{ color: "var(--uhd-text-muted)" }}>mm</span>
+            </label>
+            <input
+              type="range"
+              min={lo}
+              max={hi}
+              step={0.5}
+              aria-label={`Plane ${i + 1} offset along ${placed ? "its normal" : AXES[s.axis]} (mm)`}
+              value={Math.min(hi, Math.max(lo, off))}
+              onChange={(e) => {
+                setActive(i);
+                set(list.map((x, j) => (j === i ? withOffset(x, Number(e.target.value), box) : x)));
+              }}
+            />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.005}
-            aria-label={`Plane ${i + 1} position along ${AXES[s.axis]}`}
-            value={s.at}
-            onChange={(e) => at(i, { at: Number(e.target.value) })}
-          />
-        </div>
-      ))}
+        );
+      })}
       <div className="cad-section-foot">
         <button className="cad-menu-item" disabled={!add} onClick={() => add && set([...list, scope ? { ...add, scope } : add])}>
           <Icon name="plus" size={12} />
@@ -527,4 +770,66 @@ function SectionPlanes(p: CadToolbarProps) {
       </div>
     </div>
   );
+}
+
+/** A number field for the offset: typed freely, committed when it reads as a number (Enter or each valid keystroke). */
+function OffsetField({ value, onCommit, label }: { value: number; onCommit: (v: number) => void; label: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (Math.round(value * 10) / 10).toString();
+  return (
+    <input
+      type="number"
+      step={0.5}
+      inputMode="decimal"
+      aria-label={label}
+      value={shown}
+      style={{ width: 72, font: "inherit", padding: "2px 4px", background: "var(--uhd-surface-sunken)", color: "var(--uhd-text)", border: "1px solid var(--uhd-border)", borderRadius: 4 }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const v = Number(e.target.value);
+        if (e.target.value.trim() !== "" && Number.isFinite(v) && Math.abs(v) <= 1e5) onCommit(v);
+      }}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
+
+/**
+ * The section tool on the 3D view's scene (./sections/gizmo.ts), while the popover is open: the plane's outline and
+ * drag handle, and the face pick. It reads the latest planes through a ref, so a drag always writes over the newest.
+ */
+function useSectionTool(p: CadToolbarProps & { bounds: () => THREE.Box3 }, list: ScopedSectionPlane[], active: number, onPick: (on: boolean) => void, onHover: (f: FaceHit | null) => void) {
+  const tool = useRef<SectionTool | null>(null);
+  const latest = useRef({ list, active, p });
+  latest.current = { list, active, p };
+  const scene = p.sceneRef?.current ?? null;
+  useEffect(() => {
+    if (!scene) return;
+    const t = new SectionTool({
+      scene,
+      planes: () => latest.current.list,
+      setPlanes: (next) => latest.current.p.onSections?.(next),
+      bounds: () => latest.current.p.bounds(),
+      active: () => latest.current.active,
+      onPickChange: onPick,
+      onHover,
+    });
+    tool.current = t;
+    t.setShown(true);
+    return () => {
+      t.dispose();
+      if (tool.current === t) tool.current = null;
+      onPick(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene]);
+  // the planes (or which one is active) changed: lay the outline and handle out again
+  const key = JSON.stringify(list) + "|" + active;
+  useEffect(() => {
+    tool.current?.refresh();
+  }, [key]);
+  return tool;
 }

@@ -405,9 +405,11 @@ describe("hover tiers on a marker, in a page (D3, stand-in DOM)", () => {
     const root = layer.root as unknown as FakeEl;
     const hit = root.find("annot-hit")[0];
     expect(hit).toBeDefined();
-    // the marker's terminal dot sits on the part's top face (z 4): a sprite in the overlay group at the surface
-    const dot = layer.group.children.find((o) => (o as THREE.Sprite).isSprite && Math.abs(o.position.z - 4) < 2);
-    expect(dot).toBeDefined();
+    // the marker's terminal dot sits on the part's top face (z 4): the first quad of the instanced batch (R2-C)
+    const quads = layer.drawStats();
+    expect(quads.quads).toBe(2);
+    expect(quads.stems).toBe(1);
+    expect(Math.abs(layer.quadInstance(0).centre[2] - 4)).toBeLessThan(2);
     const sheet = () => root.find("annot-sheet").find((e) => !e.classList.contains("closed"));
     hit.dispatchEvent(new Event("pointerenter"));
     vi.advanceTimersByTime(60);

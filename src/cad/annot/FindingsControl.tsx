@@ -8,12 +8,14 @@
  */
 import { useEffect, useRef } from "react";
 import { IconButton } from "../../ui/Toolbar";
-import { MAX_OPEN_FINDINGS, findingsPlacement, severityCounts } from "./drc";
+import { MAX_OPEN_FINDINGS, findingSummary, findingsPlacement, severityCounts } from "./drc";
+import type { FindingText } from "./plain";
 import { SEVERITY_ORDER, worst, type FindingAnchors, type FindingSeverity } from "./findings-anchors";
 import { SEVERITY_LABEL, markerSvg, svgNode } from "./style";
 
 export interface FindingsControlProps {
-  findings: FindingAnchors[];
+  /** With the stack's plain `title` and `summary` when it wrote them (R2-C): the rows show those first. */
+  findings: (FindingAnchors & FindingText)[];
   markers: boolean;
   onMarkers: (on: boolean) => void;
   shown: Set<FindingSeverity>;
@@ -99,23 +101,27 @@ export function FindingsControl(p: FindingsControlProps) {
               <div className="annot-group">{SEVERITY_LABEL[s]}</div>
               {p.findings
                 .filter((f) => f.severity === s)
-                .map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    className="annot-row"
-                    aria-current={p.current === f.id || undefined}
-                    onClick={() => p.onChoose(f)}
-                    title={f.anchors.length ? "Look at it and pin its card" : (f.reason ?? "No location on the model")}
-                  >
-                    <Shape s={f.severity} size={13} />
-                    <span>
-                      <span className="annot-row-code">{f.code.replace(/_/g, " ")}</span>
-                      {!f.anchors.length && <span className="annot-noloc">no location</span>}
-                      <div className="annot-row-msg">{f.message}</div>
-                    </span>
-                  </button>
-                ))}
+                .map((f) => {
+                  // R2-C (D3): the plain title and summary when the stack wrote them, else the code and the message
+                  const t = findingSummary(f);
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className="annot-row"
+                      aria-current={p.current === f.id || undefined}
+                      onClick={() => p.onChoose(f)}
+                      title={f.anchors.length ? "Look at it and pin its card" : (f.reason ?? "No location on the model")}
+                    >
+                      <Shape s={f.severity} size={13} />
+                      <span>
+                        <span className={f.title ? "annot-row-title" : "annot-row-code"}>{t.title}</span>
+                        {!f.anchors.length && <span className="annot-noloc">no location</span>}
+                        <div className="annot-row-msg">{f.summary ?? f.message}</div>
+                      </span>
+                    </button>
+                  );
+                })}
             </div>
           ))}
           <div className="annot-actions">

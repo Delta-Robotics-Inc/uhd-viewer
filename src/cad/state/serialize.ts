@@ -12,7 +12,7 @@
  *   camera drag never touches a committed file.
  */
 import type { ViewerStateFile } from "../../api";
-import { LIVE_KEYS, PRESENTATION_KEYS, VIEW_STATE_SCHEMA, VIEW_STATE_VERSION, WRITABLE_KEYS, checkValue, clone, type InterfaceDirection, type LabelKind, type LiveKey, type NamedView, type SectionPlane, type Vec3, type ViewSelection, type ViewState, type WritableKey } from "./schema";
+import { LABEL_KINDS, LIVE_KEYS, PRESENTATION_KEYS, VIEW_STATE_SCHEMA, VIEW_STATE_VERSION, WRITABLE_KEYS, checkValue, clone, type InterfaceDirection, type LabelKind, type LiveKey, type NamedView, type SectionPlane, type Vec3, type ViewSelection, type ViewState, type WritableKey } from "./schema";
 
 /** The JSON form of a view state (all keys, read-only facts included, for an observer). */
 export interface SerializedViewState extends Partial<ViewState> {
@@ -140,7 +140,7 @@ export function fromUrlParams(params: URLSearchParams): { values: Partial<Pick<V
   const dir = params.get("dir");
   if (dir === "feature" || dir === "artifact" || dir === "procedural") values.direction = dir as InterfaceDirection;
   if (params.has("labels")) visibility.labels = params.get("labels") === "1";
-  if (params.has("labelkinds")) visibility.labelKinds = list(params.get("labelkinds")).filter((k): k is LabelKind => ["module", "harness", "interface", "finding"].includes(k));
+  if (params.has("labelkinds")) visibility.labelKinds = list(params.get("labelkinds")).filter((k): k is LabelKind => (LABEL_KINDS as string[]).includes(k));
   if (params.has("frames")) visibility.frames = params.get("frames") === "1";
   if (params.has("wires")) visibility.wires = params.get("wires") !== "0";
   if (params.has("hardware")) visibility.hardware = params.get("hardware") !== "0";

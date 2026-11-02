@@ -4,5 +4,5 @@ export { flattenSequence, generateSequence, hardwareKeys, placementKey, threadOf
 export { applyPatches, expandRefs } from "./patch";
 export { applyPoint, clampJoint, holdKeyframes, jointKeyframesAt, jointOnMate, memberDelta, poseAt, resolveFrame, resolveJoint, resolveSequence, stepAt, stepOut, tAfter, tBefore, type Mat, type PoseState, type ResolveInput, type ResolvedJoint, type ResolvedMember, type ResolvedSequence, type ResolvedStep } from "./resolve";
 export { fetchSequenceBeside, isSequenceFile, sequenceForModel, sequenceFromPlan } from "./fallback";
-export { ClipRecorder, SequencePlayer, applyUrlState, sampleClip, sequenceUrlState, type MotionClip, type PlayMode, type PlayerSnapshot, type SequenceCommand } from "./player";
-export { applyCadPose, resolveForCad, type CadBodyTarget, type CadHardwareTarget, type CadPartTarget, type CadResolveInput } from "./apply";
+export { ClipRecorder, MODE_BLEND_MS, SequencePlayer, applyUrlState, radialSummary, sampleClip, sequenceUrlState, type ExplodeMode, type MotionClip, type PlayMode, type PlayerSnapshot, type RadialPlan, type ResolvedWithRadial, type SequenceCommand } from "./player";
+export { applyCadPose, explodeOverrides, resolveForCad, type CadBodyTarget, type CadHardwareTarget, type CadPartTarget, type CadResolveInput } from "./apply";

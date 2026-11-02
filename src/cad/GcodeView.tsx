@@ -54,6 +54,8 @@ export interface GcodeViewProps {
   /** Called once the toolpaths are on screen. */
   onReady?: (info: GcodeViewInfo) => void;
   className?: string;
+  /** The summary and legend open at first (DEFAULT on; a host's `settings.modelInfo`, R2-E J1). */
+  infoOpen?: boolean;
 }
 
 export interface GcodeViewInfo {
@@ -77,7 +79,7 @@ const hms = (s: number) => {
 };
 const int = (n: number) => n.toLocaleString("en-US");
 
-export function GcodeView({ url, text, file, name, parseOptions, onReady, className }: GcodeViewProps) {
+export function GcodeView({ url, text, file, name, parseOptions, onReady, className, infoOpen = true }: GcodeViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   const draw = useRef<GcodeDraw | null>(null);
@@ -89,7 +91,8 @@ export function GcodeView({ url, text, file, name, parseOptions, onReady, classN
   const [range, setRange] = useState<LayerRange | undefined>(undefined);
   const [view, setView] = useState<ViewDir>("iso");
   const [quality, setQuality] = useState<QualityReport | null>(null);
-  const [showInfo, setShowInfo] = useState(true);
+  // the summary and legend open by default; a host's `settings.modelInfo` (R2-E, J1) can start it closed
+  const [showInfo, setShowInfo] = useState(infoOpen);
 
   // the scene: no batching, toon or ink (they are for CAD bodies; the toolpaths bring their own shader)
   useEffect(() => {

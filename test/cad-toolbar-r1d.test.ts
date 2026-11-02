@@ -86,7 +86,7 @@ describe("the toolbar's menus (G4 label types, G5 section plane)", () => {
   it("the chevrons say they open a menu; the scissors is the section view's on/off", () => {
     const m = html();
     expect(button(m, "Label types")).toContain('aria-haspopup="menu"');
-    expect(button(m, "Section plane: axis, position, side, scope")).toContain('aria-haspopup="dialog"');
+    expect(button(m, "Section view: plane, offset, side, scope")).toContain('aria-haspopup="dialog"');
     expect(button(m, "Section view")).toContain('aria-pressed="false"');
     expect(button(html({ sections: [{ axis: 1, at: 0.5 }] }), "Section view: on")).toContain('aria-pressed="true"');
   });
@@ -94,7 +94,7 @@ describe("the toolbar's menus (G4 label types, G5 section plane)", () => {
   it("the section popover has the axis choice, the slider, keep the other side and the scope", () => {
     const m = html({ sectionMenu: true, sections: [{ axis: 1, at: 0.5 }], scopeCandidate: { path: "shell/grill_1", label: "grill_1" } });
     expect(m).toContain('role="dialog"');
-    expect(m).toContain('data-tooltip="Cut across X"');
+    expect(m).toContain('data-tooltip="YZ plane (cut across X)"');
     expect(m).toContain('type="range"');
     expect(m).toContain('data-tooltip="Keep the other side"');
     expect(m).toContain("Only grill_1");

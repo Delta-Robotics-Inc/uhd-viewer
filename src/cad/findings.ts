@@ -17,6 +17,7 @@ import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { Vec3 } from "@uhd/types/geometry.js";
 import type { ScopedDiagnostic } from "../model/diagnostics";
 import type { CadModel } from "./model";
+import { findingText, plainKey, type FindingText } from "./annot/plain";
 
 export interface CadTarget {
   body?: string;
@@ -36,6 +37,8 @@ export interface FindingAnchor {
   select: CadTarget;
   /** From the host (a provider's fit or route check) rather than the viewer's own checks. */
   host?: boolean;
+  /** Wave R2 gate (D3): the raw message, when `title` and `message` are the plain words (the row's tooltip). */
+  raw?: string;
 }
 
 /** Where a canonical path is on the model, if any placed body holds it. */
@@ -69,20 +72,24 @@ export function anchorOf(model: CadModel, ref: string): Omit<FindingAnchor, "id"
 }
 
 /** Errors and warnings that can be pinned to the model, the system's first, then the host's. */
-export function findingAnchors(model: CadModel, system: ScopedDiagnostic[], host: UhdBundleDiagnostic[]): FindingAnchor[] {
+/** `text`: the plain title and summary of the viewer's own checks (`plainTextIndex`; wave R2 gate, D3). */
+export function findingAnchors(model: CadModel, system: ScopedDiagnostic[], host: UhdBundleDiagnostic[], text?: ReadonlyMap<string, FindingText>): FindingAnchor[] {
   const out: FindingAnchor[] = [];
   for (const d of system) {
     if (d.severity === "info") continue;
     // the most specific ref first: a pin or interface, then a link
     const refs = [...d.refs.filter((r) => !r.startsWith("link:")), ...d.refs.filter((r) => r.startsWith("link:"))];
     const a = refs.map((r) => anchorOf(model, r)).find(Boolean);
-    if (a) out.push({ id: `s:${d.id}`, severity: d.severity, title: d.rule.replace(/_/g, " ").toUpperCase(), message: d.message, ...a });
+    // wave R2 gate (D3): the plain title and summary the stack wrote on its copy of this check, when it did
+    const t = text?.get(plainKey(d.rule, d.message)) ?? {};
+    if (a) out.push({ id: `s:${d.id}`, severity: d.severity, title: t.title ?? d.rule.replace(/_/g, " ").toUpperCase(), message: t.summary ?? d.message, ...(t.title || t.summary ? { raw: d.message } : {}), ...a });
   }
   host.forEach((d, i) => {
     if (d.severity === "info" || !d.entity) return;
     const ref = d.entity.kind === "link" ? `link:${d.entity.id}` : d.entity.id;
     const a = anchorOf(model, ref);
-    if (a) out.push({ id: `h:${d.code}:${d.entity.id}:${i}`, severity: d.severity as "error" | "warning", title: d.code.replace(/_/g, " "), message: d.message, host: true, ...a });
+    const t = findingText(d);
+    if (a) out.push({ id: `h:${d.code}:${d.entity.id}:${i}`, severity: d.severity as "error" | "warning", title: t.title ?? d.code.replace(/_/g, " "), message: t.summary ?? d.message, ...(t.title || t.summary ? { raw: d.message } : {}), host: true, ...a });
   });
   return out;
 }

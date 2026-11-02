@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { BEHIND_OPACITY, JUMP_PX, LabelLayer, SLOT_EASE_MS, SWITCH_HOLD_MS, SWITCH_MARGIN, easeLeft, holdSides, labelSubtitle, partSubtitle, solveLabels, type LabelItem } from "../src/cad/labels";
+import { BEHIND_OPACITY, EASE_MAX_MS, JUMP_PX, LabelLayer, SLOT_EASE_MS, SWITCH_HOLD_MS, SWITCH_MARGIN, easeLeft, holdSides, labelSubtitle, partSubtitle, solveLabels, type LabelItem } from "../src/cad/labels";
 import { FakeEl, FakeWheelEvent, installFakeDom } from "./labels-fakedom";
 
 const W = 1440;
@@ -176,12 +176,12 @@ describe("the label layer in a page (stand-in DOM)", () => {
     const cam = camera();
     layer.update(cam, W, H, 1 / 60, 0);
     const before = layer.layout()[0];
-    // the anchor jumps far across: its target moves, the card eases (not there in the next frame)
-    a.set(0, 0, 160);
+    // the anchor jumps far across (within the view: out of it is an edge pin, R2-C): its target moves, the card eases
+    a.set(30, 0, 70);
     layer.update(cam, W, H, 1 / 60, 16);
     const mid = layer.layout()[0];
     expect(Math.abs(mid.at[1] - mid.target[1])).toBeGreaterThan(JUMP_PX / 2);
-    layer.update(cam, W, H, 1 / 60, 16 + SLOT_EASE_MS + 1);
+    layer.update(cam, W, H, 1 / 60, 16 + EASE_MAX_MS + 1);
     const done = layer.layout()[0];
     expect(done.at[1]).toBeCloseTo(done.target[1], 3);
     expect(before.at[1]).not.toBeCloseTo(done.at[1], 0);

@@ -13,8 +13,9 @@
 import { createViewStore, type Actor, type ViewStore } from "./store";
 import { fromUrlParams, type UrlOpening } from "./serialize";
 import type { WritableKey } from "./schema";
-import type { PlacementFacts, SetOp, ViewerSavePoint, ViewerSequenceCommand, ViewerSequenceReply, ViewerSnapshotMessage } from "../../api";
+import type { ExportRequest, PlacementFacts, SetOp, ViewerHostSettings, ViewerSavePoint, ViewerSequenceCommand, ViewerSequenceReply, ViewerSnapshotMessage } from "../../api";
 import type { PlacementVerb } from "./bridge";
+import type { NavHistory, NavLink } from "../nav/history";
 
 export interface ViewHub {
   store: ViewStore;
@@ -54,6 +55,26 @@ export interface ViewHub {
   controlOptions?: { zoomToCursor?: boolean };
   /** Resolves a placement verb against the scene's faces (W4-D, PB-1187): one `set` on `placements` and its facts. */
   place?: (op: PlacementVerb, by: string) => { set: SetOp; facts: PlacementFacts } | { error: string };
+  /**
+   * The host channel as navigation uses it (R2-A, F1; `connectNav` in ../nav, called by the mount): events to the
+   * host, host messages applied in this page (a drill when Back crosses levels), and whether the host takes
+   * `uhd-viewer:navigate`. Absent (a page with no mount, an older mount): the view selects and frames in place.
+   */
+  navLink?: NavLink;
+  /** The viewer's own back and forward history (R2-A, ../nav/history.ts): one per page, across 3D view mounts. */
+  nav?: NavHistory;
+  /** What a frame's parent said it takes (`uhd-viewer:hostCapabilities`). */
+  hostCaps?: { navigate?: boolean; history?: boolean };
+  /**
+   * The person's viewer settings from the host (R2-E, J1; `ViewerOptions.settings`, put here by the mount): the long
+   * hover and the model info card read them (`../viewerSettings.ts`). Absent: the DEFAULTs.
+   */
+  settings?: ViewerHostSettings;
+  /**
+   * Sends the 3D toolbar's Export to the host (R2-E, G3; the mount sets it when the host takes exports: `onExport`
+   * or a frame's parent). Absent: the Export button is disabled and says why.
+   */
+  exportView?: (request: ExportRequest) => void;
 }
 
 const KEY = "__uhdViewHub";

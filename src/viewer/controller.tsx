@@ -20,6 +20,7 @@ import type { Goto, NodeMenuItem, Panel } from "../chrome/Chrome";
 import type { CadSelection } from "../cad/CadView";
 import type { LegendStage } from "../ui/legendFit";
 import { defAt, glbFor } from "../cad/model";
+import { plainTextIndex } from "../cad/annot/plain";
 import type { CommandBus } from "../host/channel";
 import { HostContext, type HostActions } from "../host/context";
 import { pairEnds } from "../chrome/PairView";
@@ -397,6 +398,9 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     () => (scenario.id === "nominal" ? [...source.hostDiagnostics, ...(options.diagnostics ?? [])].filter((d) => !ownChecks(d)) : []),
     [scenario, source, options.diagnostics],
   );
+  // R2-C/R2-D (D3), applied at the R2 integration: the plain title and summary the stack wrote on its copies of the
+  // viewer's own checks, indexed before the copies are dropped above, so the 3D view's own findings read in words
+  const findingText = useMemo(() => plainTextIndex([...source.hostDiagnostics, ...(options.diagnostics ?? [])]), [source, options.diagnostics]);
   const errors = diagnostics.filter((d) => d.severity === "error").length + hostDiagnostics.filter((d) => d.severity === "error").length;
   const pair = pairLink ? vm.links.find((l) => l.linkId === pairLink) : undefined;
 
@@ -624,6 +628,7 @@ export function useViewerController(source: LoadedSource, options: ViewerOptions
     topLevel: drill.length === 0,
     diagnostics,
     hostDiagnostics,
+    findingText,
     errors,
     defFor,
     bSlotsFor,

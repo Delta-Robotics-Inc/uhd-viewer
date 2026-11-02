@@ -19,6 +19,7 @@
 
 import type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, ViewThemeChoice, Visibility, WritableKey } from "../../api";
 import { parseRecord } from "../annot/record";
+import { TOKEN_NAMES } from "../../theme/tokens";
 
 export type { CameraState, ExplodeState, InterfaceDirection, LabelKind, LiveKey, LoadingFacts, NamedView, SectionPlane, Vec3, ViewSelection, ViewState, ViewThemeChoice, Visibility, WritableKey };
 
@@ -27,12 +28,12 @@ export const VIEW_STATE_SCHEMA = "uhd-viewer.view-state/v1" satisfies ViewState[
 export const VIEW_STATE_VERSION = 1;
 
 /** Top-level keys a writer may set. */
-export const WRITABLE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme", "namedViews", "annotations"] as const satisfies readonly WritableKey[];
+export const WRITABLE_KEYS = ["camera", "selection", "highlight", "highlightColor", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme", "namedViews", "annotations"] as const satisfies readonly WritableKey[];
 /** Top-level keys only the view sets. */
 export const READ_ONLY_KEYS = ["schema", "scope", "loading", "quality"] as const;
 
 /** The live, per-user part (`.protoboard/local/viewer-state.json`, the webview's own state). */
-export const LIVE_KEYS = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme"] as const satisfies readonly LiveKey[];
+export const LIVE_KEYS = ["camera", "selection", "highlight", "highlightColor", "isolation", "visibility", "direction", "sections", "explode", "placements", "theme"] as const satisfies readonly LiveKey[];
 /** The deliberate part (the display file, on an explicit save). */
 export const PRESENTATION_KEYS = ["namedViews", "annotations"] as const;
 
@@ -64,7 +65,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isVec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every(finite);
 const isPath = (v: unknown): v is string => typeof v === "string" && v.length <= 512 && !/[\u0000-\u001f]/.test(v);
-const LABEL_KINDS: LabelKind[] = ["module", "harness", "interface", "finding"];
+/** Every label kind a view state may ask for (R2-A: `refdes` and `mpn` added, R1-C's handoff). */
+export const LABEL_KINDS: LabelKind[] = ["module", "harness", "interface", "finding", "refdes", "mpn"];
 const DIRECTIONS: InterfaceDirection[] = ["feature", "artifact", "procedural"];
 /** Lists of paths are capped: a batch stays small (collaboration D14). DEFAULT. */
 export const MAX_PATHS = 2000;
@@ -145,6 +147,21 @@ export function checkSection(v: unknown): string | undefined {
   if (v.flip !== undefined && typeof v.flip !== "boolean") return "section.flip must be true or false";
   // an instance path (W3-C, PB-1186): at most 512 characters, no control characters (NUL included)
   if (v.scope !== undefined && !isPath(v.scope)) return "section.scope must be an instance path of at most 512 characters";
+  // R2-B's placed planes (R2 integration, 2026-11-02), additive: an origin plane or a picked face, its base plane and offset
+  if (v.source !== undefined && v.source !== "origin" && v.source !== "face") return 'section.source must be "origin" or "face"';
+  if ((v.normal === undefined) !== (v.point === undefined)) return "section.normal and section.point go together (both or neither)";
+  if (v.normal !== undefined) {
+    if (!isVec3(v.normal) || Math.hypot(v.normal[0], v.normal[1], v.normal[2]) <= 1e-9) return "section.normal must be a non-zero [x, y, z] of numbers";
+    if (!isVec3(v.point)) return "section.point must be [x, y, z] numbers (mm)";
+  }
+  if (v.offset !== undefined && (!finite(v.offset) || Math.abs(v.offset) > 1e5)) return "section.offset must be a number of mm between -100000 and 100000";
+  if (v.face !== undefined) {
+    const f = v.face;
+    if (!isObj(f) || !isPath(f.path)) return "section.face must be { path, face?, body?, planar? } with path an instance path";
+    if (f.face !== undefined && !(Number.isInteger(f.face) && (f.face as number) >= 0)) return "section.face.face must be a non-negative integer";
+    if (f.body !== undefined && !isPath(f.body)) return "section.face.body must be a path of at most 512 characters";
+    if (f.planar !== undefined && typeof f.planar !== "boolean") return "section.face.planar must be true or false";
+  }
   return undefined;
 }
 
@@ -154,6 +171,10 @@ export function checkExplode(v: unknown): string | undefined {
   const step = v.step;
   // one type everywhere (wave 2 gate item 6): a step is its string id, never an index
   if (step !== null && step !== undefined && !(typeof step === "string" && step.length > 0 && step.length <= 200 && !/[\u0000-\u001f]/.test(step))) return "explode.step must be a step id (a string such as \"fit:arm_fl_mount\") or null";
+  // R2-A: the sub-assembly to explode (the 3D context menu), an instance path in the view's scope
+  if (v.scope !== undefined && !isPath(v.scope)) return "explode.scope must be an instance path of at most 512 characters";
+  // R2-B (H2): radial (Explode, all at once) or sequence (Assemble, the steps); absent reads as step ? sequence : radial
+  if (v.mode !== undefined && v.mode !== "radial" && v.mode !== "sequence") return 'explode.mode must be "radial" or "sequence"';
   return undefined;
 }
 
@@ -218,6 +239,8 @@ export function checkValue(key: WritableKey, v: unknown): string | undefined {
       return checkSelection(v);
     case "highlight":
       return checkPaths("highlight", v);
+    case "highlightColor":
+      return v === undefined || validHighlightColor(v) ? undefined : `highlightColor must be a hex colour (#rgb, #rrggbb) or a theme colour token (${HIGHLIGHT_TOKENS.slice(0, 6).join(", ")}, ...), or removed for the theme's glow`;
     case "isolation":
       return checkPaths("isolation", v, true);
     case "visibility":
@@ -258,6 +281,17 @@ export function checkValue(key: WritableKey, v: unknown): string | undefined {
 }
 
 const THEMES: ViewThemeChoice[] = ["light", "dark", "system"];
+
+/**
+ * Theme tokens a highlight colour may name (R2-A, A3): every colour token of the theme contract (not the radius,
+ * shadows, fonts or the ink width).
+ */
+export const HIGHLIGHT_TOKENS: readonly string[] = TOKEN_NAMES.filter((t) => !/^(radius|shadow|font)|Width$/.test(t));
+
+/** A highlight colour the view takes: `#rgb`, `#rrggbb`, or a colour token name of the theme. */
+export function validHighlightColor(v: unknown): v is string {
+  return typeof v === "string" && (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) || HIGHLIGHT_TOKENS.includes(v));
+}
 
 /** A deep copy of plain data (state values are JSON). */
 export const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));

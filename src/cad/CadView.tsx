@@ -19,10 +19,10 @@ import type { UhdBundleDiagnostic } from "@uhd/types/bundle.js";
 import type { LoadedSource } from "../source/source";
 import type { ScopedDiagnostic } from "../model/diagnostics";
 import { anchorOf, findingAnchors } from "./findings";
-import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, findingForHost, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode } from "./annot";
+import { AnnotLayer, DEFAULT_SHOWN, FindingsControl, MAX_OPEN_FINDINGS, boundsOf, findingForHost, componentIn, drawn as drawnObj, drcMarkers, findingInputs, findingsAnchors, instanceAt, isolationOf, partCallout, partFacts, recordsOf, removeRecords, upsertRecords, type AnnotHost, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity, type PartHit, type PresenceChip, type SceneNode, type FindingText } from "./annot";
 import { DIRECTIONS, defAt, explodeParts, glbFor, interfaceRows, loadManifests, type CadBody, type CadModel, type Direction, type InterfaceRow } from "./model";
 import { useTheme, tokenColor } from "../theme/ThemeProvider";
-import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, DEFAULT_ZOOM_TO_CURSOR, EXPLODE_STILL_MM, cadWrapper, cameraBetween, createScene, dominantNormal, explodeCamera, principalNormal, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, lookAlong, materialFor, needsRefit, proceduralGeometry, toMatrix4, triangleNormal, type AntialiasMode, type LoadedModel, type SceneColors, type SceneHandle } from "./scene";
+import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, DEFAULT_ZOOM_TO_CURSOR, EXPLODE_STILL_MM, HIGHLIGHT_GLOW, hoverMaterial, ownColour, cadWrapper, cameraBetween, createScene, dominantNormal, explodeCamera, principalNormal, focusMaterial, frameGizmo, glbCache, loadGlb, loadModel, lookAlong, materialFor, needsRefit, proceduralGeometry, toMatrix4, triangleNormal, type AntialiasMode, type LoadedModel, type SceneColors, type SceneHandle } from "./scene";
 import { buildAll, bvhStats, pick } from "./render/pick";
 import { setMeshLook } from "./render/looks";
 import { paintComponent, swapMaterial } from "./render/glow";
@@ -47,10 +47,19 @@ import type { ViewerSnapshotMessage } from "../api";
 import { HUMAN, SYSTEM, presentation, presentationFromDisplay, same, serializeViewState, useViewSlice, viewHub, type Actor, type Batch, type CameraState, type PlacementVerb, type SectionPlane, type ViewHub, type ViewSelection, type ViewState } from "./state";
 import type { PlacementFacts, SetOp } from "../api";
 import { focusSelection, freshFocus, glowPlan, holdsPath, matchesPath, placeholderSummary, shortRecordId, shownBy, viewUp, type GlowPlan, type PlaceholderSummary } from "./state/view";
+import type { LabelKind as ViewLabelKind, ViewerHistoryEntry } from "../api";
+import type { ThemeToken } from "../theme/tokens";
+import { baseMaterialOf } from "./render/looks";
+import { longHoverMs, viewerSettings } from "./viewerSettings";
+import { HoverTip, NavButtons, PartMenu, TIP_SHORT_MS, goBack, hostNavigates, hoverColour, isDarkGround, menuFor, navOf, navigateTarget, packageLine, resolveHighlightColour, selectionColour, shortTip, type Box2, type MenuItem, type NavPlace, type PartTip } from "./nav";
 
 /** Render knobs from the page URL (read when the view mounts, so importing the library touches no window). */
 const urlParams = () => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
 
+/** DEFAULT (R2-A, A3): a hovered body or component of more meshes than this is not tinted (the tooltip still shows). */
+const HOVER_PAINT_MAX_MESHES = 4000;
+/** DEFAULT (R2-A, refdes and MPN labels): at most this many component labels of each kind. */
+const COMPONENT_LABELS = 60;
 /** Explode distance (mm per mate level) at "exploded". */
 const EXPLODE_MM = 26;
 /** A camera drag reports its camera to the view state at most this often (ms); the host saves after 400 ms of quiet. */
@@ -123,6 +132,22 @@ interface HardwareRec {
   offset: THREE.Vector3;
 }
 
+/** What is under the pointer (R2-A): the pick, the body key, the component's or harness's path in the view's scope. */
+interface PartUnder {
+  hit: NonNullable<ReturnType<typeof pick>>;
+  /** The body hit (with `#artifact` when it is one of a module's artifacts). */
+  key?: string;
+  /** The body's instance path. */
+  holder?: string;
+  /** A component drawn inside the body (a board's part), by instance path in the scope. */
+  component?: string;
+  harness?: string;
+  /** A fastener: the joint it belongs to. */
+  mate?: string;
+  /** The part's instance path in the scope: the component, else the body, else the harness. */
+  path: string;
+}
+
 /** Host openFinding messages already pinned, for the page's lifetime (gate R1). */
 const findingsPinned = new WeakSet<object>();
 
@@ -168,6 +193,7 @@ export function CadView({
   onLoadState,
   onOpenModule,
   onInspect,
+  findingText,
   hub: givenHub,
   sequence,
   onLoadTier,
@@ -225,6 +251,11 @@ export function CadView({
   presence?: PresenceChip[];
   /** Show a part in the host's own Inspector (`uhd-viewer:inspect`), by instance path from the root (R1-C's D3). */
   onInspect?: (path: string, defId?: string) => void;
+  /**
+   * Plain titles and summaries for the viewer's own checks, from the bundle's copies of them (R2-C's handoff:
+   * `plainTextIndex` of the host's and bundle's diagnostics, made before the controller drops the bundle's copies).
+   */
+  findingText?: ReadonlyMap<string, FindingText>;
 }) {
   const display = source.display.spatial ?? {};
   const resolve = source.resolveArtifact;
@@ -245,13 +276,56 @@ export function CadView({
   // this view shows `at`: its own camera, selection, sections and explode come back (CadView remounts per scope);
   // before paint and before the effects below read the camera, and not during a render (the store tells listeners)
   useLayoutEffect(() => store.enterScope(at), [store, at]);
+  // ---- R2-A (F1): the viewer's own back and forward. Showing a level is a place; Back to a place of this level
+  // restores its camera, selection and isolation (./nav/history.ts)
+  /** The view as it is now, kept on the place when it is left. */
+  const placeNow = (): Partial<NavPlace> => {
+    const s = store.get();
+    return { camera: s.camera, selection: s.selection, isolation: s.isolation };
+  };
+  /** Put a place back: its selection, isolation and camera (a place never left has no camera: its part is framed). */
+  const restorePlace = (p: NavPlace) => {
+    const ops: unknown[] = [];
+    if (p.selection) ops.push({ op: "select", selection: p.selection });
+    if (p.isolation !== undefined) ops.push({ op: "isolate", paths: p.isolation });
+    if (p.camera) ops.push({ op: "camera", camera: p.camera });
+    if (!ops.length) return;
+    const r = store.dispatch(ops, { actor: HUMAN, label: `go to ${p.label}`.slice(0, 120), source: "nav" });
+    if (r && "error" in r) console.warn(`[cad] history: ${r.error}`);
+    if (!p.camera && (p.selection?.body !== undefined || p.selection?.harness !== undefined)) look.current = true;
+  };
+  useLayoutEffect(() => {
+    const nav = navOf(hub);
+    const snapshot = () => placeNow();
+    nav.snapshot = snapshot;
+    const going = nav.going;
+    if (going && going.scope === at) {
+      nav.going = null;
+      restorePlace(going);
+      nav.emit();
+    } else if (nav.current()?.scope !== at) {
+      // a part opened in place may arrive as its parent's level (a drill shows the level that holds a part)
+      const expect = nav.expect && (nav.expect.scope === at || (at !== "" && nav.expect.scope.startsWith(`${at}/`))) ? nav.expect : undefined;
+      nav.expect = undefined;
+      nav.push({ scope: at, label: expect?.label ?? shown.name, kind: expect?.kind ?? (nav.length ? "drill" : "open") });
+    } else nav.emit();
+    return () => {
+      nav.remember(placeNow());
+      if (nav.snapshot === snapshot) nav.snapshot = undefined;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hub, at]);
   const sel = useViewSlice(store, (s) => s.selection);
   const direction = useViewSlice(store, (s) => s.direction) as Direction;
   const vis = useViewSlice(store, (s) => s.visibility);
   const sections = useViewSlice(store, (s) => s.sections);
   const explodeT = useViewSlice(store, (s) => s.explode.t);
   const explodeStep = useViewSlice(store, (s) => s.explode.step);
+  const explodeMode = useViewSlice(store, (s) => (s.explode as { mode?: "radial" | "sequence" }).mode) ?? "radial";
+  const explodeScope = useViewSlice(store, (s) => (s.explode as { scope?: string }).scope);
   const highlight = useViewSlice(store, (s) => s.highlight);
+  /** R2-A (A3): the colour an agent gave its highlight (a token or a hex); absent, the theme's glow. */
+  const highlightColor = useViewSlice(store, (s) => s.highlightColor);
   const isolation = useViewSlice(store, (s) => s.isolation);
   /** The person's own writes (a click, a toggle): applied as they come, logged as the user's. */
   const write = (ops: unknown[], label?: string) => {
@@ -262,7 +336,7 @@ export function CadView({
   const setVis = (k: keyof ViewState["visibility"], v: unknown) => write([{ op: "set", path: ["visibility", k], value: v }]);
   const setDirection = (d: Direction) => write([{ op: "set", path: ["direction"], value: d }]);
   const showLabels = vis.labels;
-  const labelKinds = useMemo(() => new Set<LabelKind>(vis.labelKinds), [vis.labelKinds]);
+  const labelKinds = useMemo(() => new Set<ViewLabelKind>(vis.labelKinds), [vis.labelKinds]);
   const showFrames = vis.frames;
   const showWires = vis.wires;
   const showHardware = vis.hardware;
@@ -364,7 +438,7 @@ export function CadView({
   // findings name paths from the root: inside a module's view, the ones that lie in it
   const findings = useMemo(() => {
     if (!model) return [];
-    if (!at) return findingAnchors(model, diagnostics, hostDiagnostics);
+    if (!at) return findingAnchors(model, diagnostics, hostDiagnostics, findingText);
     const own = diagnostics.flatMap((d) => {
       const refs = d.refs.flatMap((r) => scopeRef(r, at) ?? []);
       return refs.length ? [{ ...d, refs }] : [];
@@ -374,8 +448,8 @@ export function CadView({
       const id = d.entity.kind === "link" ? scopeRef(`link:${d.entity.id}`, at)?.slice(5) : scopeRef(d.entity.id, at);
       return id === undefined ? [] : [{ ...d, entity: { ...d.entity, id } }];
     });
-    return findingAnchors(model, own, fromHost);
-  }, [model, diagnostics, hostDiagnostics, at]);
+    return findingAnchors(model, own, fromHost, findingText);
+  }, [model, diagnostics, hostDiagnostics, at, findingText]);
   // ---- marker-first DRC (PB-1184): every finding mapped to 3D anchors (./annot/findings-anchors.ts) ----------
   const annotFindings: FindingAnchors[] = useMemo(() => {
     if (!model) return [];
@@ -403,9 +477,9 @@ export function CadView({
       const comp = a.select.component;
       return { body: a.body, ...(a.local ? { local: [a.local[0], a.local[1], a.local[2]] as [number, number, number] } : {}), ...(comp ? { component: holder ? `${holder}/${comp}` : comp } : {}) };
     };
-    return findingsAnchors(findingInputs(own, fromHost), scene, { entityAnchor });
+    return findingsAnchors(findingInputs(own, fromHost, findingText), scene, { entityAnchor });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, diagnostics, hostDiagnostics, at, loaded]);
+  }, [model, diagnostics, hostDiagnostics, at, loaded, findingText]);
   // DEFAULT (PB-1184, round-2 note D.3): markers on when a fail or risk finding lands on the model, or a host's does
   const showFindings = findingsChoice ?? (annotFindings.some((f) => f.anchors.length > 0 && (f.severity === "fail" || f.severity === "risk")) || findings.some((f) => f.host));
   const [shownSev, setShownSev] = useState<Set<FindingSeverity>>(() => new Set(DEFAULT_SHOWN));
@@ -709,7 +783,7 @@ export function CadView({
           // R1-A (M1): the selection and the highlight in force are painted on it now, so the swap shows no frame
           // without them (the glow effect paints it again on its next pass and undoes this with its own)
           const glow = glowNow.current;
-          if (glow) paintBody(rec, glow.plan, h.colors, glow.restore);
+          if (glow) paintBody(rec, glow.plan, glow.colors, glow.restore);
           // programs before the swap: the next frame does not stall on a shader compile
           await h.compile([rec.obj]);
           tracker.current?.upload(++compiled, state.total);
@@ -855,6 +929,14 @@ export function CadView({
     if (explodeT > 0 && !player.current && settledRef.current) resolveSequence();
     handle.current?.invalidate("pose");
   }, [explodeT]);
+  useEffect(() => {
+    // the player's own mode switch (not runSequence: a command there is a jump that resets the eased explode amount)
+    if (player.current?.setMode(explodeMode)) handle.current?.invalidate("pose");
+  }, [explodeMode]);
+  useEffect(() => {
+    player.current?.setScope(explodeScope);
+    handle.current?.invalidate("pose");
+  }, [explodeScope]);
   // the view state's sequence step (an agent's or a host's `explode {t, step}`) drives the player (gate 3); the
   // player's own write-back names the step it is at, so it does not come back here as a jump
   useEffect(() => {
@@ -933,6 +1015,9 @@ export function CadView({
     if (player.current) player.current.replace(resolved);
     else {
       player.current = new SequencePlayer(resolved);
+      const ex0 = store.get().explode as { mode?: "radial" | "sequence"; step?: string | null; scope?: string };
+      player.current.setMode(ex0.mode ?? (ex0.step ? "sequence" : "radial"), { instant: true });
+      player.current.setScope(ex0.scope, { instant: true });
       // W3-D (gate item 6): the player's step written back to the view state (a string step id or null)
       stepOff.current?.();
       // gate 3: while the view only eases toward the view state's explode amount (an agent's `explode t:0`), the
@@ -942,7 +1027,8 @@ export function CadView({
         const p = player.current;
         const driving = seqDriving.current || Boolean(p?.playing);
         const amount = driving ? t : store.get().explode.t;
-        store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, amount)), step }], { actor: SYSTEM, label: "sequence step", source: "view" });
+        // R2-B: the step written back keeps the sub-assembly and the mode the player is in
+        store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, amount)), step, ...(p?.scope ? { scope: p.scope } : {}), ...(p ? { mode: p.explodeMode } : {}) } as never], { actor: SYSTEM, label: "sequence step", source: "view" });
       });
       player.current.set({ t: explode.current.value });
       if (seqUrl.step || seqUrl.play) applyUrlState(player.current, seqUrl);
@@ -1052,7 +1138,7 @@ export function CadView({
       if (playing && !seqMoving && p) {
         // a play ended: the view state's explode follows, so the toggle and the URL say where it stopped
         ex.value = ex.target = p.t;
-        store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, p.t)) }], { actor: SEQUENCE, label: "the sequence play ended", source: "sequence" });
+        store.dispatch([{ op: "explode", t: Math.min(1, Math.max(0, p.t)), ...(p.scope ? { scope: p.scope } : {}), mode: p.explodeMode } as never], { actor: SEQUENCE, label: "the sequence play ended", source: "sequence" });
       }
       playing = seqMoving;
       const size = h.renderer.getSize(new THREE.Vector2());
@@ -1183,6 +1269,43 @@ export function CadView({
         });
       }
     }
+    // R2-A (R1-C's handoff): a label per component drawn inside a body (a board's parts) by its refdes or MPN, at
+    // most COMPONENT_LABELS of each kind (DEFAULT), components with a refdes first; anchored at the component's centre
+    for (const kind of ["refdes", "mpn"] as const) {
+      if (!labelKinds.has(kind)) continue;
+      const out: LabelItem[] = [];
+      for (const rec of bodies.current.values()) {
+        const holder = rec.body.key.split("#")[0];
+        for (const n of rec.nodes ?? []) {
+          if (out.length >= COMPONENT_LABELS) break;
+          if (!n.instancePath) continue;
+          const path = instancePathIn(holder, n.instancePath);
+          const fullPath = outOfScope(path, at);
+          const inst = instanceAt(system, lookup, fullPath);
+          const f = partFacts(fullPath, inst?.def, inst?.child);
+          const title = kind === "refdes" ? f.refdes : f.mpn;
+          if (!title) continue;
+          let local: THREE.Vector3 | null | undefined;
+          out.push({
+            id: `${kind === "refdes" ? "r" : "p"}:${path}`,
+            kind: kind as LabelItem["kind"],
+            title,
+            ...(kind === "refdes" && f.mpn ? { sub: f.mpn } : kind === "mpn" && f.refdes ? { sub: f.refdes } : {}),
+            anchor: () => {
+              // the component's centre in its body's frame, found once (a board's parts do not move on it)
+              if (local === undefined) {
+                const box = componentIn(rec.obj, n.instancePath!, path)?.box;
+                rec.obj.updateWorldMatrix(true, false);
+                local = box ? box.getCenter(new THREE.Vector3()).applyMatrix4(rec.obj.matrixWorld.clone().invert()) : null;
+              }
+              return local ? local.clone().applyMatrix4(rec.obj.matrixWorld) : null;
+            },
+            onClick: () => setSel({ body: rec.body.key, component: path }),
+          });
+        }
+      }
+      items.push(...out);
+    }
     // findings are markers now (PB-1184, ./annot): this layer carries the module, harness and interface labels
     // R1-C handoff (D5): labels behind the drawn model's centre fade
     layer.centre = () => {
@@ -1292,21 +1415,28 @@ export function CadView({
 
   // ---- what glows (R1-A: A1, A2, M5) ----------------------------------------------------------------------
   /** The plan in force and its undo list: a body built by a hot swap is painted with it before it is shown (M1). */
-  const glowNow = useRef<{ plan: GlowPlan; restore: (() => void)[] } | null>(null);
+  const glowNow = useRef<{ plan: GlowPlan; restore: (() => void)[]; colors: SceneColors } | null>(null);
   /** Paint one body as the plan says: the selection's solid accent surface, the highlight's glow, its components. */
   const paintBody = (rec: BodyRec, plan: GlowPlan, colors: SceneColors, restore: (() => void)[]) => {
     const key = rec.body.key;
     const selected = plan.selected.has(key);
     const glow = plan.highlighted.has(key) ? colors.glowStrong : undefined;
+    // R2-A (A3): a part whose own colour is the accent's (an orange part, orange selection) is selected in the
+    // secondary accent, the theme's `highlight` (`colors.xAxis`), DEFAULT delta E 12
+    const selColour = selected ? selectionColour(ownColour([rec.obj]), colors.focus, colors.xAxis) : colors.focus;
     rec.obj.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh || o.userData.bodyKey === undefined) return;
       // a highlight is a shared variant of the mesh's material: under the batcher, an instance attribute
       setMeshLook(mesh, { emissive: glow });
       // DEFAULT (M5): a selected body is drawn in the theme's accent surface, as a selected component is
-      if (selected) swapMaterial(mesh, focusMaterial(colors.focus), restore);
+      if (selected) swapMaterial(mesh, focusMaterial(selColour), restore);
     });
-    if (plan.component?.holder === key) paintComponent(rec, plan.component.path, "select", colors, restore);
+    if (plan.component?.holder === key) {
+      const objs = componentObjects(rec, plan.component.path);
+      const c = selectionColour(objs ? ownColour(objs) : undefined, colors.focus, colors.xAxis);
+      paintComponent(rec, plan.component.path, "select", c === colors.focus ? colors : { ...colors, focus: c }, restore);
+    }
     for (const c of plan.components) if (c.holder === key) paintComponent(rec, c.path, "highlight", colors, restore);
   };
 
@@ -1320,14 +1450,19 @@ export function CadView({
 
     // R1-A: one plan for what glows. A picked component lights itself, never its holder board (A2); a highlight below
     // a body lights the component it names (A1); the selection is the accent surface on bodies and components alike (M5)
+    // R2-A: the hover's paint comes off before the selection is painted (it is put back on the next pointer move)
+    clearHoverPaint();
     const plan = glowPlan({ bodies: bodies.current.keys(), harnesses: harnessObjs.current.keys(), selection: sel, highlight, within: model.within });
-    for (const rec of bodies.current.values()) paintBody(rec, plan, h.colors, restore);
-    glowNow.current = { plan, restore };
+    // R2-A (A3): the agent's own highlight colour (a token or a hex), at the glow's share of it as the accent's is
+    const custom = resolveHighlightColour(highlightColor, (t) => (host.current ? tokenColor(host.current, t as ThemeToken, "") || undefined : undefined));
+    const colors: SceneColors = custom === undefined ? h.colors : { ...h.colors, glowStrong: new THREE.Color(custom).multiplyScalar(HIGHLIGHT_GLOW).getHex() };
+    for (const rec of bodies.current.values()) paintBody(rec, plan, colors, restore);
+    glowNow.current = { plan, restore, colors };
     for (const key of plan.harnesses) {
       const obj = harnessObjs.current.get(key);
       obj?.traverse((o) => {
         if (!(o as THREE.Mesh).isMesh) return;
-        setMeshLook(o as THREE.Mesh, { emissive: h.colors.glowStrong });
+        setMeshLook(o as THREE.Mesh, { emissive: colors.glowStrong });
         restore.push(() => setMeshLook(o as THREE.Mesh, { emissive: undefined }));
       });
     }
@@ -1483,13 +1618,14 @@ export function CadView({
     setNotes([...new Set(newNotes)]);
     h.invalidate();
     return () => {
+      clearHoverPaint();
       // last applied first: a component's glow is undone before its body's look is
       for (let i = restore.length - 1; i >= 0; i--) restore[i]();
       if (glowNow.current?.restore === restore) glowNow.current = null;
       handle.current?.invalidate();
     };
     // x-ray repoints the meshes at its own variants: the selection is painted again over it
-  }, [model, sel, direction, showFrames, loaded, themed, highlight, xray]);
+  }, [model, sel, direction, showFrames, loaded, themed, highlight, highlightColor, xray]);
 
   // ---- isolation and hidden paths (the view state's): a body, a harness or a fastener is drawn or not -----
   useEffect(() => {
@@ -1512,7 +1648,9 @@ export function CadView({
     h.scene.updateMatrixWorld();
     return pick(ray, [h.root, harnessGroup.current], {
       clippingPlanes: h.renderer.clippingPlanes,
-      filter: (m) => Boolean(m.userData.bodyKey || m.userData.harness),
+      // wave R2 gate: a body keyed "" (the level's own model: a board opened on its own) is a body too; a truthiness
+      // test left a board's level with nothing to hover, click or double-click
+      filter: (m) => m.userData.bodyKey !== undefined || Boolean(m.userData.harness),
       // ids stop at the body's own group (the parts above it belong to the assembly)
       stop: (m) => {
         let o: THREE.Object3D | null = m;
@@ -1521,67 +1659,394 @@ export function CadView({
       },
     });
   };
+  /** What is under a client point (R2-A: one answer for a click, a double-click, the hover and the menu). */
+  const partUnder = (clientX: number, clientY: number): PartUnder | undefined => {
+    const h = handle.current;
+    if (!h) return undefined;
+    const r = h.renderer.domElement.getBoundingClientRect();
+    if (!r.width || !r.height) return undefined;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), h.camera);
+    // three-mesh-bvh, nearest first, skipping what is hidden or cut away by the section (PB-1175)
+    const hit = pickAt(ray.ray);
+    if (!hit) return undefined;
+    if (hit.object.userData.harness) return { hit, harness: hit.object.userData.harness as string, path: hit.object.userData.harness as string };
+    const k = hit.object.userData.bodyKey as string;
+    const mate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
+    // the node's id in the body, else the instance path the GLB's extras (or the sidecar's feature ids) give
+    const child = (hit.object.userData.component as string | undefined) ?? hit.partInstanceId;
+    // a component is named by its instance path in the model (the body's path, then its id in the body), as a host's focus names it
+    const holder = k.split("#")[0];
+    const component = child === undefined ? undefined : instancePathIn(holder, child);
+    return { hit, key: k, holder, ...(component !== undefined ? { component } : {}), ...(mate ? { mate } : {}), path: component ?? holder };
+  };
+  /** The selection a part under the pointer stands for. */
+  const selectionOf = (u: PartUnder): CadSelection => (u.harness !== undefined ? { harness: u.harness } : u.mate ? { mate: u.mate } : u.component !== undefined ? { body: u.key!, component: u.component } : { body: u.key! });
+  /** The objects of a component drawn inside a body (its node, or the instanced mesh one instance of it is in). */
+  const componentObjects = (rec: BodyRec, path: string): THREE.Object3D[] | undefined => {
+    const holderKey = rec.body.key.split("#")[0];
+    return componentIn(rec.obj, holderKey && path.startsWith(`${holderKey}/`) ? path.slice(holderKey.length + 1) : path, path)?.objects;
+  };
+  /** A place for the history (R2-A, F1): the current one keeps the view as it is left, then the new one is pushed. */
+  const pushPlace = (kind: ViewerHistoryEntry["kind"], selection: CadSelection, label: string, isolation?: string[] | null) => {
+    const nav = navOf(hub);
+    nav.remember(placeNow());
+    nav.push({ scope: at, label, kind, selection, isolation: isolation !== undefined ? isolation : store.get().isolation });
+  };
+  /** The facts a tooltip and the menu's title show for a part (R2-A, A3). */
+  const tipFor = (u: PartUnder): PartTip => {
+    const full = outOfScope(u.path, at);
+    const inst = instanceAt(system, lookup, full);
+    const f = partFacts(full, inst?.def, inst?.child);
+    const def = inst?.def;
+    const names = u.harness !== undefined ? instanceNames(shown, lookup) : undefined;
+    const name = u.harness !== undefined ? (names?.get(u.harness) ?? f.name) : full === at ? shown.name : f.name;
+    // findings naming the part or a part inside it (their refs are the view's paths; a host's may be from the root)
+    const under = (r: string) => r === u.path || r.startsWith(`${u.path}/`) || r === full || (full !== "" && r.startsWith(`${full}/`));
+    const order = ["fail", "risk", "warn", "info", "unknown", "pass"];
+    const hits = annotFindingsRef.current.filter((x) => x.refs.some(under) || x.anchors.some((a) => (a.component !== undefined ? under(a.component) : u.component === undefined && a.body === u.key)));
+    const worst = hits.map((x) => x.severity as string).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+    const opens = Boolean(navigateTarget(def, full)) && full !== at && (hostNavigates(hub) || Boolean(openModuleRef.current && (def?.children?.length || (def && glbFor(def)))));
+    return {
+      key: u.path,
+      ...(f.refdes ? { refdes: f.refdes } : {}),
+      ...(name ? { name } : {}),
+      ...(f.mpn ? { mpn: f.mpn } : {}),
+      ...(packageLine(def) ? { pkg: packageLine(def) } : {}),
+      findings: hits.length,
+      ...(worst ? { worst } : {}),
+      open: opens ? "open" : "frame",
+    };
+  };
+  /** Frame a part here (no host to open it, the menu's Frame): selected and looked at, and a place to come back from. */
+  const frameHere = (u: PartUnder) => {
+    const next = selectionOf(u);
+    pushPlace("frame", next, shortTip(tipFor(u)));
+    if (same(next, selRef.current)) {
+      focus();
+      handle.current?.renderOnce();
+      return;
+    }
+    look.current = true;
+    setSel(next);
+  };
+  /**
+   * Open a part's own 3D model (R2-A, F3, F1): through the host's navigate when it takes it (`replace` in this tab,
+   * `newTab`), else an older host's open-module (a new tab), else framed here.
+   */
+  const openPart = (u: PartUnder, how: "replace" | "newTab") => {
+    if (u.key === undefined || u.mate) return;
+    const full = outOfScope(u.path, at);
+    const def = full ? defAt(system, lookup, full.split("/")) : undefined;
+    if (!def || full === at) return;
+    const target = navigateTarget(def, full);
+    const link = hub.navLink;
+    if (target && link && hostNavigates(hub)) {
+      const nav = navOf(hub);
+      nav.remember(placeNow());
+      if ("module" in target && how === "replace") nav.expect = { scope: target.module, label: shortTip(tipFor(u)), kind: "open" };
+      link.emit({ type: "uhd-viewer:navigate", target, how, view: "3d", from: at });
+      return;
+    }
+    const open = openModuleRef.current;
+    if (open && (def.children?.length || glbFor(def))) return open(full, "3d");
+    // no host to open it: select it here and look at it
+    frameHere(u);
+  };
+
+  // ---- hover (R2-A, A3): the part under the resting pointer, in a colour derived from its own; a tooltip --------
+  /** The hovered part, its paint (undone before any selection paint), the pointer and its timers. Never view state. */
+  const hoverRef = useRef<{ id: string; under: PartUnder; restore: (() => void)[]; painted: boolean; at: { x: number; y: number }; timers: ReturnType<typeof setTimeout>[]; stage: "none" | "short" | "long" } | null>(null);
+  const [hoverTip, setHoverTip] = useState<{ tip: PartTip; stage: "short" | "long"; part: Box2; pointer: { x: number; y: number }; view: { width: number; height: number } } | null>(null);
+  const hoverFrame = useRef(0);
+  const hoverPoint = useRef<{ x: number; y: number } | null>(null);
+  const menuOpen = useRef(false);
+  const clearHoverPaint = () => {
+    const hv = hoverRef.current;
+    if (!hv?.painted) return;
+    for (let i = hv.restore.length - 1; i >= 0; i--) hv.restore[i]();
+    hv.restore = [];
+    hv.painted = false;
+    handle.current?.invalidate();
+  };
+  const hoverOff = () => {
+    if (hoverFrame.current) cancelAnimationFrame(hoverFrame.current);
+    hoverFrame.current = 0;
+    const hv = hoverRef.current;
+    if (hv) {
+      hv.timers.forEach(clearTimeout);
+      clearHoverPaint();
+    }
+    hoverRef.current = null;
+    setHoverTip(null);
+    const el = handle.current?.renderer.domElement;
+    if (el && el.style.cursor === "pointer") el.style.cursor = "";
+  };
+  /** The part's box on screen, in the canvas host's CSS px. */
+  const screenBox = (u: PartUnder): Box2 | undefined => {
+    const h = handle.current;
+    const el = host.current;
+    if (!h || !el) return undefined;
+    let box: THREE.Box3 | undefined;
+    if (u.harness !== undefined) {
+      const o = harnessObjs.current.get(u.harness);
+      if (o) box = new THREE.Box3().setFromObject(o);
+    } else if (u.key !== undefined) {
+      const rec = bodies.current.get(u.key);
+      if (rec && u.component !== undefined) {
+        const holderKey = u.key.split("#")[0];
+        box = componentIn(rec.obj, holderKey && u.component.startsWith(`${holderKey}/`) ? u.component.slice(holderKey.length + 1) : u.component, u.component)?.box;
+      }
+      if (!box && rec) {
+        rec.obj.updateWorldMatrix(true, false);
+        box = rec.box.isEmpty() ? boundsOf([rec.obj]) : rec.box.clone().applyMatrix4(rec.obj.matrixWorld);
+      }
+    }
+    if (!box || box.isEmpty()) return undefined;
+    const r = el.getBoundingClientRect();
+    const c = h.renderer.domElement.getBoundingClientRect();
+    const pts = projectPoints(h, [0, 1, 2, 3, 4, 5, 6, 7].map((i) => [i & 1 ? box!.max.x : box!.min.x, i & 2 ? box!.max.y : box!.min.y, i & 4 ? box!.max.z : box!.min.z]));
+    const dx = c.left - r.left;
+    const dy = c.top - r.top;
+    const xs = pts.map((p) => p[0] + dx);
+    const ys = pts.map((p) => p[1] + dy);
+    return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+  };
+  /** Paint the hovered part in its hover colour: each mesh's own colour mixed toward the accent, theme-aware. */
+  const paintHover = () => {
+    const h = handle.current;
+    const hv = hoverRef.current;
+    if (!h || !hv || hv.painted) return;
+    const u = hv.under;
+    const s = selRef.current;
+    // a selected part keeps its selection surface (the tooltip still shows)
+    if ((u.harness !== undefined && s.harness === u.harness) || (u.component !== undefined ? s.component === u.component : u.key !== undefined && s.body === u.key && !s.component)) return;
+    // wave R2 gate (review): the board under the pointer while one of its components is selected keeps that
+    // component's orange (the whole board's swap covered it); in X-ray the opaque hover material hid what is inside
+    if (u.component === undefined && u.key !== undefined && s.body === u.key && s.component) return;
+    if (xray) return;
+    const accent = h.colors.focus;
+    const bg = h.scene.background as THREE.Color | null;
+    const dark = bg ? isDarkGround(bg.getHex()) : true;
+    const paintMeshes = (roots: THREE.Object3D[]) => {
+      // a body of very many meshes (ClientX's board: ~70,000) is not tinted: regrouping them all on every rest of the
+      // pointer would stall the frame; its tooltip still shows (DEFAULT HOVER_PAINT_MAX_MESHES)
+      let n = 0;
+      for (const root of roots) root.traverse((o) => void ((o as THREE.Mesh).isMesh && n++));
+      if (n > HOVER_PAINT_MAX_MESHES) return;
+      for (const root of roots)
+        root.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh || o.userData.feature) return;
+          const base = baseMaterialOf(mesh) as THREE.MeshStandardMaterial;
+          const own = base.color ? base.color.getHex() : accent;
+          swapMaterial(mesh, hoverMaterial(hoverColour(own, accent, dark)), hv.restore);
+        });
+    };
+    if (u.harness !== undefined) {
+      const o = harnessObjs.current.get(u.harness);
+      if (o) paintMeshes([o]);
+    } else if (u.key !== undefined) {
+      const rec = bodies.current.get(u.key);
+      if (!rec) return;
+      if (u.component !== undefined) {
+        const objs = componentObjects(rec, u.component);
+        // one instance of a GPU-instanced node: a twin in the hover colour of the instance's own (./render/glow.ts)
+        if (objs?.length === 1 && (objs[0] as THREE.InstancedMesh).isInstancedMesh) paintComponent(rec, u.component, "select", { ...h.colors, focus: hoverColour(ownColour(objs) ?? accent, accent, dark) }, hv.restore);
+        else if (objs) paintMeshes(objs);
+      } else paintMeshes([rec.obj]);
+    }
+    hv.painted = true;
+    h.invalidate();
+  };
+  /** Show the tooltip's stage for the hovered part (and paint it with the short one). */
+  const showTip = (stage: "short" | "long") => {
+    const hv = hoverRef.current;
+    const el = host.current;
+    if (!hv || !el || menuOpen.current) return;
+    hv.stage = stage;
+    if (stage === "short") paintHover();
+    const part = screenBox(hv.under);
+    if (!part) return;
+    const r = el.getBoundingClientRect();
+    setHoverTip({ tip: tipFor(hv.under), stage, part, pointer: { x: hv.at.x - r.left, y: hv.at.y - r.top }, view: { width: r.width, height: r.height } });
+  };
+  /** The pointer rests at a client point (no button down): what is under it, at most once a frame. */
+  const hoverAt = (x: number, y: number) => {
+    hoverPoint.current = { x, y };
+    if (hoverFrame.current) return;
+    hoverFrame.current = requestAnimationFrame(() => {
+      hoverFrame.current = 0;
+      const p = hoverPoint.current;
+      const h = handle.current;
+      // nothing until every model is in (a hover must not build pick structures during the load, gate R1), never under a menu
+      if (!p || !h || !settledRef.current || menuOpen.current) return;
+      const u = partUnder(p.x, p.y);
+      const id = u ? `${u.harness ?? ""}|${u.key ?? ""}|${u.path}` : "";
+      const hv = hoverRef.current;
+      if (hv && hv.id === id) {
+        hv.at = p;
+        if (hv.stage !== "none") showTip(hv.stage);
+        return;
+      }
+      hoverOff();
+      if (!u) return;
+      // what is selectable says so: the pointer (Kevin: "if I hover over something it doesn't tell me if it's clickable")
+      h.renderer.domElement.style.cursor = "pointer";
+      // fasteners select their joint: no tooltip of their own
+      if (u.mate) return;
+      const next = { id, under: u, restore: [] as (() => void)[], painted: false, at: p, timers: [] as ReturnType<typeof setTimeout>[], stage: "none" as const };
+      hoverRef.current = next;
+      next.timers.push(setTimeout(() => hoverRef.current === next && showTip("short"), TIP_SHORT_MS));
+      // the long tier after the host's `settings.hoverLongDelayMs` (R2-E, J1), DEFAULT TIP_LONG_MS (900)
+      next.timers.push(setTimeout(() => hoverRef.current === next && showTip("long"), longHoverMs(hub)));
+    });
+  };
+
+  // ---- the part menu (R2-A, F2): on a right-click without a drag, at the pointer ---------------------------------
+  const [menu, setMenu] = useState<{ x: number; y: number; under: PartUnder; title: string; items: MenuItem[] } | null>(null);
+  const closeMenu = useMemo(
+    () => () => {
+      menuOpen.current = false;
+      setMenu(null);
+    },
+    [],
+  );
+  /** The module a part's "Explode this sub-assembly" explodes: the part itself when it has parts, else its parent. */
+  const explodeScopeOf = (u: PartUnder): string | undefined => {
+    if (u.harness !== undefined || u.key === undefined) return undefined;
+    const defIn = (p: string) => (p ? defAt(shown, lookup, p.split("/")) : shown);
+    if (defIn(u.path)?.children?.length) return u.path;
+    const parent = u.path.includes("/") ? u.path.slice(0, u.path.lastIndexOf("/")) : "";
+    return defIn(parent)?.children?.length ? parent : undefined;
+  };
+  const openMenu = (x: number, y: number, u: PartUnder) => {
+    if (u.mate) return;
+    hoverOff();
+    const full = outOfScope(u.path, at);
+    const def = full ? defAt(system, lookup, full.split("/")) : undefined;
+    const target = full !== at ? navigateTarget(def, full) : undefined;
+    const canOpenTab = hostNavigates(hub) || Boolean(openModuleRef.current);
+    const items = menuFor({ target, component: u.component !== undefined, canExplode: explodeScopeOf(u) !== undefined, canOpenTab, isolated: Boolean(isolation) });
+    // a host with no navigate opens in place by framing (the old double-click); a new tab needs a host
+    const fixed = items.map((it) => (it.id === "open" && target && !hostNavigates(hub) && !openModuleRef.current ? { ...it, label: "Frame its 3D model here" } : it));
+    menuOpen.current = true;
+    setMenu({ x, y, under: u, title: shortTip(tipFor(u)), items: fixed });
+  };
+  const copyText = (text: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(text).catch(() => copyFallback(text));
+        return;
+      }
+    } catch {
+      /* the fallback below */
+    }
+    copyFallback(text);
+  };
+  const copyFallback = (text: string) => {
+    const t = document.createElement("textarea");
+    t.value = text;
+    t.style.position = "fixed";
+    t.style.opacity = "0";
+    document.body.appendChild(t);
+    t.select();
+    try {
+      document.execCommand("copy");
+    } catch {
+      /* nothing copied: the path is in the menu's title */
+    }
+    t.remove();
+  };
+  const runMenu = (id: MenuItem["id"], m: { under: PartUnder; title: string }) => {
+    const u = m.under;
+    const full = outOfScope(u.path, at);
+    const drawnAs = u.harness ?? u.holder ?? u.path;
+    switch (id) {
+      case "inspect":
+        // the host's Inspector when it has one (`uhd-viewer:inspect`); selected here either way (the card follows)
+        if (u.harness !== undefined) setSel({ harness: u.harness });
+        else inspectRef(full);
+        return;
+      case "open":
+        return openPart(u, "replace");
+      case "openTab":
+        return openPart(u, "newTab");
+      case "frame":
+        return frameHere(u);
+      case "isolate": {
+        const next = isolation ? null : [drawnAs];
+        pushPlace("isolate", selRef.current, isolation ? "everything" : m.title, next);
+        return write([{ op: "isolate", paths: next }], isolation ? "show everything" : `isolate ${m.title}`.slice(0, 120));
+      }
+      case "hide":
+        return write([{ op: "hide", paths: [drawnAs] }], `hide ${m.title}`.slice(0, 120));
+      case "explode": {
+        const scope = explodeScopeOf(u);
+        if (scope === undefined) return;
+        // R2-B owns how a sub-assembly comes apart; the view state names it (`explode.scope`)
+        return toggleExploded(true, scope || undefined);
+      }
+      case "copy":
+        return copyText(full);
+    }
+  };
+
+  /** The handlers below run in an effect made once per model: they reach this render's functions through this. */
+  const live = useRef({ partUnder, openPart, openMenu, hoverAt, hoverOff, selectionOf });
+  live.current = { partUnder, openPart, openMenu, hoverAt, hoverOff, selectionOf };
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
     const el = h.renderer.domElement;
     // a click is a press whose pointer never wandered more than 4 px (DEFAULT): a drag that ends where it began (a
-    // shake, R1-C's observation) is a drag, not a pick
-    let down: { x: number; y: number; far: number } | null = null;
-    const onDown = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY, far: 0 });
+    // shake, R1-C's observation) is a drag, not a pick. R2-A: the right button's click opens the part menu on its
+    // release (a right drag still pans), so macOS and Linux, where `contextmenu` fires on the press, behave the same
+    let down: { x: number; y: number; far: number; button: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      down = { x: e.clientX, y: e.clientY, far: 0, button: e.button };
+      // a press ends the hover: a drag or a click follows
+      live.current.hoverOff();
+    };
     const onMove = (e: PointerEvent) => {
-      if (down) down.far = Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y));
+      if (down) {
+        down.far = Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y));
+        return;
+      }
+      if (e.buttons === 0 && e.pointerType !== "touch") live.current.hoverAt(e.clientX, e.clientY);
     };
     const onUp = (e: PointerEvent) => {
-      if (!down || Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y)) > 4) return;
+      const d = down;
       down = null;
+      if (!d || Math.max(d.far, Math.hypot(e.clientX - d.x, e.clientY - d.y)) > 4) return;
       // a person's pick never frames: a focus still waiting to frame (a host's, on what had nothing drawn) is dropped
       look.current = false;
-      const r = el.getBoundingClientRect();
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
-      // three-mesh-bvh, nearest first, skipping what is hidden or cut away by the section (PB-1175)
-      const hit = pickAt(ray.ray);
-      if (!hit) setSel({});
-      else if (hit.object.userData.harness) setSel({ harness: hit.object.userData.harness });
+      const u = live.current.partUnder(e.clientX, e.clientY);
+      if (!u) setSel({});
+      else if (u.harness !== undefined) setSel({ harness: u.harness });
       else {
-        const k = hit.object.userData.bodyKey as string;
-        const hwMate = model?.assembly.hardware.find((x) => x.harness === k)?.linkId;
-        // the node's id in the body, else the instance path the GLB's extras (or the sidecar's feature ids) give
-        const child = (hit.object.userData.component as string | undefined) ?? hit.partInstanceId;
-        // a component is named by its instance path in the model (the body's path, then its id in the body), as a host's focus names it
-        const holder = k.split("#")[0];
-        const component = child === undefined ? undefined : instancePathIn(holder, child);
         // the face under the pick: "Look along normal" faces it (R1-A, E3)
-        const normal = triangleNormal(hit.object, hit.triangle, h.camera.position.clone().sub(hit.point), hit.instance);
-        lastPick.current = normal && !hwMate ? { key: component ?? k, normal } : null;
-        setSel(hwMate ? { mate: hwMate } : component ? { body: k, component } : { body: k });
+        const normal = triangleNormal(u.hit.object, u.hit.triangle, h.camera.position.clone().sub(u.hit.point), u.hit.instance);
+        lastPick.current = normal && !u.mate ? { key: u.component ?? u.key!, normal } : null;
+        setSel(live.current.selectionOf(u));
       }
+      if (d.button === 2 && u) live.current.openMenu(e.clientX, e.clientY, u);
+    };
+    // no browser menu over the 3D canvas (the part menu is ours); a host's own right-click hook sees nothing here
+    const onContext = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
     };
     /**
-     * Double-click on a part (PB-1072): the part opens on its own, in 3D. A bought part (nothing inside it, a
-     * model of its own: the flight controller in the FC + ESC stack) shows its own model; an assembly its parts.
-     * Without a host that opens tabs, the part is selected and framed.
+     * Double-click on a part (PB-1072; R2-A, F3): the part's own 3D model opens, in this tab (Ctrl: a new tab) when
+     * the host takes navigation; an older host opens it in a new tab; with none, the part is selected and framed.
      */
     const onDouble = (e: MouseEvent) => {
-      const r = el.getBoundingClientRect();
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), h.camera);
-      const hit = pickAt(ray.ray);
-      const k = hit?.object.userData.bodyKey as string | undefined;
-      if (!hit || k === undefined || model?.assembly.hardware.some((x) => x.harness === k)) return;
-      const child = (hit.object.userData.component as string | undefined) ?? hit.partInstanceId;
-      const holder = k.split("#")[0];
-      const path = child === undefined ? holder : instancePathIn(holder, child);
-      const full = outOfScope(path, at);
-      const def = full ? defAt(system, lookup, full.split("/")) : undefined;
-      if (!def || full === at) return;
-      const open = openModuleRef.current;
-      if (open && (def.children?.length || glbFor(def))) return open(full, "3d");
-      // no host to open it: select it here and look at it
-      look.current = true;
-      setSel(child === undefined ? { body: k } : { body: k, component: path });
+      const u = live.current.partUnder(e.clientX, e.clientY);
+      if (!u || u.key === undefined || u.mate) return;
+      live.current.openPart(u, e.ctrlKey || e.metaKey ? "newTab" : "replace");
     };
+    const onLeave = () => live.current.hoverOff();
     // turn-taking (W3-A, PB-1179): while the person's pointer is down agent writes answer "busy"
     const turns = store as { setInteracting?: (on: boolean) => void };
     const interactOn = () => turns.setInteracting?.(true);
@@ -1589,6 +2054,8 @@ export function CadView({
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointerleave", onLeave);
+    el.addEventListener("contextmenu", onContext);
     el.addEventListener("dblclick", onDouble);
     el.addEventListener("pointerdown", interactOn);
     window.addEventListener("pointerup", interactOff);
@@ -1600,6 +2067,8 @@ export function CadView({
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointerleave", onLeave);
+      el.removeEventListener("contextmenu", onContext);
       el.removeEventListener("dblclick", onDouble);
       el.removeEventListener("pointerdown", interactOn);
       window.removeEventListener("pointerup", interactOff);
@@ -1607,7 +2076,47 @@ export function CadView({
       window.removeEventListener("blur", interactOff);
       el.removeEventListener("lostpointercapture", interactOff);
       interactOff();
+      live.current.hoverOff();
     };
+  }, [model]);
+  // R2-A (F1): Back and Forward from the keyboard (Alt+Left, Alt+Right) while the 3D view is shown; a host header's
+  // buttons send `uhd-viewer:historyGo`, which lands in the same history
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (goBack(hub, e.key === "ArrowLeft" ? -1 : 1)) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hub]);
+  // a place of this level moved to (Back, Forward, the host's historyGo): restore it
+  useEffect(
+    () =>
+      navOf(hub).subscribe(() => {
+        const nav = navOf(hub);
+        const g = nav.going;
+        if (!g || g.scope !== at) return;
+        nav.going = null;
+        restorePlace(g);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hub, at],
+  );
+  // the hovered part's paint and tooltip go when the selection changes under it, and when the view moves
+  useEffect(() => {
+    const h = handle.current;
+    if (!h) return;
+    const off = () => {
+      if (hoverRef.current || menuOpen.current) {
+        hoverOff();
+        if (menuOpen.current) closeMenu();
+      }
+    };
+    h.controls.addEventListener("start", off);
+    return () => h.controls.removeEventListener("start", off);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
 
   // ---- camera helpers and the capture API ---------------------------------------
@@ -1714,7 +2223,11 @@ export function CadView({
    * change of that envelope (`explodeCamera`), never a fresh fit. Nothing moves (a model with no steps, or steps
    * that move nothing): the camera stays and the model info card says so.
    */
-  const toggleExploded = (on: boolean) => {
+  const explodeWith = (mode: "radial" | "sequence", on: boolean) => {
+    runSequence({ action: "mode", mode } as SequenceCommand);
+    toggleExploded(on, undefined, mode);
+  };
+  const toggleExploded = (on: boolean, scope?: string, mode?: "radial" | "sequence") => {
     const h = handle.current;
     const ex = explode.current;
     if (h && model && ex.target !== (on ? 1 : 0)) {
@@ -1731,6 +2244,7 @@ export function CadView({
         for (const hw of hardware.current) out.push(new THREE.Vector3().setFromMatrixPosition(hw.obj.matrixWorld));
         return out;
       };
+      player.current?.setScope(scope, { instant: explode.current.value === 0 });
       const before = where();
       const fromBox = drawnBox();
       applyExplode(on ? 1 : 0);
@@ -1743,7 +2257,8 @@ export function CadView({
       if (next) cameraTween.current = { from: [h.camera.position.clone(), h.controls.target.clone()], to: [next.position, next.target], start: ex.value };
       setExplodeNote(on && (steps === 0 || moved < EXPLODE_STILL_MM) ? "nothing to explode in this model" : null);
     }
-    write([{ op: "explode", t: on ? 1 : 0 }], on ? "explode the assembly" : "assemble the parts");
+    // R2-A: the part menu's "Explode this sub-assembly" names it (`explode.scope`; R2-B draws it)
+    write([{ op: "explode", t: on ? 1 : 0, ...(scope ? { scope } : {}), ...(mode ? { mode } : {}) } as never], on ? (scope ? `explode ${scope}`.slice(0, 120) : "explode the assembly") : "assemble the parts");
   };
   /** What a selection covers: its body, or the parts of an assembly that has none of its own (QA B4). */
   const selectionRecs = (key: string | undefined): BodyRec[] => {
@@ -1968,7 +2483,7 @@ export function CadView({
           h.renderOnce();
         }
         if (capture) h.manual.on = true;
-        const stateKeys = ["camera", "selection", "highlight", "isolation", "visibility", "direction", "sections", "placements", "theme", "namedViews", "annotations"].filter((k) => k in s);
+        const stateKeys = ["camera", "selection", "highlight", "highlightColor", "isolation", "visibility", "direction", "sections", "placements", "theme", "namedViews", "annotations"].filter((k) => k in s);
         if (stateKeys.length || (s.explode !== undefined && typeof s.explode === "object")) {
           const ops = stateKeys.map((k) => ({ op: "set", path: [k], value: s[k] }));
           if (typeof s.explode === "object") ops.push({ op: "set", path: ["explode"], value: { t: s.explode.t, step: s.explode.step ?? null } });
@@ -2403,6 +2918,19 @@ export function CadView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ---- R2-E (G3), R2 integration: the toolbar's Export. A model is of the selected part (a board's component when
+  // one is picked), by path from the root; a picture is of the view, taken as a save point first so the host has it
+  const exportPick = sel.component ?? sel.body;
+  // wave R2 gate: "" is a body (a board opened on its own), not "nothing selected"
+  const exportTarget = exportPick !== undefined ? { path: outOfScope(exportPick.split("#")[0], at), label: exportPick.split("#")[0].split("/").pop() || shown.name } : null;
+  const exportNow = (format: "png" | "step" | "stl" | "glb", target?: string) => {
+    const send = hub.exportView;
+    if (!send) return;
+    if (format !== "png") return send({ format, ...(target ? { target } : {}) });
+    const h = handle.current;
+    void (h ? h.snapshot().catch(() => undefined) : Promise.resolve(undefined)).then(() => send({ format: "png" }));
+  };
+
   // the first save point once every model is in (the curve's own settle snapshots follow each later gesture)
   useEffect(() => {
     const h = handle.current;
@@ -2463,6 +2991,8 @@ export function CadView({
     }
     // a routed wire harness: selected as itself (a hierarchy row, a host's focus or select on it)
     if (model.assembly.harnesses.some((hp) => hp.key === key)) {
+      // R2-A (F1): framing from the hierarchy is a place in the history
+      if (focusOn.look !== false) pushPlace("frame", { harness: key }, instanceNames(shown, lookup).get(key) ?? key);
       setSel({ harness: key });
       // framed once its geometry is there (never left set for whatever is selected next)
       look.current = focusOn.look !== false && harnessObjs.current.has(key);
@@ -2472,6 +3002,10 @@ export function CadView({
     // assembly drawn by its parts (QA B4)
     const next: CadSelection | undefined = focusSelection(key, model.bodies.map((b) => b.key), model.within);
     if (!next) return;
+    if (focusOn.look !== false) {
+      const f = partFacts(focusOn.path, instanceAt(system, lookup, focusOn.path)?.def);
+      pushPlace("frame", next, [f.refdes, f.name].filter(Boolean).join(" ") || key);
+    }
     setSel(next);
     look.current = focusOn.look !== false;
   }, [focusOn, model]);
@@ -2879,7 +3413,12 @@ export function CadView({
     if (!layer) return;
     const list = store.get().annotations;
     const { records } = recordsOf(Array.isArray(list) ? list : []);
-    const markers = showFindings && model ? drcMarkers(annotFindings, shownSev) : [];
+    const scoped = showFindings && model ? drcMarkers(annotFindings, shownSev) : [];
+    // wave R2 gate: the anchors are scope keys, the layer resolves refs from the root (as for records) and sends them
+    // to the host's Inspector: inside a module's level (a board opened on its own) the markers were all dropped
+    const markers = at
+      ? scoped.map((m) => ({ ...m, anchor: { ...m.anchor, body: keyOutOfScope(m.anchor.body), ...(m.anchor.component !== undefined ? { component: keyOutOfScope(m.anchor.component) } : {}) } }))
+      : scoped;
     const who = [...(presence ?? []), ...presenceSet, ...storeChips].filter((p) => p && typeof p.who === "string" && typeof p.ref === "string").slice(0, 16);
     const reduced = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // gate R1: markers find their part's surface (BVH builds) once the view has settled, not during the load; a
@@ -2941,7 +3480,7 @@ export function CadView({
     return () => el.removeEventListener("keydown", onKey);
   }, [store]);
 
-  const toggleKind = (k: LabelKind) => {
+  const toggleKind = (k: ViewLabelKind) => {
     const n = new Set(labelKinds);
     if (n.has(k)) n.delete(k);
     else n.add(k);
@@ -2952,7 +3491,7 @@ export function CadView({
   const toolbarAvail = useMemo(() => (model ? toolbarAvailability(model) : undefined), [model]);
 
   // after the last hook (W4-B's mount): a G-code file is shown by its own viewer, with its own toolbar
-  if (gcode) return <GcodeView url={gcode.url} name={gcode.name} />;
+  if (gcode) return <GcodeView url={gcode.url} name={gcode.name} infoOpen={viewerSettings(hub).modelInfo} />;
   if (gcodeRaw) return <div role="alert" style={{ padding: 16 }}>G-code not opened: only a file of this page's own origin is read (?gcode=/path/to/file.gcode).</div>;
 
   return (
@@ -2962,6 +3501,11 @@ export function CadView({
           <CadToolbar
             exploded={exploded}
             onExploded={toggleExploded}
+            sceneRef={handle}
+            bounds={assembledBounds}
+            explodeMode={explodeMode}
+            onExplode={(on) => explodeWith("radial", on)}
+            onAssemble={(together) => explodeWith("sequence", !together)}
             labels={showLabels}
             onLabels={(on) => setVis("labels", on)}
             labelKinds={labelKinds}
@@ -2983,6 +3527,8 @@ export function CadView({
             takeOver={{ agents: agentsHere, onTakeOver: () => store.takeOver() }}
             saveCallouts={{ count: Array.isArray(annotations) ? annotations.length : 0, onSave: () => hub.saveCallouts?.() }}
             scopeCandidate={sel.body ? { path: sel.body.split("#")[0], label: sel.body.split("#")[0].split("/").pop() ?? sel.body } : null}
+            {...(hub.exportView ? { onExport: exportNow } : {})}
+            exportTarget={exportTarget}
             sectionMenu={sectionMenu}
             onSectionMenu={setSectionMenu}
             autoFlip={(axis) => {
@@ -3028,12 +3574,13 @@ export function CadView({
             onFit={fitAsSeen}
             onFocus={lookAlongNormal}
             availability={toolbarAvail}
-            canFocus={Boolean(sel.body)}
+            canFocus={sel.body !== undefined}
           />
         )}
         {!model && <div className="cad-loading">Loading manifests…</div>}
         {model && summary && !present && (nothing || (settled && !bodies.current.size) || (settled && loaded === 0)) ? (
           <div className="cad-empty" role="status">
+            {!noChrome && !present && <NavButtons hub={hub} scope={at} />}
             <Icon name="box" size={26} strokeWidth={1.25} />
             <div className="cad-empty-title">No 3D model for {shown.name} yet.</div>
             {emptyHint && (
@@ -3046,7 +3593,10 @@ export function CadView({
         ) : (
           model && summary && !present && !noChrome && (
             <div className="cad-scope" data-chrome="scope" data-tooltip={summary.unplaced.length ? `Not placed (nothing says where they sit): ${summary.unplaced.slice(0, 12).map((u) => u.name).join(", ")}${summary.unplaced.length > 12 ? ` and ${summary.unplaced.length - 12} more` : ""}` : undefined} data-tooltip-side="bottom">
-              <span className="cad-scope-name">{shown.name}</span>
+              <span className="cad-scope-head">
+                <NavButtons hub={hub} scope={at} />
+                <span className="cad-scope-name">{shown.name}</span>
+              </span>
               <span className="cad-scope-what">
                 {summary.inRow.length
                   ? summary.inRow.length === summary.parts
@@ -3116,6 +3666,8 @@ export function CadView({
             </div>
           </div>
         )}
+        {hoverTip && !menu && !present && <HoverTip tip={hoverTip.tip} stage={hoverTip.stage} part={hoverTip.part} pointer={hoverTip.pointer} view={hoverTip.view} />}
+        {menu && <PartMenu x={menu.x} y={menu.y} title={menu.title} items={menu.items} onRun={(id) => runMenu(id, menu)} onClose={closeMenu} />}
         {loadSnap && !shot && (
           <LoadingScreen
             state={loadSnap}

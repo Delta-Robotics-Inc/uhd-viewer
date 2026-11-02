@@ -11,10 +11,37 @@
  *   messages carry a `SequenceCommand`.
  * "Show how the lid goes on" is `{ action: "play", mode: "assemble", from: "fit:lid_mount", to: "fasten:lid_mount" }`.
  */
-import { clampJoint, poseAt, stepAt, tAfter, tBefore, type Mat, type ResolvedJoint, type ResolvedSequence } from "./resolve";
+import { clampJoint, identity, multiply, poseAt, stepAt, tAfter, tBefore, translation, type Mat, type ResolvedJoint, type ResolvedSequence } from "./resolve";
 import type { JointLimitFlag } from "./types";
+import { planRadial, radialEase, sphereOf, underScope, type RadialMove, type RadialPart } from "../explode";
 
 export type PlayMode = "assemble" | "explode";
+
+/**
+ * How the parts come apart (R2-B, 2026-11-02, Kevin's walkthrough H2): `radial`, every part at once along the
+ * outward normal of its mounting face (the toolbar's Explode, DEFAULT when the model has a radial plan); `sequence`,
+ * the assembly steps one after another (the toolbar's Assemble: today's step player, unchanged).
+ */
+export type ExplodeMode = "radial" | "sequence";
+
+/** The radial explode of a loaded model (./apply.ts `resolveForCad`): each part's move at amount 1, world mm. */
+export interface RadialPlan {
+  moves: Map<string, RadialMove>;
+  centre: [number, number, number];
+  radius: number;
+  /** CPU ms to read the facings and plan. */
+  ms: number;
+  /** What the plan was made from: a sub-assembly exploded on its own is planned again from its parts (R2-A's `explode.scope`). */
+  parts?: RadialPart[];
+  up?: [number, number, number];
+  overrides?: ReadonlyMap<string, { direction?: [number, number, number]; distance?: number }>;
+}
+
+/** A resolved sequence with the radial plan beside it (CadView's; tests may build a player without one). */
+export type ResolvedWithRadial = ResolvedSequence & { radial?: RadialPlan };
+
+/** A change of mode while the parts are apart fades from where they are to the new mode's pose (DEFAULT, ms). */
+export const MODE_BLEND_MS = 500;
 
 /** Joint values over time (recorded, then replayed through `poseAt`): 4 bytes per joint per sample, not a matrix per part. */
 export interface MotionClip {
@@ -41,7 +68,11 @@ export type SequenceCommand =
   /** Jump to an explode amount. */
   | { action: "set"; t: number }
   /** Replay a motion clip (undefined stops it). */
-  | { action: "clip"; clip?: MotionClip };
+  | { action: "clip"; clip?: MotionClip }
+  /** R2-B: radial (all at once) or the steps; no mode: report the state. */
+  | { action: "mode"; mode?: ExplodeMode; instant?: boolean }
+  /** R2-B: only this sub-assembly comes apart (an instance path); no scope: the whole model. */
+  | { action: "scope"; scope?: string; instant?: boolean };
 
 export interface PlayerSnapshot {
   source: ResolvedSequence["source"];
@@ -61,6 +92,11 @@ export interface PlayerSnapshot {
   joints: Record<string, { value: number; min?: number; max?: number; rest: number; type: string; held?: JointLimitFlag; limited?: JointLimitFlag }>;
   unknown: string[];
   clip?: { joints: string[]; samples: number; durationS: number };
+  /** R2-B: radial (all at once) or the steps; and the radial plan's size (parts, distance at amount 1, mm). */
+  explodeMode?: ExplodeMode;
+  /** The sub-assembly that comes apart (R2-A's `explode.scope`); absent: the whole model. */
+  scope?: string;
+  radial?: { parts: number; distanceMm: number; ms: number; from: Record<string, number> };
 }
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -83,8 +119,79 @@ export class SequencePlayer {
   private lastStep: string | null | undefined = undefined;
   /** The step a goto asked for, while t stays where the goto put it (a step boundary belongs to two windows). */
   private held: { step: string; t: number } | undefined;
+  /** Radial or the steps (R2-B). */
+  private explodeModeNow: ExplodeMode;
+  /** A mode change under way: the pose it started from and when (`now()` ms). */
+  private blend: { from: Map<string, Mat>; start: number } | undefined;
+  /** The clock of the mode blend (tests set their own). */
+  now: () => number = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  /** Only this sub-assembly comes apart (an instance path: R2-A's `explode.scope`, the part menu's "Explode this sub-assembly"). */
+  private scopeNow: string | undefined;
+  private scopedPlan: { scope: string; moves: Map<string, RadialMove> } | undefined;
 
-  constructor(public resolved: ResolvedSequence) {}
+  /** The sub-assembly that comes apart (undefined: the whole model). */
+  get scope(): string | undefined {
+    return this.scopeNow;
+  }
+
+  /**
+   * Explode only the parts at or under `scope` (an instance path), each about the sub-assembly's own centre in the
+   * radial mode; undefined: the whole model. While apart the change fades like a mode change.
+   */
+  setScope(scope: string | undefined, opts: { instant?: boolean } = {}): void {
+    const next = scope || undefined;
+    if (next === this.scopeNow) return;
+    const from = this.t > 0 && !opts.instant ? this.pose() : undefined;
+    this.scopeNow = next;
+    this.blend = from ? { from, start: this.now() } : undefined;
+  }
+
+  /** The radial moves in force: the whole plan, or the sub-assembly's own (planned about its centre, cached). */
+  private radialMoves(): Map<string, RadialMove> | undefined {
+    const plan = this.resolved.radial;
+    if (!plan) return undefined;
+    const scope = this.scopeNow;
+    if (!scope) return plan.moves;
+    if (this.scopedPlan?.scope === scope) return this.scopedPlan.moves;
+    const parts = (plan.parts ?? []).filter((p) => underScope(p.key, scope));
+    const sphere = sphereOf(parts.filter((p) => !p.rides));
+    const moves = parts.length && sphere ? planRadial(parts, { centre: sphere.centre, radius: sphere.radius, up: plan.up, overrides: plan.overrides }) : new Map([...plan.moves].filter(([k]) => underScope(k, scope)));
+    this.scopedPlan = { scope, moves };
+    return moves;
+  }
+
+  constructor(public resolved: ResolvedWithRadial) {
+    this.explodeModeNow = resolved.radial ? "radial" : "sequence";
+  }
+
+  /** Radial (all at once) or the steps. Without a radial plan, always the steps. */
+  get explodeMode(): ExplodeMode {
+    return this.resolved.radial ? this.explodeModeNow : "sequence";
+  }
+
+  /**
+   * Switch how the parts come apart. While they are apart (t > 0) the pose fades from where they are to the new
+   * mode's over MODE_BLEND_MS (unless `instant`); assembled, nothing moves. Returns false for "radial" without a plan.
+   */
+  setMode(mode: ExplodeMode, opts: { instant?: boolean } = {}): boolean {
+    if (mode === "radial" && !this.resolved.radial) return false;
+    if (mode === this.explodeMode) return true;
+    const from = this.t > 0 && !opts.instant ? this.pose() : undefined;
+    this.explodeModeNow = mode;
+    this.blend = from ? { from, start: this.now() } : undefined;
+    return true;
+  }
+
+  /** The mode blend's progress (0..1), or undefined when none runs. */
+  private blendK(): number | undefined {
+    if (!this.blend) return undefined;
+    const k = (this.now() - this.blend.start) / MODE_BLEND_MS;
+    if (k >= 1) {
+      this.blend = undefined;
+      return undefined;
+    }
+    return Math.max(0, k);
+  }
 
   /** Seconds for t to go from 0 to 1 at speed 1 (the steps' durations). */
   get durationS(): number {
@@ -97,9 +204,10 @@ export class SequencePlayer {
   addJoint(j: ResolvedJoint) {
     this.extraJoints = [...this.extraJoints.filter((x) => x.id !== j.id), j];
   }
-  /** A new resolved sequence (a rebuilt model): the explode amount and joint values are kept. */
-  replace(resolved: ResolvedSequence) {
+  /** A new resolved sequence (a rebuilt model): the explode amount, joint values and mode are kept. */
+  replace(resolved: ResolvedWithRadial) {
     this.resolved = resolved;
+    this.scopedPlan = undefined;
   }
 
   set(s: { t?: number; step?: string; where?: "before" | "after"; isolate?: string | null; joints?: Record<string, number> }): boolean {
@@ -213,13 +321,55 @@ export class SequencePlayer {
         } else this.mode = undefined;
       }
     }
+    // a mode change fading between poses keeps the view drawing
+    if (this.blendK() !== undefined) moving = true;
     this.notifyStep();
     return moving;
   }
 
   pose(): Map<string, Mat> {
+    const target = this.modePose();
+    const k = this.blendK();
+    if (k === undefined || !this.blend) return target;
+    // fade from where the parts were to where the new mode puts them (a short fade; matrices mixed entry by entry)
+    const e = radialEase(k);
+    const out = new Map<string, Mat>();
+    const keys = new Set([...this.blend.from.keys(), ...target.keys()]);
+    for (const key of keys) {
+      const a = this.blend.from.get(key) ?? identity();
+      const b = target.get(key) ?? identity();
+      const m = new Float64Array(16);
+      for (let i = 0; i < 16; i++) m[i] = a[i] + (b[i] - a[i]) * e;
+      out.set(key, m);
+    }
+    return out;
+  }
+
+  /** The pose of the mode in force: the steps at t, or every part out along its radial move by the eased t. */
+  private modePose(): Map<string, Mat> {
     const resolved = this.extraJoints.length ? { ...this.resolved, joints: this.joints } : this.resolved;
-    return poseAt(resolved, { t: this.t, joints: this.values, isolate: this.isolated });
+    const moves = this.radialMoves();
+    const scope = this.scopeNow;
+    if (this.explodeMode !== "radial" || !moves) {
+      const steps = poseAt(resolved, { t: this.t, joints: this.values, isolate: this.isolated });
+      if (!scope) return steps;
+      // a sub-assembly on its own: the steps move only its parts; the rest stay assembled (joint values hold)
+      const base = poseAt(resolved, { t: 0, joints: this.values });
+      const out = new Map(base);
+      for (const [key, m] of steps) if (underScope(key, scope)) out.set(key, m);
+      return out;
+    }
+    // radial: the assembled pose (joint values hold) with each part's move on top, all on one ease
+    const base = poseAt(resolved, { t: 0, joints: this.values });
+    const e = radialEase(this.t);
+    if (e <= 0) return base;
+    const out = new Map(base);
+    for (const [key, m] of moves) {
+      const d = m.distance * e;
+      const tr = translation([m.dir[0] * d, m.dir[1] * d, m.dir[2] * d]);
+      out.set(key, multiply(tr, base.get(key) ?? identity()));
+    }
+    return out;
   }
 
   /** Members of a step (to highlight or show alone). */
@@ -241,6 +391,9 @@ export class SequencePlayer {
       joints,
       unknown: [...this.resolved.unknown],
       clip: this.clip ? { joints: this.clip.clip.joints, samples: this.clip.clip.samples.length, durationS: this.clip.clip.samples.at(-1)?.t ?? 0 } : undefined,
+      explodeMode: this.explodeMode,
+      ...(this.scopeNow ? { scope: this.scopeNow } : {}),
+      ...(this.resolved.radial ? { radial: radialSummary(this.resolved.radial) } : {}),
     };
   }
 
@@ -288,6 +441,18 @@ export class SequencePlayer {
   }
 
   private runCommand(cmd: SequenceCommand): { ok: boolean; error?: string; held?: JointLimitFlag } {
+    // the steps' own commands play the steps (R2-B): a goto, a play, a loop, an isolate, a step explode or assemble
+    if (cmd.action === "goto" || cmd.action === "play" || cmd.action === "loop" || cmd.action === "isolate" || ((cmd.action === "explode" || cmd.action === "assemble") && cmd.step !== undefined)) this.setMode("sequence");
+    if (cmd.action === "scope") {
+      if (cmd.scope !== undefined && (typeof cmd.scope !== "string" || cmd.scope.length > 512)) return { ok: false, error: "scope must be an instance path" };
+      this.setScope(cmd.scope, { instant: cmd.instant });
+      return { ok: true };
+    }
+    if (cmd.action === "mode") {
+      if (cmd.mode === undefined) return { ok: true };
+      if (cmd.mode !== "radial" && cmd.mode !== "sequence") return { ok: false, error: 'explode mode must be "radial" or "sequence"' };
+      return this.setMode(cmd.mode, { instant: cmd.instant }) ? { ok: true } : { ok: false, error: "no radial explode for this model (no parts to move)" };
+    }
     const unknownStep = (id: string) => ({ ok: false, error: `no step "${id}" (steps: ${this.resolved.steps.slice(0, 8).map((s) => s.id).join(", ")}${this.resolved.steps.length > 8 ? ", …" : ""})` });
     switch (cmd.action) {
       case "goto":
@@ -394,4 +559,15 @@ export function applyUrlState(player: SequencePlayer, url: ReturnType<typeof seq
     return player.run(url.loop ? { action: "loop", mode: url.play } : { action: url.play });
   }
   return { ok: true };
+}
+
+/** A short account of a radial plan (snapshot, observe): parts, the distance at amount 1, and why each direction. */
+export function radialSummary(plan: RadialPlan): NonNullable<PlayerSnapshot["radial"]> {
+  const from: Record<string, number> = {};
+  let distance = 0;
+  for (const m of plan.moves.values()) {
+    from[m.from] = (from[m.from] ?? 0) + 1;
+    distance = Math.max(distance, m.distance);
+  }
+  return { parts: plan.moves.size, distanceMm: Math.round(distance * 10) / 10, ms: plan.ms, from };
 }

@@ -6,14 +6,15 @@
  * ./findings-anchors.ts, the 3D positions from the layer.
  */
 import { SEVERITY_ORDER, worst, type FindingAnchorPoint, type FindingAnchors, type FindingSeverity } from "./findings-anchors";
+import type { FindingText } from "./plain";
 
 export interface DrcMarker {
   /** Stable while the anchor stays: `<body>|<component>|<rounded local point>`. */
   key: string;
   anchor: FindingAnchorPoint;
   severity: FindingSeverity;
-  /** Findings at this anchor, worst first. */
-  findings: FindingAnchors[];
+  /** Findings at this anchor, worst first (with the stack's plain title and summary when written: R2-C). */
+  findings: (FindingAnchors & FindingText)[];
 }
 
 const round = (v: number) => Math.round(v * 10) / 10;
@@ -22,7 +23,7 @@ export const anchorKey = (a: FindingAnchorPoint) => `${a.body}|${a.component ?? 
 const rank = (s: FindingSeverity) => SEVERITY_ORDER.indexOf(s);
 
 /** Markers for the findings whose severity is shown. */
-export function drcMarkers(findings: FindingAnchors[], shown: Set<FindingSeverity>): DrcMarker[] {
+export function drcMarkers(findings: (FindingAnchors & FindingText)[], shown: Set<FindingSeverity>): DrcMarker[] {
   const by = new Map<string, DrcMarker>();
   for (const f of findings) {
     if (!shown.has(f.severity)) continue;
@@ -67,12 +68,20 @@ export function stepFinding(list: FindingAnchors[], current: string | undefined,
   return placed[i < 0 ? (by > 0 ? 0 : placed.length - 1) : (i + by + placed.length) % placed.length];
 }
 
-/** The card text of a finding: its code as the title, the message as the body (data, shown as text). */
-export function findingCard(f: FindingAnchors): { title: string; text: string; rows: [string, string][] } {
+/** A finding's code in words ("UHD_INTERFACE_REUSE" reads "UHD INTERFACE REUSE"). */
+export const codeWords = (code: string) => code.replace(/_/g, " ");
+
+/**
+ * The card text of a finding (data, shown as text): its plain title when the stack wrote one (R2-C, D3), else its
+ * code in words; the raw message as the body; the raw rows (AT path, BY validator, and CODE when a plain title stands
+ * in for the code, so the pinned card's details still name it).
+ */
+export function findingCard(f: FindingAnchors & FindingText): { title: string; text: string; rows: [string, string][] } {
   const rows: [string, string][] = [];
+  if (f.title) rows.push(["CODE", codeWords(f.code)]);
   if (f.entity) rows.push([f.entity.kind === "link" ? "LINK" : "AT", f.entity.id]);
   if (f.validator) rows.push(["BY", f.validator]);
-  return { title: f.code.replace(/_/g, " "), text: f.message, rows };
+  return { title: f.title ?? codeWords(f.code), text: f.message, rows };
 }
 
 /**
@@ -90,14 +99,14 @@ export function findingsPlacement(findings: FindingAnchors[], drawn?: number): {
 export const SUMMARY_MAX = 120;
 
 /**
- * A finding's card in hover tiers (walkthrough D3, presentation only: the plain-language rewrite is wave R2): the
- * title (the code in words), a one-line description cut from the message (parentheticals dropped, the first clause
- * or sentence, at most SUMMARY_MAX characters), and the raw rows (AT path, BY validator) and full message, which
- * only the pinned card shows.
+ * A finding's card in hover tiers (walkthrough D3): the title (the stack's plain `title`, else the code in words), a
+ * one-line description (the stack's plain `summary`, else cut from the message: parentheticals dropped, the first
+ * clause or sentence, at most SUMMARY_MAX characters), and the raw rows (CODE, AT path, BY validator) and full
+ * message, which only the pinned card shows, under "Details" (R2-C).
  */
-export function findingSummary(f: FindingAnchors): { title: string; description: string; text: string; rows: [string, string][] } {
+export function findingSummary(f: FindingAnchors & FindingText): { title: string; description: string; text: string; rows: [string, string][]; plain: boolean } {
   const card = findingCard(f);
-  return { title: card.title, description: summarise(f.message), text: card.text, rows: card.rows };
+  return { title: card.title, description: f.summary ?? summarise(f.message), text: card.text, rows: card.rows, plain: !!(f.title || f.summary) };
 }
 
 /** The first clause of a diagnostic message, without parentheticals, cut at a word boundary (pure). */

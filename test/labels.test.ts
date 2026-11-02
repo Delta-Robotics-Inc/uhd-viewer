@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LABEL_GAP, LEADER_RUN, segmentsCross, solveLabels, type LabelBox } from "../src/cad/labels";
+import { COMPACT_H, LABEL_GAP, LEADER_RUN, MIN_PITCH, layoutLabels, segmentsCross, solveLabels, type LabelBox } from "../src/cad/labels";
 
 const W = 1600;
 const H = 1000;
@@ -14,14 +14,18 @@ function scatter(n: number, seed = 7, spread = 260): LabelBox[] {
 
 function check(items: LabelBox[]) {
   const out = solveLabels(items, W, H, M);
-  expect(out.size).toBe(items.length);
-  const boxes = items.map((p) => ({ id: p.id, ...out.get(p.id)!, w: p.w, h: p.h, ay: p.y }));
+  const all = layoutLabels(items, W, H, M);
+  // every label is placed or held by a "+N" chip (R2-C)
+  expect(out.size + all.chips.reduce((t, c) => t + c.ids.length, 0)).toBe(items.length);
+  // R2-C: the solved size (a crowded side is compact: one line, MIN_PITCH apart)
+  const boxes = items.filter((p) => out.has(p.id)).map((p) => ({ id: p.id, ...out.get(p.id)!, ay: p.y }));
   // no two cards overlap
   for (let i = 0; i < boxes.length; i++)
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i];
       const b = boxes[j];
-      const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h + LABEL_GAP - 0.01 && b.y < a.y + a.h + LABEL_GAP - 0.01;
+      const gap = a.compact && b.compact ? MIN_PITCH - COMPACT_H : LABEL_GAP;
+      const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h + gap - 0.01 && b.y < a.y + a.h + gap - 0.01;
       expect(hit, `${a.id} / ${b.id}`).toBe(false);
     }
   // no two leaders in a column cross (anchor to the elbow beside the card's inner edge)
@@ -68,8 +72,8 @@ describe("3D callout label solver", () => {
     check(Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, x: 800, y: 500, w: 160, h: 36 })));
   });
 
-  it("spills a side taller than the view into a second column", () => {
-    const items = Array.from({ length: 50 }, (_, i) => ({ id: `t${i}`, x: 780 + (i % 2) * 40, y: 300 + i * 4, w: 140, h: 36 }));
+  it("a side taller than the view goes compact, then spills into a second column (R2-C)", () => {
+    const items = Array.from({ length: 120 }, (_, i) => ({ id: `t${i}`, x: 780 + (i % 2) * 40, y: 300 + i * 2, w: 140, h: 36 }));
     const { boxes } = check(items);
     expect(boxes.some((b) => b.column > 0)).toBe(true);
     for (const b of boxes) expect(b.y + b.h).toBeLessThanOrEqual(H - M.bottom + 0.01);

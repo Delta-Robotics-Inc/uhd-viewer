@@ -10,6 +10,8 @@ import { parseViewerStateFile } from "../cad/state/serialize";
 
 /** Every protocol message's type starts with this. */
 export const PREFIX = "uhd-viewer:";
+/** DEFAULT (R2-A): a `uhd-viewer:historyGo` moves at most this many places (the history keeps 50). */
+export const MAX_HISTORY_DELTA = 50;
 
 const isString = (v: unknown): v is string => typeof v === "string";
 /** A path as a string ("arm_fl/motor"), or the same as a list of child ids. */
@@ -48,7 +50,10 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
     // the assembly sequence player (W2-C, PB-1183): the player checks the command itself
     case "uhd-viewer:sequence": {
       const c = m.command as Record<string, unknown> | undefined;
-      return c && typeof c === "object" && !Array.isArray(c) && typeof c.action === "string" ? { type: m.type, command: c as { action: string } } : undefined;
+      if (!(c && typeof c === "object" && !Array.isArray(c) && typeof c.action === "string")) return undefined;
+      // R2-B's two commands (R2 integration): checked here, so a malformed one is refused at the door
+      if (c.action === "mode" || c.action === "scope") return parseModeScope(c) ? { type: m.type, command: c as { action: string } } : undefined;
+      return { type: m.type, command: c as { action: string } };
     }
     // the quality curve's settings (PB-1176): only the known keys, each in its range (wave 2 gate item 7)
     case "uhd-viewer:quality": {
@@ -63,6 +68,15 @@ export function parseHostMessage(data: unknown): ViewerHostMessage | undefined {
       if (path === null || (path !== undefined && path.length > 1024)) return undefined;
       return path === undefined ? { type: m.type, id: m.id, code: m.code } : { type: m.type, id: m.id, code: m.code, path };
     }
+    // R2-A (F1): a host header's back (-1) and forward (+1) through the viewer's own history
+    case "uhd-viewer:historyGo":
+      return Number.isInteger(m.delta) && m.delta !== 0 && Math.abs(m.delta as number) <= MAX_HISTORY_DELTA ? { type: m.type, delta: m.delta as number } : undefined;
+    // R2-A: what a frame's parent takes (it answers `uhd-viewer:navigate`)
+    case "uhd-viewer:hostCapabilities":
+      if (m.navigate !== undefined && typeof m.navigate !== "boolean") return undefined;
+      // R2 integration: `history: true` says the parent draws back and forward of its own (the view leaves out its pair)
+      if (m.history !== undefined && typeof m.history !== "boolean") return undefined;
+      return { type: m.type, ...(m.navigate !== undefined ? { navigate: m.navigate } : {}), ...(m.history !== undefined ? { history: m.history } : {}) };
     // the person takes everything back from the agents (PB-1196, D9)
     case "uhd-viewer:takeOver":
       return { type: m.type };
@@ -107,9 +121,34 @@ export function parseTelemetryMessage(data: unknown): TelemetryMessage | undefin
   return { type: TELEMETRY_EVENT, record: record as TelemetryMessage["record"] };
 }
 
+/**
+ * A `uhd-viewer:navigate` event as a relay should pass it on (R2-A): the target is a module path or a model artifact
+ * (strings of 1 to 1024 characters; a path may be "" for the root), `how` replace or newTab. Undefined otherwise.
+ */
+export function parseNavigateEvent(data: unknown): Extract<ViewerEvent, { type: "uhd-viewer:navigate" }> | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const m = data as Record<string, unknown>;
+  const str = (v: unknown, empty = false): v is string => typeof v === "string" && v.length <= 1024 && (empty || v.length > 0) && !/[\u0000-\u001f]/.test(v);
+  if (m.type !== "uhd-viewer:navigate" || (m.how !== "replace" && m.how !== "newTab")) return undefined;
+  if (m.view !== undefined && m.view !== "3d") return undefined;
+  if (m.from !== undefined && !str(m.from, true)) return undefined;
+  const t = m.target as Record<string, unknown> | undefined;
+  if (!t || typeof t !== "object") return undefined;
+  let target: Extract<ViewerEvent, { type: "uhd-viewer:navigate" }>["target"];
+  if ("module" in t) {
+    if (!str(t.module, true)) return undefined;
+    target = { module: t.module };
+  } else {
+    const a = t.model as Record<string, unknown> | undefined;
+    if (!a || typeof a !== "object" || !str(a.defId) || !str(a.artifactId) || (a.path !== undefined && !str(a.path, true))) return undefined;
+    target = { model: { defId: a.defId, artifactId: a.artifactId, ...(a.path !== undefined ? { path: a.path as string } : {}) } };
+  }
+  return { type: "uhd-viewer:navigate", target, how: m.how, ...(m.view ? { view: "3d" as const } : {}), ...(m.from !== undefined ? { from: m.from as string } : {}) };
+}
+
 /** A viewer → host event (for a host or a relay telling them from other messages). */
 export const isViewerEvent = (data: unknown): data is ViewerEvent =>
-  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState", "uhd-viewer:presence"].includes((data as { type?: string }).type ?? "");
+  Boolean(data) && typeof data === "object" && ["uhd-viewer:ready", "uhd-viewer:selectionChanged", "uhd-viewer:openSource", "uhd-viewer:openArtifact", "uhd-viewer:openModule", "uhd-viewer:openPair", "uhd-viewer:inspect", "uhd-viewer:viewState", "uhd-viewer:presentation", "uhd-viewer:bridgeReply", "uhd-viewer:sequenceState", "uhd-viewer:presence", "uhd-viewer:navigate", "uhd-viewer:history", "uhd-viewer:export"].includes((data as { type?: string }).type ?? "");
 
 /**
  * `origin` is one of `allowed`: an exact origin, `scheme://*` (any origin
@@ -199,4 +238,17 @@ export function parseSnapshotMessage(m: Record<string, unknown>, pageOrigin?: st
   const vec = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
   if (cam !== undefined && !(cam && vec(cam.position) && vec(cam.target) && vec(cam.up))) return undefined;
   return { ...(m as object), type: "uhd-viewer:snapshot" } as ViewerSnapshotMessage;
+}
+
+/**
+ * The sequence player's `mode` and `scope` commands (R2-B, H2; additive): `{ action: "mode", mode?: "radial" |
+ * "sequence", instant?: boolean }` (absent mode: the player's DEFAULT, radial when a plan exists) and `{ action:
+ * "scope", scope?: string, instant?: boolean }` (an instance path in the view's scope, at most 512 characters, no
+ * control characters; absent: the whole assembly).
+ */
+export function parseModeScope(c: Record<string, unknown>): boolean {
+  if (c.instant !== undefined && typeof c.instant !== "boolean") return false;
+  if (c.action === "mode") return c.mode === undefined || c.mode === "radial" || c.mode === "sequence";
+  if (c.action === "scope") return c.scope === undefined || (typeof c.scope === "string" && c.scope.length <= 512 && !/[\u0000-\u001f]/.test(c.scope));
+  return false;
 }

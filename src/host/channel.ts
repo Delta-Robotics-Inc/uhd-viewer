@@ -89,6 +89,18 @@ export function deliver(options: ViewerOptions, event: ViewerEvent): void {
       return options.onSequenceState?.(event);
     case "uhd-viewer:presence":
       return options.onPresenceChange?.(event.presence);
+    // R2-A (F1, F3): a part's own model opened in place or in a new tab, and the viewer's back and forward
+    case "uhd-viewer:navigate": {
+      const { type: _type, ...request } = event;
+      return options.onNavigate?.(request);
+    }
+    case "uhd-viewer:history": {
+      const { type: _type, ...state } = event;
+      return options.onHistory?.(state);
+    }
+    // R2-E (G3): the 3D toolbar's Export
+    case "uhd-viewer:export":
+      return options.onExport?.({ format: event.format, ...(event.target !== undefined ? { target: event.target } : {}) });
   }
 }
 

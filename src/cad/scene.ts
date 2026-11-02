@@ -218,6 +218,54 @@ export const focusMaterial = (color: number) => {
   return m;
 };
 
+const hoverMaterials = new Map<number, THREE.MeshStandardMaterial>();
+/**
+ * The hover surface for a colour (R2-A, A3; one shared material per colour): the colour the hover rule derived from
+ * the part's own (./nav/colour.ts `hoverColour`), lit a little less than the selection's surface so a hovered part
+ * never reads as selected. Drawn just in front (polygon offset), as the selection is.
+ */
+export const hoverMaterial = (color: number) => {
+  let m = hoverMaterials.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.25,
+      roughness: 0.55,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    hoverMaterials.set(color, m);
+  }
+  return m;
+};
+
+/**
+ * A part's own colour (R2-A, A3): the colour of the material covering most of its meshes' triangles (their base
+ * material, before any highlight or x-ray variant), as an sRGB hex; undefined when none has a colour.
+ */
+export function ownColour(objects: THREE.Object3D[]): number | undefined {
+  const weight = new Map<number, number>();
+  for (const root of objects)
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || o.userData.feature) return;
+      const base = (mesh.userData.baseMaterial ?? mesh.material) as THREE.Material | THREE.Material[];
+      const mat = (Array.isArray(base) ? base[0] : base) as THREE.MeshStandardMaterial | undefined;
+      if (!mat?.color) return;
+      const g = mesh.geometry;
+      const tris = g ? (g.index ? g.index.count : (g.attributes.position?.count ?? 0)) / 3 : 1;
+      const n = (mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).count : 1;
+      const hex = mat.color.getHex();
+      weight.set(hex, (weight.get(hex) ?? 0) + Math.max(1, tris) * n);
+    });
+  let best: number | undefined;
+  let most = -1;
+  for (const [hex, w] of weight) if (w > most) [best, most] = [hex, w];
+  return best;
+}
+
 // ---------------------------------------------------------------------------
 // Frames and procedural geometry (D3), in a module's CAD coordinates
 // ---------------------------------------------------------------------------
@@ -830,6 +878,10 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     invalidate: () => invalidate("view"),
     eye: () => camera.position,
   });
+  // R2-B's hatch (R2 integration): the theme's cap tone and its section ink, not the luminance guess; the open-mesh
+  // CPU caps take the same tone
+  caps.setInk(look.capLine);
+  sections.setCapColor(look.cap);
   sections.setLineColor(look.capLine);
   /** The outline is drawn in a pass of its own with no clipping (it lies on the planes). */
   const outlineHolder = new THREE.Scene();
@@ -899,6 +951,10 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
         (material, plane) => {
           const gridShown = grid.visible;
           grid.visible = false;
+          // flat overlays (callouts, markers, the section tool's sheets) are not solids: drawn into the stencil, a quad
+          // across the cut flips its parity and its area came out hatched (R2-B's handoff, R2 integration)
+          const overlayShown = overlay.visible;
+          overlay.visible = false;
           const hidden = hideUncrossed(plane);
           scene.background = null;
           scene.overrideMaterial = material;
@@ -916,6 +972,7 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
             scene.overrideMaterial = null;
             scene.background = background;
             grid.visible = gridShown;
+            overlay.visible = overlayShown;
             for (const o of hidden) o.visible = true;
           }
         },
@@ -1737,6 +1794,8 @@ export function createScene(container: HTMLElement, options: SceneOptions = {}):
     srgbOf(look.silhouette, inkSilhouette);
     srgbOf(look.crease, inkCrease);
     caps.setColor(look.cap);
+    caps.setInk(look.capLine);
+    sections.setCapColor(look.cap);
     sections.setLineColor(look.capLine);
   };
   const style: StyleApi = {

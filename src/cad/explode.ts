@@ -266,3 +266,138 @@ export function planStack(parts: readonly StackPart[], options: StackOptions): M
   }
   return new Map(parts.map((p, i) => [p.key, rise[i]]));
 }
+
+// ---- radial explode (R2-B, 2026-11-02, Kevin's walkthrough H2) -------------------------------------------------
+//
+// "Explode needs to happen all at the same time; exploding to the normal of the face: there's an explosion at the
+// centre of this cube, pressure pushing every one of these panels out; the normal to that face is the direction; the
+// ones on the inside need to explode out." Every part moves at once along the outward normal of its mounting face:
+// the normal of its largest face whose outward direction points away from the assembly's centre; a part with no
+// such face moves along the line from the centre through its own centre; a part at the centre moves up. The
+// distance at amount 1 is a share of the assembly's radius, the same for every part (DEFAULT 0.6). A sequence file
+// may set a part's direction and distance (`explode.direction`, `explode.distance` on a member or a step; R2-E's
+// generator writes them).
+
+type V3 = [number, number, number];
+
+/** A part's surface facing one way: the summed area of its triangles whose normals fall in one direction bin. */
+export interface FacingArea {
+  /** Unit, world (assembly mm, Z up). */
+  normal: V3;
+  /** mm². */
+  area: number;
+}
+
+export interface RadialPart {
+  key: string;
+  /** Centre of the part's assembled bounds (world mm). */
+  centre: V3;
+  /** Its largest facings, largest first (./explodeSample.ts `facings`). */
+  facings: FacingArea[];
+  /** Ride with another part (hardware through a panel): same move as that part. */
+  rides?: string;
+  /** Its assembled bounds (world mm), for the sphere of a sub-assembly exploded on its own. */
+  box?: [V3, V3];
+}
+
+/** Whether a part key (a body key, `<body>::<node>`, a hardware key `<harness>/<child>#n`) lies at or under an instance path. */
+export function underScope(key: string, scope: string): boolean {
+  const path = key.split("::")[0].split("#")[0];
+  return !scope || path === scope || path.startsWith(`${scope}/`);
+}
+
+/** The bounding sphere of parts' boxes (world mm): centre and radius; undefined when none has a box. */
+export function sphereOf(parts: readonly Pick<RadialPart, "box">[]): { centre: V3; radius: number } | undefined {
+  const lo: V3 = [Infinity, Infinity, Infinity];
+  const hi: V3 = [-Infinity, -Infinity, -Infinity];
+  for (const p of parts)
+    if (p.box)
+      for (let i = 0; i < 3; i++) {
+        lo[i] = Math.min(lo[i], p.box[0][i]);
+        hi[i] = Math.max(hi[i], p.box[1][i]);
+      }
+  if (!Number.isFinite(lo[0])) return undefined;
+  const centre: V3 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+  return { centre, radius: Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 };
+}
+
+export interface RadialOptions {
+  /** The assembly's centre and radius (its assembled bounds' sphere, mm). */
+  centre: V3;
+  radius: number;
+  /** Distance at amount 1 as a share of the radius (DEFAULT `RADIAL_SHARE`). */
+  share?: number;
+  /** The view's up (a part at the centre moves up). */
+  up?: V3;
+  /** Per part: a direction and a distance (mm at amount 1) from the sequence file. */
+  overrides?: ReadonlyMap<string, { direction?: V3; distance?: number }>;
+}
+
+/** Where a part goes when fully exploded: a unit direction and a distance (mm). */
+export interface RadialMove {
+  dir: V3;
+  distance: number;
+  /** Why this direction: its mounting face, the line from the centre, up (at the centre), the sequence file, a part it rides with. */
+  from: "face" | "centre" | "up" | "sequence" | "rides";
+}
+
+/** DEFAULT (Kevin's ask, the brief): every part travels 0.6 of the assembly's radius at amount 1. */
+export const RADIAL_SHARE = 0.6;
+/** A facing counts as pointing away from the centre when its normal is within ~72 degrees of the outward line (DEFAULT cos 0.3). */
+export const RADIAL_MIN_ALIGN = 0.3;
+/** A part whose centre is within this share of the radius from the assembly's centre is "at the centre" (DEFAULT). */
+export const RADIAL_CENTRE_SHARE = 0.05;
+
+const len3 = (v: readonly number[]) => Math.hypot(v[0], v[1], v[2]);
+const unit3 = (v: readonly number[]): V3 => {
+  const l = len3(v) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
+const dot3 = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** The outward direction of one part (see the section comment). */
+export function radialDirection(part: Pick<RadialPart, "centre" | "facings">, centre: V3, radius: number, up: V3 = [0, 0, 1]): { dir: V3; from: "face" | "centre" | "up" } {
+  const d: V3 = [part.centre[0] - centre[0], part.centre[1] - centre[1], part.centre[2] - centre[2]];
+  const atCentre = len3(d) <= RADIAL_CENTRE_SHARE * Math.max(radius, 1e-9);
+  const out = atCentre ? unit3(up) : unit3(d);
+  let best: FacingArea | undefined;
+  for (const f of part.facings) if (dot3(unit3(f.normal), out) >= RADIAL_MIN_ALIGN && (!best || f.area > best.area)) best = f;
+  if (best) return { dir: unit3(best.normal), from: "face" };
+  return { dir: out, from: atCentre ? "up" : "centre" };
+}
+
+/** Every part's move at amount 1 (mm), by key. */
+export function planRadial(parts: readonly RadialPart[], options: RadialOptions): Map<string, RadialMove> {
+  const share = options.share ?? RADIAL_SHARE;
+  const distance = Math.max(0, options.radius * share);
+  const out = new Map<string, RadialMove>();
+  for (const p of parts) {
+    if (p.rides) continue;
+    const o = options.overrides?.get(p.key);
+    const own = radialDirection(p, options.centre, options.radius, options.up);
+    const dir = o?.direction && len3(o.direction) > 1e-9 ? unit3(o.direction) : own.dir;
+    const dist = o?.distance !== undefined && Number.isFinite(o.distance) ? Math.max(0, o.distance) : distance;
+    out.set(p.key, { dir, distance: dist, from: o?.direction || o?.distance !== undefined ? "sequence" : own.from });
+  }
+  // riders take their host's move (a chain of riders follows it to the end)
+  for (const p of parts) {
+    if (!p.rides) continue;
+    let host: string | undefined = p.rides;
+    const seen = new Set<string>([p.key]);
+    while (host && !out.has(host) && !seen.has(host)) {
+      seen.add(host);
+      host = parts.find((q) => q.key === host)?.rides;
+    }
+    const m = host ? out.get(host) : undefined;
+    const o = options.overrides?.get(p.key);
+    if (m && !o) out.set(p.key, { ...m, from: "rides" });
+    else out.set(p.key, { ...radialDirection(p, options.centre, options.radius, options.up), distance: o?.distance ?? distance, ...(o?.direction ? { dir: unit3(o.direction), from: "sequence" as const } : {}) });
+  }
+  return out;
+}
+
+/** The ease of the radial explode (cubic in and out, as the sequence's steps; every part shares it: all at once). */
+export const radialEase = (t: number): number => {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2;
+};
