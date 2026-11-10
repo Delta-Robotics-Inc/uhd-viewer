@@ -4,7 +4,8 @@
  * rays across the axis say whether one part surrounds another.
  */
 import * as THREE from "three";
-import { cellCentre, exitFrom, type ExitLine, type HeightGrid, type StackPart } from "./explode";
+import { cellCentre, exitFrom, planStack, type ExitLine, type HeightGrid, type StackPart } from "./explode";
+import { bvhOf } from "./render/pick";
 
 /** A sampled part, with the meshes it was sampled from (for the surround test). */
 export interface SampledPart extends StackPart {
@@ -33,20 +34,46 @@ function meshesOf(objects: THREE.Object3D[], skip: Set<THREE.Object3D>): THREE.M
   return out;
 }
 
-/** Cast against meshes from both sides of every face (a mesh's back faces are surfaces too). */
-function cast(ray: THREE.Raycaster, meshes: THREE.Mesh[]): THREE.Intersection | undefined {
-  const sides = meshes.map((m) => {
-    const mat = m.material as THREE.Material | THREE.Material[];
-    const list = Array.isArray(mat) ? mat : [mat];
-    const before = list.map((x) => x.side);
-    for (const x of list) x.side = THREE.DoubleSide;
-    return () => list.forEach((x, i) => (x.side = before[i]));
-  });
-  try {
-    return ray.intersectObjects(meshes, false)[0];
-  } finally {
-    for (const restore of sides) restore();
+/** A raycaster that sees every layer: the meshes the batcher draws for them sit on a layer the camera skips (PB-1175). */
+function sampler(): THREE.Raycaster {
+  const ray = new THREE.Raycaster();
+  ray.layers.enableAll();
+  return ray;
+}
+
+const _inv = new THREE.Matrix4();
+const _local = new THREE.Ray();
+const _im = new THREE.Matrix4();
+const _world = new THREE.Matrix4();
+const _p = new THREE.Vector3();
+
+/**
+ * The nearest hit of the ray on the meshes, from both sides of every face (a mesh's back faces are surfaces too),
+ * within `ray.far`. Ray against each geometry's BVH (three-mesh-bvh, the picking BVH of ./render/pick.ts, built
+ * once per geometry and shared), so sampling a heavy board is milliseconds, not seconds; instanced meshes test
+ * each instance.
+ */
+function cast(ray: THREE.Raycaster, meshes: THREE.Mesh[]): { distance: number } | undefined {
+  let best: number | undefined;
+  const test = (mesh: THREE.Mesh, world: THREE.Matrix4) => {
+    _inv.copy(world).invert();
+    _local.copy(ray.ray).applyMatrix4(_inv);
+    const hit = bvhOf(mesh.geometry).raycastFirst(_local, THREE.DoubleSide);
+    if (!hit) return;
+    const d = _p.copy(hit.point).applyMatrix4(world).distanceTo(ray.ray.origin);
+    if (d >= ray.near && d <= ray.far && (best === undefined || d < best)) best = d;
+  };
+  for (const mesh of meshes) {
+    if (!mesh.geometry?.getAttribute("position")) continue;
+    const inst = mesh as THREE.InstancedMesh;
+    if (inst.isInstancedMesh) {
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, _im);
+        test(mesh, _world.multiplyMatrices(mesh.matrixWorld, _im));
+      }
+    } else test(mesh, mesh.matrixWorld);
   }
+  return best === undefined ? undefined : { distance: best };
 }
 
 /** The part's top and bottom over a grid on its outline (world space, the assembled pose). */
@@ -67,7 +94,7 @@ export function sampleStackPart(key: string, objects: THREE.Object3D[], skip: Se
   const top = new Float64Array(n * n).fill(NaN);
   const bottom = new Float64Array(n * n).fill(NaN);
   const grid: HeightGrid = { u0, v0, du, dv, nu: n, nv: n, top, bottom };
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   const span = hi - lo + 2;
   const down = axis.clone().negate();
   for (let k = 0; k < n * n; k++) {
@@ -92,7 +119,7 @@ export function surrounded(holder: SampledPart, part: SampledPart, axis: THREE.V
   const [U, V] = acrossAxis(axis);
   const origin = U.clone().multiplyScalar(part.centre[0]).addScaledVector(V, part.centre[1]).addScaledVector(axis, part.mid);
   const reach = Math.hypot(holder.outline[1] - holder.outline[0], holder.outline[3] - holder.outline[2]) + 1;
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   ray.far = reach;
   let hits = 0;
   for (const d of [U, V, U.clone().negate(), V.clone().negate()]) {
@@ -109,7 +136,7 @@ export function surrounded(holder: SampledPart, part: SampledPart, axis: THREE.V
  */
 export function exitByRays(holder: SampledPart, part: SampledPart, axis: THREE.Vector3, eps = 0.05): "up" | "down" | undefined {
   const [U, V] = acrossAxis(axis);
-  const ray = new THREE.Raycaster();
+  const ray = sampler();
   const down = axis.clone().negate();
   const span = Math.max(holder.hi, part.hi) - Math.min(holder.lo, part.lo) + 4;
   const g = part.grid;
@@ -131,4 +158,102 @@ export function exitByRays(holder: SampledPart, part: SampledPart, axis: THREE.V
     lines.push({ partTop: g.top[k], partBottom: g.bottom[k], above: holderTop > g.top[k] + eps, below: holderBottom < g.bottom[k] - eps, holderTop, holderBottom });
   }
   return exitFrom(lines, eps);
+}
+
+/**
+ * The stack plan over sampled elements (moved here from CadView's `planStacks`, PB-1183): each element's rise
+ * along `axis` when fully exploded, by key. The scene must be at the assembled pose with world matrices current.
+ * Used only for what no mate places (display-hint parts, a bare multi-body GLB, named bodies along up); mated
+ * parts follow the assembly sequence.
+ */
+export function planStackRises(elements: readonly { key: string; objects: THREE.Object3D[]; skip: Set<THREE.Object3D> }[], axis: THREE.Vector3, gap: number): Map<string, number> {
+  const parts = elements.map((e) => sampleStackPart(e.key, e.objects, e.skip, axis)).filter((p): p is SampledPart => Boolean(p));
+  const byKey = new Map(parts.map((p) => [p.key, p]));
+  return planStack(parts, {
+    gap,
+    surrounds: (holder, part) => surrounded(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+    exit: (holder, part) => exitByRays(byKey.get(holder.key)!, byKey.get(part.key)!, axis),
+  });
+}
+
+// ---- facings for the radial explode (R2-B, ./explode.ts `planRadial`) ---------------------------------------------
+
+/** At most this many triangles are read per part (a stride beyond; DEFAULT: a board's 870 k triangles cost ~60 k reads). */
+export const FACING_MAX_TRIANGLES = 60_000;
+/** Direction bins: normals are rounded to this many steps per unit (DEFAULT 20: about 3 degrees). */
+export const FACING_BINS = 20;
+/** How many of a part's largest facings are kept (DEFAULT). */
+export const FACING_KEEP = 8;
+
+const _fa = new THREE.Vector3();
+const _fb = new THREE.Vector3();
+const _fc = new THREE.Vector3();
+const _fn = new THREE.Vector3();
+const _fm = new THREE.Matrix4();
+
+/**
+ * A part's surface by the way it faces (world mm, Z up): every triangle of its visible meshes (named bodies in `skip`
+ * left out) adds its area to the bin of its outward normal; the bins' area-weighted normals, largest first. A flat
+ * face is one bin, so the largest bin is the part's largest face (a shell panel's outer face and its inner face are
+ * two bins pointing opposite ways). Read at the assembled pose (the caller puts the objects there).
+ */
+export function facings(objects: THREE.Object3D[], skip: Set<THREE.Object3D> = new Set(), maxTriangles = FACING_MAX_TRIANGLES): { normal: [number, number, number]; area: number }[] {
+  const meshes = meshesOf(objects, skip);
+  let total = 0;
+  for (const m of meshes) {
+    const g = m.geometry as THREE.BufferGeometry;
+    const p = g?.getAttribute("position");
+    if (!p) continue;
+    const inst = m as THREE.InstancedMesh;
+    total += ((g.index ? g.index.count : p.count) / 3) * (inst.isInstancedMesh ? inst.count : 1);
+  }
+  const stride = Math.max(1, Math.ceil(total / maxTriangles));
+  const bins = new Map<number, { x: number; y: number; z: number; area: number }>();
+  const B = FACING_BINS;
+  const add = (g: THREE.BufferGeometry, world: THREE.Matrix4) => {
+    const p = g.getAttribute("position") as THREE.BufferAttribute;
+    const idx = g.index;
+    const tris = (idx ? idx.count : p.count) / 3;
+    const mirrored = world.determinant() < 0;
+    for (let t = 0; t < tris; t += stride) {
+      _fa.fromBufferAttribute(p, idx ? idx.getX(t * 3) : t * 3).applyMatrix4(world);
+      _fb.fromBufferAttribute(p, idx ? idx.getX(t * 3 + 1) : t * 3 + 1).applyMatrix4(world);
+      _fc.fromBufferAttribute(p, idx ? idx.getX(t * 3 + 2) : t * 3 + 2).applyMatrix4(world);
+      _fn.copy(_fb).sub(_fa).cross(_fc.sub(_fa));
+      const twice = _fn.length();
+      if (twice < 1e-12) continue;
+      if (mirrored) _fn.negate();
+      const area = (twice / 2) * stride;
+      const nx = _fn.x / twice;
+      const ny = _fn.y / twice;
+      const nz = _fn.z / twice;
+      const key = (Math.round(nx * B) + B) * (2 * B + 1) * (2 * B + 1) + (Math.round(ny * B) + B) * (2 * B + 1) + (Math.round(nz * B) + B);
+      let bin = bins.get(key);
+      if (!bin) bins.set(key, (bin = { x: 0, y: 0, z: 0, area: 0 }));
+      bin.x += nx * area;
+      bin.y += ny * area;
+      bin.z += nz * area;
+      bin.area += area;
+    }
+  };
+  for (const m of meshes) {
+    const g = m.geometry as THREE.BufferGeometry;
+    if (!g?.getAttribute("position")) continue;
+    m.updateWorldMatrix(true, false);
+    const inst = m as THREE.InstancedMesh;
+    if (inst.isInstancedMesh) {
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, _fm);
+        add(g, _fm.premultiply(m.matrixWorld));
+      }
+    } else add(g, m.matrixWorld);
+  }
+  return [...bins.values()]
+    .filter((b) => b.area > 0)
+    .sort((a, b) => b.area - a.area)
+    .slice(0, FACING_KEEP)
+    .map((b) => {
+      const l = Math.hypot(b.x, b.y, b.z) || 1;
+      return { normal: [b.x / l, b.y / l, b.z / l] as [number, number, number], area: Math.round(b.area * 100) / 100 };
+    });
 }

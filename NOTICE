@@ -20,3 +20,19 @@ carry the Kode Mono font, Copyright 2023 The Kode Mono Project Authors
 (https://github.com/isaozler/kode-mono), under the SIL Open Font License
 1.1: src/styles/fonts/OFL.txt. The .woff2 files are the released fonts
 converted to WOFF2, glyphs unchanged.
+
+Scale reference models (src/cad/scaleref/assets, embedded in the built
+application and library bundles; R4-B, 2026-11-02):
+
+- bananaGlb.ts (banana-for-scale.glb, as base64): a banana scanned by
+  Delta Robotics (Delta Robotics, own scan; Banana_Scan_2.stl), decimated to 10,000 triangles
+  and converted to glTF. Copyright 2026 Delta Robotics, Inc., under the
+  License above.
+- benchyGlb.ts (3dbenchy.glb, as base64): #3DBenchy by Creative Tools (designed by Daniel Noree;
+  https://www.3dbenchy.com), licensed under the Creative Commons CC0 1.0
+  Universal license (public domain dedication;
+  https://creativecommons.org/publicdomain/zero/1.0/), per
+  https://www.3dbenchy.com/license/ (read 2026-11-02). Attribution is not
+  required by CC0; it is given as the licence page asks. This copy is
+  decimated from 225,706 to 24,000 triangles and converted to glTF; for
+  printer calibration use the original STL from 3DBenchy.com.

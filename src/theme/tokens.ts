@@ -136,6 +136,84 @@ export interface ThemeTokens {
   sceneGrid: string;
   sceneGridMinor: string;
 
+  // ---- the model's look (PB-1189: anatomy baseline, matte toon bands, restrained ink) ----------------
+  /**
+   * The three matte toon bands, as the colours a neutral body (one with no colour of its own) takes in the lit,
+   * middle and shaded band. A coloured body keeps its hue: each band scales it by the band's luminance over the
+   * lit band's (docs/style-guide.md).
+   */
+  modelToneLit: string;
+  modelToneMid: string;
+  modelToneShade: string;
+  /** Silhouette and depth-step ink (the outline of every part against what lies behind it). */
+  inkSilhouette: string;
+  /** Crease ink: a fold between two faces of one part. */
+  inkCrease: string;
+  /** Faint ink: part boundaries and secondary lines (callout leaders to a ghosted marker). */
+  inkFaint: string;
+  /** Ink width in CSS px (a length: `1px`); constant on screen, never scaled by distance. */
+  inkWidth: string;
+  /**
+   * The flat fill of a section cap where the part's own colour cannot be read (R4-C, 2026-11-02: a cut part's cap is
+   * a tone of that part's colour with darker hatch lines of the same hue, derived from the part and the scene
+   * background in `src/cad/sections/capColour.ts`; this tone fills only what that pass does not reach, and every cap
+   * when part colours are off).
+   */
+  sectionCap: string;
+  /** The exact cut outline drawn on the cap once the view settles, and the hatch ink on the `sectionCap` fill. */
+  sectionLine: string;
+
+  // ---- DRC findings in the 3D view and its callouts (PB-1073, contrast-checked per theme) ----------
+  /** Fail (red octagon). Each DRC colour is at least 4.5:1 against this theme's scene background and surfaces. */
+  drcError: string;
+  /** Warning (yellow triangle). */
+  drcWarning: string;
+  /** Information (blue circle). */
+  drcInfo: string;
+  /** Risk: a warning that may be bad (orange diamond). Orange is reserved for this; the accent is blue. */
+  drcRisk: string;
+  /** Pass (green circle with a check). */
+  drcPass: string;
+  /** Could not be checked (grey dashed circle): never green. */
+  drcUnknown: string;
+
+  // ---- callouts (W3-B reads these by name) ------------------------------------------------------
+  /**
+   * A callout card's fill: one step off the scene's ground (lighter in the dark, darker on paper) so a card reads
+   * against the void (Kevin's walkthrough D4, R1-C). The card's corners use `radius`.
+   */
+  calloutSurface: string;
+  /** A callout card's 1 px outline (a finding's card takes its severity colour instead, walkthrough D4). */
+  calloutBorder: string;
+  /** Sentence text on a callout card. */
+  calloutText: string;
+  /** The mono uppercase id label on the shelf. */
+  calloutLabel: string;
+  /** The leader line (horizontal, vertical or 45° legs, a 45° chamfer, a horizontal shelf). */
+  calloutLeader: string;
+  /** The leader's width in CSS px (a length), constant on screen (1.75 px in both themes since R1-C, walkthrough D4). */
+  calloutLeaderWidth: string;
+  /** The leader's terminal dot on the part. */
+  calloutDot: string;
+  /** A marker or leader whose anchor is hidden behind a part (drawn ghosted). */
+  calloutGhost: string;
+
+  // ---- dimensions, angles and explode paths (R3-C; src/cad/dims reads these by name) ---------------
+  /** A dimension line, an angle's arc and ticks (thin, solid). */
+  dimLine: string;
+  /** A dimension's extension lines (dashed, from the measured points past the dimension line). */
+  dimExtension: string;
+  /** A dimension's label chip ("158.4 mm"). */
+  dimChip: string;
+  /** The chip's 1 px outline. */
+  dimChipBorder: string;
+  /** The chip's text and the angle labels. */
+  dimText: string;
+  /** The tier tag inside the chip (NOMINAL, MESH, EXACT, MEASURED). */
+  dimTierSurface: string;
+  /** Explode path lines: a moved part back to its assembled place (dashed, low contrast on purpose). */
+  explodePath: string;
+
   // ---- shape and type -----------------------------------------------------
   radius: string;
   shadowSm: string;
@@ -182,6 +260,10 @@ export const TOKEN_NAMES: readonly ThemeToken[] = [
   "drcConfigured", "drcPartial", "drcIncompatible", "drcUnconfigured", "severityError", "severityWarning", "severityInfo", "severityOk",
   "scrollbarThumb", "scrollbarThumbHover",
   "sceneBackground", "sceneGrid", "sceneGridMinor",
+  "modelToneLit", "modelToneMid", "modelToneShade", "inkSilhouette", "inkCrease", "inkFaint", "inkWidth", "sectionCap", "sectionLine",
+  "drcError", "drcWarning", "drcInfo", "drcRisk", "drcPass", "drcUnknown",
+  "calloutSurface", "calloutBorder", "calloutText", "calloutLabel", "calloutLeader", "calloutLeaderWidth", "calloutDot", "calloutGhost",
+  "dimLine", "dimExtension", "dimChip", "dimChipBorder", "dimText", "dimTierSurface", "explodePath",
   "radius", "shadowSm", "shadowMd", "shadowLg", "fontUi", "fontLabel", "fontMono",
 ];
 

@@ -101,10 +101,20 @@ export function defAt(system: ModuleDef, lookup: ModuleLookup, path: string[]): 
   return def;
 }
 
-/** Artifact id of the GLB for a body: the one generated from `bodyArtifact`, or the module's first body GLB. */
+/**
+ * The GLB for a body: the one that is `bodyArtifact` or was generated from it, else the module's first body GLB.
+ * The same rule as the stack's resolver (`bodyArtifact` in @protoboardai/core part-files.ts, PB-1174), which the
+ * viewer cannot import: the bundle already carries the resolver's choice (a placeholder or fetched vendor model is
+ * the definition's `resolved_glb` body, the replaced one demoted to `source`), so applying the same rule to the
+ * bundle's definitions draws what the build resolved. With `bodyArtifact`, the body itself comes before anything
+ * else made from it, and an interface's own mesh is never a body.
+ */
 export function glbFor(def: ModuleDef, bodyArtifact?: string): ArtifactDef | undefined {
   const arts = def.artifacts ?? [];
-  if (bodyArtifact) return arts.find((a) => a.format === "glb" && (a.id === bodyArtifact || a.provenance?.generatedFrom === bodyArtifact));
+  if (bodyArtifact) {
+    const named = arts.filter((a) => a.format === "glb" && (a.id === bodyArtifact || a.provenance?.generatedFrom === bodyArtifact));
+    return named.find((a) => a.role === "body") ?? named.find((a) => a.role !== "interface");
+  }
   return arts.find((a) => a.role === "body" && a.format === "glb");
 }
 

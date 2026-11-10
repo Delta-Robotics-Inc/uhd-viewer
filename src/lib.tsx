@@ -15,6 +15,10 @@ import { renderViewer } from "./viewer/mount";
 
 export type {
   ArtifactResolver,
+  ExportRequest,
+  NavigateRequest,
+  ViewerHistoryState,
+  ViewerHostSettings,
   LinkLayout,
   NodeMark,
   NodeMarkTone,

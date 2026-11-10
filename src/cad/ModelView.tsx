@@ -13,6 +13,7 @@ import { useTheme, tokenColor } from "../theme/ThemeProvider";
 import { DEFAULT_SCENE_ACCENT, DEFAULT_SCENE_HIGHLIGHT, cadWrapper, createScene, loadGlb, type SceneHandle } from "./scene";
 import { IconButton, Toolbar, ToolbarSeparator } from "../ui/Toolbar";
 import { cx } from "../ui/cx";
+import { ViewGlyph } from "./viewIcons";
 
 export interface ModelViewProps {
   /** A GLB or glTF file. */
@@ -30,7 +31,11 @@ export interface ModelViewProps {
   error?: string;
   /** Called once the model is on screen, with what the card shows. */
   onReady?: (info: ModelInfo) => void;
-  /** Show the card with the name and size from the start (default: folded into the toolbar's Model info button). */
+  /**
+   * Show the card with the name and size from the start. DEFAULT on (R1-D, Kevin's walkthrough G1: "model info should
+   * be on by default"); the person's own choice from the toolbar's Model info button is kept in local storage
+   * (`MODEL_INFO_KEY`) and wins over this default on the next open.
+   */
   infoOpen?: boolean;
   /** Extra buttons at the toolbar's end (a host's "open in the system viewer"). */
   actions?: React.ReactNode;
@@ -46,12 +51,35 @@ export interface ModelInfo {
 
 type ViewDir = "iso" | "top" | "front" | "right";
 
-const VIEWS: { id: ViewDir; icon: string; label: string; dir: [number, number, number] }[] = [
-  { id: "iso", icon: "box", label: "Isometric view", dir: [1, -1.2, 0.9] },
-  { id: "top", icon: "arrow-down-to-dot", label: "Top view", dir: [0, -0.0001, 1] },
-  { id: "front", icon: "square", label: "Front view", dir: [0, -1, 0.0001] },
-  { id: "right", icon: "panel-right", label: "Right view", dir: [1, 0, 0.0001] },
+const VIEWS: { id: ViewDir; label: string; dir: [number, number, number] }[] = [
+  { id: "iso", label: "Isometric view", dir: [1, -1.2, 0.9] },
+  { id: "top", label: "Top view", dir: [0, -0.0001, 1] },
+  { id: "front", label: "Front view", dir: [0, -1, 0.0001] },
+  { id: "right", label: "Right view", dir: [1, 0, 0.0001] },
 ];
+
+/** Where the person's Model info choice is kept (per browser origin; a webview's storage is its own). */
+export const MODEL_INFO_KEY = "uhd-viewer.modelInfo";
+
+/** The Model info card's first state: the person's last choice when there is one, else `fallback` (DEFAULT on). */
+export function initialModelInfo(fallback: boolean, storage: Pick<Storage, "getItem"> | undefined = safeStorage()): boolean {
+  try {
+    const v = storage?.getItem(MODEL_INFO_KEY);
+    if (v === "1") return true;
+    if (v === "0") return false;
+  } catch {
+    /* storage refused (a sandboxed frame) */
+  }
+  return fallback;
+}
+
+function safeStorage(): Storage | undefined {
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 /** A neutral satin surface for meshes that bring no material of their own (the 3D view's default). */
 const neutral = () => new THREE.MeshStandardMaterial({ color: 0x8b8b8b, roughness: 0.55, metalness: 0.1 });
@@ -71,7 +99,7 @@ function stats(root: THREE.Object3D): Omit<ModelInfo, "size"> {
 
 const mm = (n: number) => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
 
-export function ModelView({ url, object, name, detail, error, onReady, actions, infoOpen = false, className }: ModelViewProps) {
+export function ModelView({ url, object, name, detail, error, onReady, actions, infoOpen = true, className }: ModelViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SceneHandle | null>(null);
   const model = useRef<THREE.Object3D | null>(null);
@@ -81,7 +109,15 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
   const [grid, setGrid] = useState(true);
   const [spin, setSpin] = useState(false);
   const [view, setView] = useState<ViewDir>("iso");
-  const [showInfo, setShowInfo] = useState(infoOpen);
+  const [showInfo, setShowInfoState] = useState(() => initialModelInfo(infoOpen));
+  const setShowInfo = (on: boolean) => {
+    setShowInfoState(on);
+    try {
+      safeStorage()?.setItem(MODEL_INFO_KEY, on ? "1" : "0");
+    } catch {
+      /* not kept: the default applies next time */
+    }
+  };
 
   useEffect(() => {
     if (!host.current) return;
@@ -131,6 +167,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
     h.controls.target.copy(centre);
     h.camera.position.copy(centre).addScaledVector(d, dist);
     h.controls.update();
+    h.invalidate("view");
   };
 
   // the model: the host's scene, or the GLB at `url`
@@ -193,13 +230,16 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
         mat.needsUpdate = true;
       }
     });
+    // frames are drawn on change only (PB-1175)
+    handle.current?.invalidate();
   }, [wire, xray, state.status, originals]);
 
   useEffect(() => {
     const h = handle.current;
     if (!h) return;
-    const g = h.scene.children.find((o) => o instanceof THREE.GridHelper);
-    if (g) g.visible = grid;
+    // wave R4 gate (R4-A's handoff): the floor grid is `h.grid` (../grid), no longer a GridHelper among the children
+    h.grid.visible = grid;
+    h.invalidate();
   }, [grid, state.status, theme]);
 
   useEffect(() => {
@@ -207,6 +247,8 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
     if (!h) return;
     h.controls.autoRotate = spin;
     h.controls.autoRotateSpeed = 1.4;
+    // turning keeps frames coming while it is on; off, the view goes idle
+    h.invalidate("view");
   }, [spin]);
 
   const info = state.info;
@@ -248,7 +290,7 @@ export function ModelView({ url, object, name, detail, error, onReady, actions, 
           {VIEWS.map((v) => (
             <IconButton
               key={v.id}
-              icon={v.icon}
+              icon={<ViewGlyph face={v.id} />}
               label={v.label}
               tooltipSide="top"
               pressed={view === v.id}

@@ -1,0 +1,40 @@
+; HEADER_BLOCK_START
+; BambuStudio 02.08.02.61 (hand-written test fixture for uhd-viewer; not slicer output)
+; W4-B, 2026-11-01: two layers in the Bambu comment style: ; FEATURE:, ; CHANGE_LAYER, ; LAYER_HEIGHT:, ; LINE_WIDTH:
+; total layer number: 2
+; HEADER_BLOCK_END
+M73 P0 R2
+G90
+M82 ; absolute extrusion
+G92 E0
+; CHANGE_LAYER
+; Z_HEIGHT: 0.2
+; LAYER_HEIGHT: 0.2
+G1 Z.2 F720
+G1 X20 Y20 F12000
+; FEATURE: Outer wall
+; LINE_WIDTH: 0.42
+G1 X30 Y20 E.35 F3000
+G1 X30 Y30 E.7
+G1 X20 Y30 E1.05
+G1 X20 Y20 E1.4
+; FEATURE: Sparse infill
+; LINE_WIDTH: 0.45
+G1 X21 Y21 F12000
+G1 X29 Y29 E1.8 F6000
+; CHANGE_LAYER
+; Z_HEIGHT: 0.4
+; LAYER_HEIGHT: 0.2
+G1 E1.0 F1800 ; retract (absolute E going down)
+G1 Z.4 F720
+G1 X20 Y20 F12000
+G1 E1.8 F1800 ; unretract
+; FEATURE: Outer wall
+; LINE_WIDTH: 0.42
+G1 X30 Y20 E2.15 F3000
+G1 X30 Y30 E2.5
+; FEATURE: Bridge
+G1 X20 Y30 E2.85
+; FEATURE: Support
+G1 X20 Y20 E3.2
+M73 P100 R0

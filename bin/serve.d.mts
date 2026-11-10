@@ -17,11 +17,16 @@ export interface BundlePlan {
   mounts: Map<string, string>;
   /** "<name>/<artifact path>" → file on disk. */
   files: Map<string, string>;
+  /** The view sidecars (`X.view.glb`, `X.view.coarse.glb`, `X.view.json`) beside every referenced `X.glb`, same key scheme; served when on disk. */
+  sidecars: Map<string, string>;
   /** Definition id → mount name or URL. */
   bases: Record<string, string>;
   /** The bundle as served from `origin` (artifact bases rewritten to URLs, everything else as given). */
   rewrite: (origin: string) => { [key: string]: unknown; artifactBases: Record<string, string> };
 }
+
+/** Suffixes of the view sidecars served beside a GLB artifact. */
+export declare const VIEW_SIDECARS: string[];
 
 /** What to serve for one parsed `uhd.bundle/v0` read from `bundleFile`. Throws if it is not a bundle. */
 export declare function planBundle(bundle: unknown, bundleFile: string): BundlePlan;

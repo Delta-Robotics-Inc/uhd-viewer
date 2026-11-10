@@ -271,3 +271,9 @@ export function reads(m: LayoutMetrics): number {
   const f = layoutFindings(m).filter((x) => x.severity === "warning").length;
   return f * 1e9 + m.overlaps * 1e7 + Math.max(0, m.strip - LAYOUT_LIMITS.strip(m.cards + m.boundary)) * 1e6 + m.crossings * 1e4 + m.underCards * 1e3 + m.length / 100;
 }
+
+// The assembly tours and the view critic (PB-1188, W3-D), pure and node-safe (no three, no DOM), for the CLI's
+// MCP tools `view_tour` and `view_review` (W3-A); and the exact measurement request (PB-1187) the CLI checks.
+export * from "./cad/tour";
+export * from "./cad/review";
+export { compareTiers, checkGeometryRequest, GEOMETRY_REQUEST_SCHEMA, type GeometryRequest, type MeasureResult } from "./cad/measure/protocol";

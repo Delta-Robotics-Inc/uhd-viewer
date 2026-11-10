@@ -1,0 +1,117 @@
+/**
+ * The page's view store (PB-1178): one per window, made on first use from
+ * the page's URL, so the 3D view, the host handle, the host messages and the
+ * live-tab bridge share it. The 3D view mounts and unmounts as the user
+ * switches views and modules; the store outlives it (`enterScope` keeps each
+ * module's camera and selection), so a bridge batch sent while the diagram
+ * is shown still lands and shows when the 3D view comes back.
+ *
+ * DEFAULT: one store per window. A page holding several viewers (none does
+ * today: the VS Code tabs are a window each, `protoboard dev` shows one)
+ * would share it; a viewer of its own would pass its own store to CadView.
+ */
+import { createViewStore, type Actor, type ViewStore } from "./store";
+import { fromUrlParams, type UrlOpening } from "./serialize";
+import type { WritableKey } from "./schema";
+import type { ExportRequest, PlacementFacts, SetOp, ViewerHostSettings, ViewerSavePoint, ViewerSequenceCommand, ViewerSequenceReply, ViewerSnapshotMessage } from "../../api";
+import type { PlacementVerb } from "./bridge";
+import type { NavHistory, NavLink } from "../nav/history";
+
+export interface ViewHub {
+  store: ViewStore;
+  /** How the URL asked the view to open (read once). */
+  opening: UrlOpening;
+  /** What the 3D view draws, as data, while it is mounted (`__cad.observe`). */
+  observer?: (opts?: { components?: boolean }) => unknown;
+  /** Which view the page shows, when the shell reports it. */
+  view?: "3d" | "diagram";
+  /** The mounted 3D view's sequence player (W2-C), for host commands. */
+  sequence?: (command: ViewerSequenceCommand) => ViewerSequenceReply;
+  /** The host's snapshot of a tab (PB-1180), kept until the 3D view of that level opens and goes live. */
+  snapshot?: ViewerSnapshotMessage;
+  /** The 3D view listens for a snapshot that arrives after it mounted. */
+  onSnapshot?: (s: ViewerSnapshotMessage) => void;
+  /** The mounted 3D view's quality curve (W2-B): configure it, read its report. */
+  quality?: (config: Record<string, unknown>) => unknown;
+  /** The host keeps save points (`ViewerOptions.onSavePoint`). */
+  savePoint?: (p: ViewerSavePoint) => void;
+  /** What the mounted 3D view draws at a point (`__cad.pick`): the bridge's pick probes (W4-D, the critic). */
+  pick?: (fx: number, fy: number) => unknown;
+  /** The drawn label boxes (`__cad.labels()`): the bridge's label probe (W4-D). */
+  labels?: () => unknown[];
+  /** The 3D canvas in CSS px (the critic measures label boxes against it). */
+  canvas?: () => { width: number; height: number };
+  /** The person's explicit "Save callouts" (W4-D, D10): the host writes the annotations to the display file. */
+  saveCallouts?: () => void;
+  /**
+   * The mounted 3D view's camera controls (R1-A, E1): `zoomToCursor` (wheel zoom toward the pointer, DEFAULT on).
+   * Returns what is in force. A host's settings page (R1-E) calls it; the choice also holds for a view mounted later.
+   */
+  controls?: (options: { zoomToCursor?: boolean }) => { zoomToCursor: boolean };
+  /**
+   * The controls a host chose (kept by `controls`, which exists only while a 3D view is mounted); a view mounted
+   * later starts with them. A host may also set this object directly before the first mount.
+   */
+  controlOptions?: { zoomToCursor?: boolean };
+  /** Resolves a placement verb against the scene's faces (W4-D, PB-1187): one `set` on `placements` and its facts. */
+  place?: (op: PlacementVerb, by: string) => { set: SetOp; facts: PlacementFacts } | { error: string };
+  /**
+   * The host channel as navigation uses it (R2-A, F1; `connectNav` in ../nav, called by the mount): events to the
+   * host, host messages applied in this page (a drill when Back crosses levels), and whether the host takes
+   * `uhd-viewer:navigate`. Absent (a page with no mount, an older mount): the view selects and frames in place.
+   */
+  navLink?: NavLink;
+  /** The viewer's own back and forward history (R2-A, ../nav/history.ts): one per page, across 3D view mounts. */
+  nav?: NavHistory;
+  /** What a frame's parent said it takes (`uhd-viewer:hostCapabilities`). */
+  hostCaps?: { navigate?: boolean; history?: boolean };
+  /**
+   * The person's viewer settings from the host (R2-E, J1; `ViewerOptions.settings`, put here by the mount): the long
+   * hover and the model info card read them (`../viewerSettings.ts`). Absent: the DEFAULTs.
+   */
+  settings?: ViewerHostSettings;
+  /**
+   * Sends the 3D toolbar's Export to the host (R2-E, G3; the mount sets it when the host takes exports: `onExport`
+   * or a frame's parent). Absent: the Export button is disabled and says why.
+   */
+  exportView?: (request: ExportRequest) => void;
+  /**
+   * Saves a viewer setting the person changed in the view (wave R4 gate, R4-B's handoff: the scale chooser and its
+   * units, `viewer.scaleReference` / `viewer.units`). The mount sets it when the host takes it (`onSetting`, or a
+   * frame's parent). Absent: the choice stays in this browser's storage (../scaleref/kinds.ts).
+   */
+  saveSetting?: (key: string, value: unknown) => unknown;
+}
+
+const KEY = "__uhdViewHub";
+export const URL_ACTOR: Actor = { kind: "system", id: "url" };
+
+/** The view store of this window (made from `location.search` the first time). */
+export function viewHub(win: { location?: { search?: string } } | undefined = typeof window === "undefined" ? undefined : window): ViewHub {
+  const holder = (win ?? globalThis) as unknown as Record<string, ViewHub | undefined>;
+  const have = holder[KEY];
+  if (have) return have;
+  const hub = makeHub(new URLSearchParams(win?.location?.search ?? ""));
+  holder[KEY] = hub;
+  return hub;
+}
+
+/** A hub from URL parameters (tests and hosts that keep their own). */
+export function makeHub(params: URLSearchParams): ViewHub {
+  const store = createViewStore();
+  const { values, visibility, opening } = fromUrlParams(params);
+  const ops = [
+    ...Object.entries(values).map(([k, v]) => ({ op: "set" as const, path: [k as WritableKey] as [WritableKey], value: v })),
+    ...Object.entries(visibility).map(([k, v]) => ({ op: "set" as const, path: ["visibility", k] as [WritableKey, string], value: v })),
+  ];
+  if (ops.length) {
+    const r = store.dispatch(ops, { actor: URL_ACTOR, label: "open as the URL asks", source: "url" });
+    if (r && "error" in r) console.warn(`[view-state] the URL's view parameters were not taken: ${r.error}`);
+  }
+  return { store, opening };
+}
+
+/** Forget this window's hub (tests). */
+export function resetViewHub(win: unknown = typeof window === "undefined" ? undefined : window): void {
+  delete ((win ?? globalThis) as Record<string, unknown>)[KEY];
+}
